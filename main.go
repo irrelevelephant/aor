@@ -61,6 +61,7 @@ func main() {
 	flag.BoolVar(&cfg.SkipReview, "no-review", false, "Skip post-task review agent")
 
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
+	noScope := flag.Bool("no-scope", false, "Disable worktree scope auto-detection")
 
 	flag.StringVar(&cfg.LogDir, "log-dir", "", "Log directory (default: auto-detect from beads location)")
 	flag.StringVar(&cfg.Scope, "scope", "", "Scope label for worktree isolation (default: auto-detect from git worktree)")
@@ -91,7 +92,7 @@ Flags:
 
 	cfg.Yolo = !*noYolo
 
-	if cfg.Scope == "" {
+	if !*noScope && cfg.Scope == "" {
 		cfg.Scope = detectWorktreeScope()
 	}
 

@@ -167,6 +167,7 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	fs.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Maximum review rounds")
 	fs.IntVar(&cfg.MaxTurns, "max-turns", 50, "Max agent turns per session")
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts")
+	noScope := fs.Bool("no-scope", false, "Disable worktree scope auto-detection")
 	fs.StringVar(&cfg.LogDir, "log-dir", "", "Log directory")
 	fs.StringVar(&cfg.Scope, "scope", "", "Scope label for worktree isolation (default: auto-detect)")
 
@@ -192,7 +193,7 @@ Flags:
 
 	cfg.Yolo = !*noYolo
 
-	if cfg.Scope == "" {
+	if !*noScope && cfg.Scope == "" {
 		cfg.Scope = detectWorktreeScope()
 	}
 
