@@ -105,6 +105,20 @@ func getTaskStatus(id string) (*BeadTask, error) {
 	return &task, nil
 }
 
+// countUnscopedReadyTasks returns the number of ready tasks globally (no label filter).
+// Used to detect scope mismatches when scoped queries return empty.
+func countUnscopedReadyTasks() int {
+	out, err := exec.Command("bd", "ready", "--json").Output()
+	if err != nil {
+		return 0
+	}
+	var tasks []BeadTask
+	if err := json.Unmarshal(out, &tasks); err != nil {
+		return 0
+	}
+	return len(tasks)
+}
+
 // topTask returns the highest-priority task (lowest priority number),
 // breaking ties by earliest creation date. CreatedAt is compared
 // lexicographically, so it must be in a sortable format (e.g. ISO 8601).

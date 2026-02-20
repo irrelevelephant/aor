@@ -225,7 +225,16 @@ func run(cfg *Config) error {
 		}
 
 		if len(tasks) == 0 {
-			log.Log("%sNo ready tasks. All done!%s", cGreen, cReset)
+			if cfg.Scope != "" {
+				if total := countUnscopedReadyTasks(); total > 0 {
+					log.Log("%sNo tasks matching scope %q, but %d unscoped task(s) exist. Add label %q to include them.%s",
+						cYellow, cfg.Scope, total, cfg.Scope, cReset)
+				} else {
+					log.Log("%sNo ready tasks. All done!%s", cGreen, cReset)
+				}
+			} else {
+				log.Log("%sNo ready tasks. All done!%s", cGreen, cReset)
+			}
 			break
 		}
 
