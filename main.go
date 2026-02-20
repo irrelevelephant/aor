@@ -55,7 +55,7 @@ func main() {
 	flag.StringVar(&cfg.EpicFilter, "epic", "", "Only work on tasks under this epic")
 	flag.IntVar(&cfg.MaxTasks, "max-tasks", 0, "Stop after N tasks (0 = unlimited)")
 	flag.IntVar(&cfg.BatchSize, "batch-size", 1, "Tasks per Claude session before fresh context")
-	flag.IntVar(&cfg.MaxTurns, "max-turns", 50, "Max agent turns per session")
+	flag.IntVar(&cfg.MaxTurns, "max-turns", 150, "Max agent turns per session")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
 	flag.BoolVar(&cfg.SkipReview, "no-review", false, "Skip post-task review agent")
