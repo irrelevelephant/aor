@@ -25,11 +25,24 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 		return result
 	}
 
-	args := []string{
-		"-p", prompt,
-		"--verbose",
-		"--output-format", "stream-json",
-		"--max-turns", fmt.Sprintf("%d", cfg.MaxTurns),
+	var args []string
+	if cfg.ResumeSessionID != "" {
+		// Resume an existing session and inject the prompt as a new user
+		// message via --append-system-prompt (--resume ignores -p).
+		args = []string{
+			"--resume", cfg.ResumeSessionID,
+			"--append-system-prompt", prompt,
+			"--verbose",
+			"--output-format", "stream-json",
+			"--max-turns", fmt.Sprintf("%d", cfg.MaxTurns),
+		}
+	} else {
+		args = []string{
+			"-p", prompt,
+			"--verbose",
+			"--output-format", "stream-json",
+			"--max-turns", fmt.Sprintf("%d", cfg.MaxTurns),
+		}
 	}
 	if cfg.Yolo {
 		args = append(args, "--dangerously-skip-permissions")

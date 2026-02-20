@@ -21,6 +21,7 @@ type RunnerStatus struct {
 	Completed      []string `json:"completed"`
 	Discovered     []string `json:"discovered"`
 	ReviewBeads    []string `json:"review_beads"`
+	DecomposedInto []string `json:"decomposed_into"`
 	RemainingReady int      `json:"remaining_ready"`
 	Error          *string  `json:"error"`
 }
@@ -83,11 +84,14 @@ type RunStats struct {
 	TasksCompleted      int
 	Discovered          int
 	ReviewBeads         int
+	Decomposed          int
 	SessionsRun         int
+	WrapUpSessions      int
 	Errors              int
 	ReviewSessions      int
 	ReviewBeadsFromPost int
 	ReviewFixesApplied  int
+	MaxTurnsHitCount    int
 	StartedAt           time.Time
 	TotalCostUSD        float64
 	TotalInput          int

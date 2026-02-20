@@ -13,7 +13,9 @@ import (
 
 // buildPrompt constructs the system prompt for a Claude Code session.
 // claimedTask is the task already claimed by the runner before launching the session.
-func buildPrompt(batchSize int, epicFilter, scope string, claimedTask *BeadTask) string {
+// maxTurns must match the --max-turns value passed to the session so the agent's
+// turn-budget guidance is accurate.
+func buildPrompt(batchSize, maxTurns int, epicFilter, scope string, claimedTask *BeadTask) string {
 	scopeInstruction := ""
 	if epicFilter != "" {
 		scopeInstruction = fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
@@ -28,8 +30,12 @@ func buildPrompt(batchSize int, epicFilter, scope string, claimedTask *BeadTask)
 `, scope, scope, scope)
 	}
 
-	claimedInstruction := fmt.Sprintf(`Your first task is already claimed: %s — %s
-Work on it immediately. Do not run bd ready or bd update --claim for this task.`, claimedTask.ID, claimedTask.Title)
+	claimedInstruction := fmt.Sprintf(`Your first task is already claimed: %s — %s (P%d, %s)
+Work on it immediately. Do not run bd ready or bd update --claim for this task.`, claimedTask.ID, claimedTask.Title, claimedTask.Priority, claimedTask.Type)
+
+	if claimedTask.Description != "" {
+		claimedInstruction += fmt.Sprintf("\n\nTask description:\n%s", claimedTask.Description)
+	}
 
 	additionalTasks := ""
 	if batchSize > 1 {
@@ -41,8 +47,15 @@ Work on it immediately. Do not run bd ready or bd update --claim for this task.`
 After completing the claimed task, run %s for up to %d additional task(s).
 For each additional task, claim it with bd update <id> --claim --json before working on it.
 
-You have %d tasks to complete in this session. Conserve context — delegate exploration to Task subagents, avoid verbose tool output. If context feels constrained, output BEADS_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.`, readyCmd, batchSize-1, batchSize)
+You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSize)
 	}
+
+	earlyExitTurn := maxTurns * 80 / 100
+	additionalTasks += fmt.Sprintf(`
+
+Turn budget: You have %d turns for this session.
+- If you reach turn ~%d without finishing: commit your progress, output the BEADS_RUNNER_STATUS sentinel with what you've completed, and stop.
+- The orchestrator will continue with a fresh session — do not try to rush or skip steps.`, maxTurns, earlyExitTurn)
 
 	return fmt.Sprintf(`You are working through beads tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
 
@@ -57,21 +70,72 @@ CRITICAL — After completing %d task(s) or if bd ready is empty, you MUST do th
 1. Run bd sync.
 2. Output the following status line EXACTLY on its own line (no markdown fences, no extra text on the same line):
 
-BEADS_RUNNER_STATUS:{"completed": ["<bead-ids>"], "discovered": ["<bead-ids>"], "review_beads": ["<bead-ids>"], "remaining_ready": <number>, "error": null}
+BEADS_RUNNER_STATUS:{"completed": ["<bead-ids>"], "discovered": ["<bead-ids>"], "review_beads": ["<bead-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}
 
 If you encounter an unrecoverable error:
-BEADS_RUNNER_STATUS:{"completed": [], "discovered": [], "review_beads": [], "remaining_ready": -1, "error": "<description>"}
+BEADS_RUNNER_STATUS:{"completed": [], "discovered": [], "review_beads": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}
 
 The orchestrator CANNOT parse your session without this line. Always output it as your final action.
 
 Important: Stealth mode — do NOT commit or push .beads/ files. Do NOT reference bead IDs in commits.
 
 Context management:
-- Use the Task tool to delegate research and exploration to subagents — this keeps your main context clean for implementation.
+- Conserve context — delegate exploration to Task subagents, avoid verbose tool output.
 - Prefer targeted file reads over reading entire large files.
+- Do NOT run bd show or bd ready for the claimed task — all context is above.
+- Make atomic commits as you go — do not accumulate a large uncommitted diff.
+- Do NOT read files speculatively. Search first (grep/glob), then read only what you need.
+- If context feels constrained, output BEADS_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.
 - Always output the BEADS_RUNNER_STATUS sentinel as your final action, even if you feel the conversation is getting long.
 
+Task decomposition:
+- If a task is too complex for this session, break it into subtasks:
+  1. Create child beads: bd create --deps "blocks:<parent-id>" --title "Subtask: ..." --type task [--labels "<scope>"]
+  2. Commit any progress you've made so far.
+  3. Output BEADS_RUNNER_STATUS with "decomposed_into": ["<child-ids>"] and "completed": [].
+- The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
+- Only decompose when genuinely necessary — most tasks should complete in one session.
+
 Start now.`, scopeInstruction, scopeLabelInstruction, claimedInstruction, additionalTasks, batchSize)
+}
+
+// buildWrapUpPrompt constructs a focused prompt for resuming a session that
+// hit the max-turns limit. The resumed session has the agent's full context,
+// so it can commit progress, decompose if needed, and emit the sentinel.
+func buildWrapUpPrompt(taskID, taskTitle, scope string) string {
+	scopeLabel := ""
+	if scope != "" {
+		scopeLabel = fmt.Sprintf(` --labels "%s"`, scope)
+	}
+	return fmt.Sprintf(`Your previous session ran out of turns while working on %s — %s.
+
+You MUST wrap up immediately. Do NOT continue working on the task. You have 5 turns.
+
+1. If you have uncommitted changes, commit them now with a descriptive message.
+2. Determine outcome:
+   a. If the task is COMPLETE: close it with bd close %s "<reason>".
+   b. If more work remains and it's too complex: decompose it — create child beads with bd create --deps "blocks:%s" --title "Subtask: ..."%s --type task, then run bd sync.
+   c. If you made partial progress but it's a single remaining step: just note what's left.
+3. Output the BEADS_RUNNER_STATUS sentinel as your final action:
+   BEADS_RUNNER_STATUS:{"completed": ["<ids>"], "discovered": [], "review_beads": [], "decomposed_into": ["<child-ids-if-any>"], "remaining_ready": -1, "error": null}
+
+This is mandatory. The orchestrator cannot continue without it.`, taskID, taskTitle, taskID, taskID, scopeLabel)
+}
+
+// reviewTurnsForDiff returns an adaptive MaxTurns for post-task review
+// based on the number of lines in the diff.
+func reviewTurnsForDiff(diff string) int {
+	lines := strings.Count(diff, "\n")
+	switch {
+	case lines < 50:
+		return 10
+	case lines < 200:
+		return 15
+	case lines < 500:
+		return 25
+	default:
+		return 30
+	}
 }
 
 // claimTracker keeps track of the currently claimed task so we can
@@ -219,7 +283,7 @@ func run(cfg *Config) error {
 		tracker.set(next.ID)
 
 		stats.SessionsRun++
-		prompt := buildPrompt(effectiveBatchSize, cfg.EpicFilter, cfg.Scope, next)
+		prompt := buildPrompt(effectiveBatchSize, cfg.MaxTurns, cfg.EpicFilter, cfg.Scope, next)
 
 		// Capture pre-task HEAD for post-task review diffing.
 		preSHA, _ := headSHA()
@@ -231,9 +295,19 @@ func run(cfg *Config) error {
 
 		// Log session usage if available.
 		if result.InputTokens > 0 || result.OutputTokens > 0 {
-			log.Log("Session usage: %s input + %s output tokens, $%.4f, %d turns",
+			turnPct := 0
+			if cfg.MaxTurns > 0 {
+				turnPct = result.NumTurns * 100 / cfg.MaxTurns
+			}
+			log.Log("Session usage: %s input + %s output tokens, $%.4f, %d/%d turns (%d%%)",
 				formatTokens(result.InputTokens), formatTokens(result.OutputTokens),
-				result.TotalCostUSD, result.NumTurns)
+				result.TotalCostUSD, result.NumTurns, cfg.MaxTurns, turnPct)
+			if turnPct >= 100 {
+				stats.MaxTurnsHitCount++
+			} else if turnPct >= 80 {
+				log.Log("%sNOTE: Session used %d%% of turn budget (%d/%d turns)%s",
+					cYellow, turnPct, result.NumTurns, cfg.MaxTurns, cReset)
+			}
 			stats.TotalCostUSD += result.TotalCostUSD
 			stats.TotalInput += result.InputTokens
 			stats.TotalOutput += result.OutputTokens
@@ -242,6 +316,7 @@ func run(cfg *Config) error {
 
 		// Determine whether the claimed task was completed by the agent.
 		shouldUnclaim := false
+		decomposed := false
 		if result.Error != nil {
 			log.Log("%sSession error: %v%s", cRed, result.Error, cReset)
 			stats.Errors++
@@ -257,26 +332,101 @@ func run(cfg *Config) error {
 				result.Status = &RunnerStatus{
 					Completed: []string{next.ID},
 				}
-			} else {
-				if result.NumTurns > 0 && result.NumTurns >= cfg.MaxTurns {
-					log.Log("%sWARNING: Session used all %d turns without completing. Consider increasing --max-turns or reducing task complexity.%s",
-						cYellow, cfg.MaxTurns, cReset)
-				} else {
-					log.Log("%sWARNING: No structured status from agent and task not closed. Check session log.%s", cYellow, cReset)
+			} else if result.NumTurns > 0 && result.NumTurns >= cfg.MaxTurns && result.SessionID != "" {
+				log.Log("Session hit max turns (%d) — attempting wrap-up resumption...", cfg.MaxTurns)
+
+				wrapUpPrompt := buildWrapUpPrompt(next.ID, next.Title, cfg.Scope)
+				wrapUpCfg := &Config{
+					MaxTurns:        5,
+					Yolo:            cfg.Yolo,
+					LogDir:          cfg.LogDir,
+					ResumeSessionID: result.SessionID,
 				}
+
+				fmt.Printf("\n%s─── Wrap-up: %s ──────────────────────────────────────%s\n\n",
+					cYellow, next.ID, cReset)
+
+				wrapResult := runSession(wrapUpCfg, log, wrapUpPrompt, stdinCh)
+				stats.WrapUpSessions++
+
+				// Accumulate wrap-up costs.
+				if wrapResult.InputTokens > 0 || wrapResult.OutputTokens > 0 {
+					log.Log("Wrap-up usage: %s input + %s output tokens, $%.4f, %d turns",
+						formatTokens(wrapResult.InputTokens), formatTokens(wrapResult.OutputTokens),
+						wrapResult.TotalCostUSD, wrapResult.NumTurns)
+					stats.TotalCostUSD += wrapResult.TotalCostUSD
+					stats.TotalInput += wrapResult.InputTokens
+					stats.TotalOutput += wrapResult.OutputTokens
+					stats.TotalTurns += wrapResult.NumTurns
+				}
+
+				// If wrap-up produced a sentinel, use it.
+				if wrapResult.Status != nil {
+					result.Status = wrapResult.Status
+					// Re-evaluate: check if the task is now completed or decomposed.
+					if len(result.Status.DecomposedInto) > 0 {
+						log.Log("Task %s decomposed during wrap-up into %d subtask(s): %s",
+							next.ID, len(result.Status.DecomposedInto),
+							strings.Join(result.Status.DecomposedInto, ", "))
+						stats.Decomposed++
+						shouldUnclaim = true
+						decomposed = true
+					} else {
+						found := false
+						for _, cid := range result.Status.Completed {
+							if cid == next.ID {
+								found = true
+								break
+							}
+						}
+						if !found {
+							shouldUnclaim = true
+						}
+					}
+				} else {
+					// No sentinel from wrap-up either — check if the agent
+					// managed to close the task via bd close during wrap-up.
+					task, ferr := getTaskStatus(next.ID)
+					if ferr == nil && task.Status == "closed" {
+						log.Log("Task %s closed during wrap-up (no sentinel, detected via beads)", next.ID)
+						result.Status = &RunnerStatus{
+							Completed: []string{next.ID},
+						}
+					} else {
+						log.Log("%sWrap-up session did not produce structured status either.%s", cYellow, cReset)
+						shouldUnclaim = true
+					}
+				}
+			} else if result.NumTurns > 0 && result.NumTurns >= cfg.MaxTurns {
+				log.Log("%sWARNING: Session used all %d turns without completing (no session ID for wrap-up).%s",
+					cYellow, cfg.MaxTurns, cReset)
+				shouldUnclaim = true
+			} else {
+				log.Log("%sWARNING: No structured status from agent and task not closed. Check session log.%s",
+					cYellow, cReset)
 				shouldUnclaim = true
 			}
 		} else {
-			// Check if the claimed task appears in the completed list.
-			found := false
-			for _, cid := range result.Status.Completed {
-				if cid == next.ID {
-					found = true
-					break
-				}
-			}
-			if !found {
+			// Check for task decomposition first.
+			if len(result.Status.DecomposedInto) > 0 {
+				log.Log("Task %s decomposed into %d subtask(s): %s",
+					next.ID, len(result.Status.DecomposedInto),
+					strings.Join(result.Status.DecomposedInto, ", "))
+				stats.Decomposed++
 				shouldUnclaim = true
+				decomposed = true
+			} else {
+				// Check if the claimed task appears in the completed list.
+				found := false
+				for _, cid := range result.Status.Completed {
+					if cid == next.ID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					shouldUnclaim = true
+				}
 			}
 		}
 
@@ -289,8 +439,14 @@ func run(cfg *Config) error {
 				shouldUnclaim = false
 				stats.TasksCompleted++
 			} else {
-				failedIDs[next.ID]++
-				log.Log("Unclaiming %s (not completed by agent)", next.ID)
+				if !decomposed {
+					failedIDs[next.ID]++
+				}
+				reason := "not completed by agent"
+				if decomposed {
+					reason = "decomposed into subtasks"
+				}
+				log.Log("Unclaiming %s (%s)", next.ID, reason)
 				if err := unclaimTask(next.ID); err != nil {
 					log.Log("%sFailed to unclaim %s: %v%s", cRed, next.ID, err, cReset)
 				}
@@ -352,7 +508,7 @@ func run(cfg *Config) error {
 				} else if strings.TrimSpace(diff) != "" {
 					reviewPrompt := buildPostTaskReviewPrompt(diff, next.ID, next.Title, cfg.Scope)
 					reviewCfg := &Config{
-						MaxTurns: 30,
+						MaxTurns: reviewTurnsForDiff(diff),
 						Yolo:     cfg.Yolo,
 						LogDir:   cfg.LogDir,
 					}
@@ -438,8 +594,14 @@ func printSummary(log *Logger, stats *RunStats) {
 	log.Log("  Tasks completed:   %s%d%s", cGreen, stats.TasksCompleted, cReset)
 	log.Log("  Issues discovered: %d", stats.Discovered)
 	log.Log("  Review beads:      %d", stats.ReviewBeads)
+	if stats.Decomposed > 0 {
+		log.Log("  Decomposed:        %d", stats.Decomposed)
+	}
 	log.Log("  Sessions run:      %d", stats.SessionsRun)
 	log.Log("  Errors:            %d", stats.Errors)
+	if stats.WrapUpSessions > 0 {
+		log.Log("  Wrap-up sessions:  %d", stats.WrapUpSessions)
+	}
 	if stats.ReviewSessions > 0 {
 		log.Log("  Review sessions:   %d", stats.ReviewSessions)
 		log.Log("  Review beads:      %d", stats.ReviewBeadsFromPost)
@@ -449,6 +611,12 @@ func printSummary(log *Logger, stats *RunStats) {
 		log.Log("  Tokens (in/out):   %s / %s", formatTokens(stats.TotalInput), formatTokens(stats.TotalOutput))
 		log.Log("  Total cost:        $%.4f", stats.TotalCostUSD)
 		log.Log("  Total turns:       %d", stats.TotalTurns)
+		if stats.SessionsRun > 0 {
+			log.Log("  Avg turns/task:    %.1f", float64(stats.TotalTurns)/float64(stats.SessionsRun))
+		}
+		if stats.MaxTurnsHitCount > 0 {
+			log.Log("  %sTurn limit hits:  %d%s", cYellow, stats.MaxTurnsHitCount, cReset)
+		}
 	}
 	log.Log("  Elapsed:           %s", elapsed)
 	log.Log("  Run log:           %s", log.RunLogPath())

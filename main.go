@@ -24,16 +24,17 @@ const (
 
 // Config holds all runtime configuration from command-line flags.
 type Config struct {
-	EpicFilter string
-	MaxTasks   int
-	BatchSize  int
-	MaxTurns   int
-	DryRun     bool
-	Supervised bool
-	Yolo       bool
-	SkipReview bool
-	LogDir     string
-	Scope      string
+	EpicFilter      string
+	MaxTasks        int
+	BatchSize       int
+	MaxTurns        int
+	DryRun          bool
+	Supervised      bool
+	Yolo            bool
+	SkipReview      bool
+	LogDir          string
+	Scope           string
+	ResumeSessionID string // set internally for wrap-up sessions
 }
 
 func main() {
