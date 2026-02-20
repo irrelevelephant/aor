@@ -71,7 +71,7 @@ func runRev(args []string) error {
 			break
 		}
 
-		prompt := buildReviewPrompt(diff, base, round, allBeads)
+		prompt := buildReviewPrompt(diff, base, round, allBeads, cfg.Scope)
 
 		fmt.Printf("\n%s─── Review round %d/%d ──────────────────────────────────%s\n\n",
 			cBlue, round, cfg.MaxRounds, cReset)
@@ -168,6 +168,7 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	fs.IntVar(&cfg.MaxTurns, "max-turns", 50, "Max agent turns per session")
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts")
 	fs.StringVar(&cfg.LogDir, "log-dir", "", "Log directory")
+	fs.StringVar(&cfg.Scope, "scope", "", "Scope label for worktree isolation (default: auto-detect)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), `aor rev — Iterative code review
@@ -190,6 +191,10 @@ Flags:
 	}
 
 	cfg.Yolo = !*noYolo
+
+	if cfg.Scope == "" {
+		cfg.Scope = detectWorktreeScope()
+	}
 
 	// Remaining positional arg is the base ref.
 	if fs.NArg() > 0 {

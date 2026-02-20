@@ -33,6 +33,7 @@ type Config struct {
 	Yolo       bool
 	SkipReview bool
 	LogDir     string
+	Scope      string
 }
 
 func main() {
@@ -61,6 +62,7 @@ func main() {
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
 
 	flag.StringVar(&cfg.LogDir, "log-dir", "", "Log directory (default: auto-detect from beads location)")
+	flag.StringVar(&cfg.Scope, "scope", "", "Scope label for worktree isolation (default: auto-detect from git worktree)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `aor — Agent Orchestration Runner for beads tasks
@@ -87,6 +89,10 @@ Flags:
 	flag.Parse()
 
 	cfg.Yolo = !*noYolo
+
+	if cfg.Scope == "" {
+		cfg.Scope = detectWorktreeScope()
+	}
 
 	if cfg.LogDir == "" {
 		cfg.LogDir = resolveLogDir()

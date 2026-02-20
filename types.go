@@ -102,6 +102,7 @@ type ReviewConfig struct {
 	MaxTurns  int
 	Yolo      bool
 	LogDir    string
+	Scope     string
 }
 
 // ReviewStatus is the structured output from a review session.

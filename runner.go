@@ -13,10 +13,19 @@ import (
 
 // buildPrompt constructs the system prompt for a Claude Code session.
 // claimedTask is the task already claimed by the runner before launching the session.
-func buildPrompt(batchSize int, epicFilter string, claimedTask *BeadTask) string {
+func buildPrompt(batchSize int, epicFilter, scope string, claimedTask *BeadTask) string {
 	scopeInstruction := ""
 	if epicFilter != "" {
 		scopeInstruction = fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
+	}
+
+	scopeLabelInstruction := ""
+	if scope != "" {
+		scopeLabelInstruction = fmt.Sprintf(`Worktree scope: %s
+- Add --labels "%s" on ALL bd create / bd q calls so new beads stay in this scope.
+- When fetching additional batch work, use bd ready --label "%s" --json.
+
+`, scope, scope, scope)
 	}
 
 	claimedInstruction := fmt.Sprintf(`Your first task is already claimed: %s — %s
@@ -24,16 +33,20 @@ Work on it immediately. Do not run bd ready or bd update --claim for this task.`
 
 	additionalTasks := ""
 	if batchSize > 1 {
+		readyCmd := "bd ready --json"
+		if scope != "" {
+			readyCmd = fmt.Sprintf("bd ready --label \"%s\" --json", scope)
+		}
 		additionalTasks = fmt.Sprintf(`
-After completing the claimed task, run bd ready --json for up to %d additional task(s).
+After completing the claimed task, run %s for up to %d additional task(s).
 For each additional task, claim it with bd update <id> --claim --json before working on it.
 
-You have %d tasks to complete in this session. Conserve context — delegate exploration to Task subagents, avoid verbose tool output. If context feels constrained, output BEADS_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.`, batchSize-1, batchSize)
+You have %d tasks to complete in this session. Conserve context — delegate exploration to Task subagents, avoid verbose tool output. If context feels constrained, output BEADS_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.`, readyCmd, batchSize-1, batchSize)
 	}
 
 	return fmt.Sprintf(`You are working through beads tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
 
-%s%s%s
+%s%s%s%s
 
 For each task:
 1. Implement the work. Make atomic commits with descriptive messages (NO bead IDs in commits — stealth mode).
@@ -58,7 +71,7 @@ Context management:
 - Prefer targeted file reads over reading entire large files.
 - Always output the BEADS_RUNNER_STATUS sentinel as your final action, even if you feel the conversation is getting long.
 
-Start now.`, scopeInstruction, claimedInstruction, additionalTasks, batchSize)
+Start now.`, scopeInstruction, scopeLabelInstruction, claimedInstruction, additionalTasks, batchSize)
 }
 
 // claimTracker keeps track of the currently claimed task so we can
@@ -133,11 +146,14 @@ func run(cfg *Config) error {
 	if cfg.EpicFilter != "" {
 		log.Log("Config: epic_filter=%s", cfg.EpicFilter)
 	}
+	if cfg.Scope != "" {
+		log.Log("Config: scope=%s", cfg.Scope)
+	}
 	log.Log("Controls: i=interject, s=skip, q=quit, Ctrl+C=stop & exit")
 	fmt.Println()
 
 	for {
-		tasks, err := getReadyTasks(cfg.EpicFilter)
+		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.Scope)
 		if err != nil {
 			log.Log("%sError checking ready tasks: %v%s", cRed, err, cReset)
 			stats.Errors++
@@ -203,7 +219,7 @@ func run(cfg *Config) error {
 		tracker.set(next.ID)
 
 		stats.SessionsRun++
-		prompt := buildPrompt(effectiveBatchSize, cfg.EpicFilter, next)
+		prompt := buildPrompt(effectiveBatchSize, cfg.EpicFilter, cfg.Scope, next)
 
 		// Capture pre-task HEAD for post-task review diffing.
 		preSHA, _ := headSHA()
@@ -334,7 +350,7 @@ func run(cfg *Config) error {
 				if diffErr != nil {
 					log.Log("%sPost-task review: diff error: %v%s", cYellow, diffErr, cReset)
 				} else if strings.TrimSpace(diff) != "" {
-					reviewPrompt := buildPostTaskReviewPrompt(diff, next.ID, next.Title)
+					reviewPrompt := buildPostTaskReviewPrompt(diff, next.ID, next.Title, cfg.Scope)
 					reviewCfg := &Config{
 						MaxTurns: 30,
 						Yolo:     cfg.Yolo,

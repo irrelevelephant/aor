@@ -42,9 +42,14 @@ func resolveLogDir() string {
 	return filepath.Join(home, ".beads", "runner-logs")
 }
 
-// getReadyTasks fetches unblocked tasks from beads, optionally filtered by epic prefix.
-func getReadyTasks(epicFilter string) ([]BeadTask, error) {
-	out, err := exec.Command("bd", "ready", "--json").Output()
+// getReadyTasks fetches unblocked tasks from beads, optionally filtered by epic prefix
+// and scope label.
+func getReadyTasks(epicFilter, scope string) ([]BeadTask, error) {
+	args := []string{"ready", "--json"}
+	if scope != "" {
+		args = append(args, "--label", scope)
+	}
+	out, err := exec.Command("bd", args...).Output()
 	if err != nil && len(out) == 0 {
 		return nil, fmt.Errorf("bd ready failed: %w", err)
 	}

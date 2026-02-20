@@ -7,8 +7,16 @@ import (
 
 const maxInlineDiffChars = 50000
 
+// bdAddCmd returns the bd add command template, including --labels if scope is set.
+func bdAddCmd(scope string) string {
+	if scope != "" {
+		return fmt.Sprintf("`bd add --title \"<title>\" --priority <1-5> --type <bug|style|perf|security|logic|error-handling> --labels \"%s\" --json`", scope)
+	}
+	return "`bd add --title \"<title>\" --priority <1-5> --type <bug|style|perf|security|logic|error-handling> --json`"
+}
+
 // buildReviewPrompt constructs the prompt for a code review session.
-func buildReviewPrompt(diff, base string, round int, priorBeads []ReviewBead) string {
+func buildReviewPrompt(diff, base string, round int, priorBeads []ReviewBead, scope string) string {
 	var b strings.Builder
 
 	// Role.
@@ -57,7 +65,7 @@ For each issue you find:
 2. **Large issues or pre-existing issues** (not introduced in this diff): File a bead only. Do NOT attempt to fix these.
 
 Use ` + "`bd`" + ` to file beads:
-- ` + "`bd add --title \"<title>\" --priority <1-5> --type <bug|style|perf|security|logic|error-handling> --json`" + `
+- ` + bdAddCmd(scope) + `
 - After fixing, close with: ` + "`bd update <id> --close --reason \"<what you did>\" --json`" + `
 
 ## Review focus (in priority order)
@@ -101,7 +109,7 @@ Start your review now.
 // buildPostTaskReviewPrompt constructs the prompt for a post-task review sub-agent.
 // It reviews the diff produced by a single completed task, using the 8-dimension
 // review criteria adapted from the review-changes skill.
-func buildPostTaskReviewPrompt(diff, taskID, taskTitle string) string {
+func buildPostTaskReviewPrompt(diff, taskID, taskTitle, scope string) string {
 	var b strings.Builder
 
 	// Role.
@@ -181,7 +189,7 @@ For each issue you find:
 2. **Large issues or pre-existing issues** (not introduced in this diff): File a bead only. Do NOT attempt to fix these.
 
 Use ` + "`bd`" + ` to file beads:
-- ` + "`bd add --title \"<title>\" --priority <1-5> --type <bug|style|perf|security|logic|error-handling> --json`" + `
+- ` + bdAddCmd(scope) + `
 - After fixing, close with: ` + "`bd update <id> --close --reason \"<what you did>\" --json`" + `
 
 Important: Do NOT commit or push .beads/ files (stealth mode).

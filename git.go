@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -77,6 +78,32 @@ func diffBetween(fromSHA, toSHA string) (string, error) {
 		return "", fmt.Errorf("git diff %s..%s: %w", fromSHA, toSHA, err)
 	}
 	return string(out), nil
+}
+
+// detectWorktreeScope returns the worktree name if running inside a linked
+// git worktree. Returns "" when in the main worktree or outside a git repo.
+func detectWorktreeScope() string {
+	gitDir, err := exec.Command("git", "rev-parse", "--git-dir").Output()
+	if err != nil {
+		return ""
+	}
+	commonDir, err := exec.Command("git", "rev-parse", "--git-common-dir").Output()
+	if err != nil {
+		return ""
+	}
+	return worktreeName(strings.TrimSpace(string(gitDir)), strings.TrimSpace(string(commonDir)))
+}
+
+// worktreeName returns the worktree name given git-dir and git-common-dir paths.
+// Returns "" when they resolve to the same directory (main worktree).
+func worktreeName(gitDir, commonDir string) string {
+	gd := filepath.Clean(gitDir)
+	cd := filepath.Clean(commonDir)
+	if gd == cd {
+		return ""
+	}
+	// Linked worktree: git-dir is like <main>/.git/worktrees/<name>
+	return filepath.Base(gd)
 }
 
 // hasUncommittedChanges returns true if the working tree has uncommitted changes.
