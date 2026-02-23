@@ -75,10 +75,16 @@ func getReadyTasks(epicFilter, scope string) ([]BeadTask, error) {
 }
 
 // claimTask marks a task as in_progress and assigned to the current runner.
+// NOTE: We avoid bd's --claim flag because it has a deadlock bug in embedded
+// Dolt mode (uses s.db instead of tx for a fallback query when the issue is
+// already assigned, blocking on the single-connection pool). Instead we set
+// status and assignee directly, which is safe since aor is the sole claimer.
 func claimTask(id string) error {
-	out, err := exec.Command("bd", "update", id, "--claim", "--json").CombinedOutput()
+	out, err := exec.Command("bd", "update", id,
+		"--status", "in_progress",
+		"--json").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("bd update --claim failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("bd update (claim) failed: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
