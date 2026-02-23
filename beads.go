@@ -173,6 +173,39 @@ func reconcileScope(scope string, startTime time.Time, log *Logger) int {
 	return fixed
 }
 
+// addComment adds a comment to a bead.
+func addComment(id, body string) error {
+	out, err := exec.Command("bd", "comments", "add", id, body).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("bd comments add %s: %w (%s)", id, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// getTaskComments retrieves all comments for a task as a single string.
+func getTaskComments(id string) (string, error) {
+	out, err := exec.Command("bd", "comments", "list", id).Output()
+	if err != nil {
+		return "", fmt.Errorf("bd comments list %s: %w", id, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// getBeadsCreatedAfter returns beads created after the given time.
+func getBeadsCreatedAfter(after time.Time) ([]BeadTask, error) {
+	out, err := exec.Command("bd", "list",
+		"--created-after", after.Format(time.RFC3339),
+		"--json", "--limit", "0").Output()
+	if err != nil {
+		return nil, fmt.Errorf("bd list --created-after: %w", err)
+	}
+	var tasks []BeadTask
+	if err := json.Unmarshal(out, &tasks); err != nil {
+		return nil, fmt.Errorf("parse bd list output: %w", err)
+	}
+	return tasks, nil
+}
+
 // topTask returns the highest-priority task (lowest priority number),
 // breaking ties by earliest creation date. CreatedAt is compared
 // lexicographically, so it must be in a sortable format (e.g. ISO 8601).

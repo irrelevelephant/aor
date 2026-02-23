@@ -213,7 +213,11 @@ func run(cfg *Config) error {
 
 	stdinCh := startStdinReader()
 	stats := &RunStats{StartedAt: time.Now()}
-	failedIDs := map[string]int{} // track tasks that failed detection to prevent infinite retry
+	type taskHistory struct {
+		NoProgressCount int
+	}
+	failHistory := map[string]*taskHistory{}
+	alreadySkipped := map[string]bool{}
 	effectiveBatchSize := cfg.BatchSize
 
 	log.Log("Agent orchestration runner started (stealth mode)")
@@ -251,20 +255,34 @@ func run(cfg *Config) error {
 		}
 
 		log.Log("Ready queue: %d task(s) available", len(tasks))
-		next := topTask(tasks)
+
+		// Filter out tasks that have been triaged as stuck (repeated no-progress).
+		var eligible []BeadTask
+		for _, t := range tasks {
+			if h := failHistory[t.ID]; h != nil && h.NoProgressCount >= 2 {
+				if !alreadySkipped[t.ID] {
+					log.Log("%sSkipping %s — %d zero-progress attempts, likely stuck%s",
+						cYellow, t.ID, h.NoProgressCount, cReset)
+					stats.TriageSkipped++
+					alreadySkipped[t.ID] = true
+				}
+				continue
+			}
+			eligible = append(eligible, t)
+		}
+		if len(eligible) == 0 {
+			log.Log("%sAll %d ready task(s) are stuck (repeated no-progress). Stopping.%s",
+				cYellow, len(tasks), cReset)
+			break
+		}
+
+		next := topTask(eligible)
 		if next == nil {
 			break
 		}
 
 		log.Log("Next: %s%s%s — %s (P%d, %s)",
 			cBold, next.ID, cReset, next.Title, next.Priority, next.Type)
-
-		if failedIDs[next.ID] >= 2 {
-			log.Log("%sSkipping %s — failed %d times, likely already resolved or stuck%s",
-				cYellow, next.ID, failedIDs[next.ID], cReset)
-			stats.Errors++
-			break
-		}
 
 		if cfg.MaxTasks > 0 && stats.SessionsRun >= cfg.MaxTasks {
 			log.Log("Reached max tasks limit (%d). Stopping.", cfg.MaxTasks)
@@ -304,6 +322,12 @@ func run(cfg *Config) error {
 		tracker.set(next.ID)
 
 		stats.SessionsRun++
+
+		// Inject previous-attempt context so the next agent knows what happened.
+		if comments, err := getTaskComments(next.ID); err == nil && comments != "" {
+			next.Description += "\n\n## Previous Attempt Notes\n" + comments
+		}
+
 		prompt := buildPrompt(effectiveBatchSize, cfg.MaxTurns, cfg.EpicFilter, cfg.Scope, next)
 
 		// Capture pre-task HEAD for post-task review diffing.
@@ -342,6 +366,7 @@ func run(cfg *Config) error {
 		// Determine whether the claimed task was completed by the agent.
 		shouldUnclaim := false
 		decomposed := false
+		var lastTriageOutcome *TriageOutcome
 		if result.Error != nil {
 			log.Log("%sSession error: %v%s", cRed, result.Error, cReset)
 			stats.Errors++
@@ -422,18 +447,58 @@ func run(cfg *Config) error {
 							Completed: []string{next.ID},
 						}
 					} else {
-						log.Log("%sWrap-up session did not produce structured status either.%s", cYellow, cReset)
-						shouldUnclaim = true
+						// Wrap-up also failed — run triage on combined evidence.
+						log.Log("Wrap-up produced no status — running triage for %s", next.ID)
+						ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg.MaxTurns)
+						tr := runTriage(ev, cfg, log, stdinCh)
+						if tr.AgentSpawned {
+							stats.TriageSessions++
+							stats.TotalCostUSD += tr.TotalCostUSD
+							stats.TotalInput += tr.InputTokens
+							stats.TotalOutput += tr.OutputTokens
+							stats.TotalTurns += tr.NumTurns
+						}
+						lastTriageOutcome = &tr.Outcome
+						if tr.Outcome == TriageComplete {
+							log.Log("Triage: task %s confirmed complete after wrap-up", next.ID)
+							result.Status = &RunnerStatus{Completed: []string{next.ID}}
+						} else {
+							if tr.Outcome == TriagePartial && tr.Comment != "" {
+								if err := addComment(next.ID, tr.Comment); err != nil {
+									log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
+								}
+							}
+							shouldUnclaim = true
+						}
 					}
 				}
-			} else if result.NumTurns > 0 && result.NumTurns >= cfg.MaxTurns {
-				log.Log("%sWARNING: Session used all %d turns without completing (no session ID for wrap-up).%s",
-					cYellow, cfg.MaxTurns, cReset)
-				shouldUnclaim = true
 			} else {
-				log.Log("%sWARNING: No structured status from agent and task not closed. Check session log.%s",
-					cYellow, cReset)
-				shouldUnclaim = true
+				// No sentinel, task not closed, no session ID for wrap-up (or
+				// max turns hit without session ID). Run triage.
+				log.Log("No structured status — running post-session triage for %s", next.ID)
+				ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg.MaxTurns)
+				tr := runTriage(ev, cfg, log, stdinCh)
+				if tr.AgentSpawned {
+					stats.TriageSessions++
+					stats.TotalCostUSD += tr.TotalCostUSD
+					stats.TotalInput += tr.InputTokens
+					stats.TotalOutput += tr.OutputTokens
+					stats.TotalTurns += tr.NumTurns
+				}
+				lastTriageOutcome = &tr.Outcome
+				if tr.Outcome == TriageComplete {
+					log.Log("Triage: task %s confirmed complete", next.ID)
+					result.Status = &RunnerStatus{Completed: []string{next.ID}}
+				} else {
+					if tr.Outcome == TriagePartial && tr.Comment != "" {
+						if err := addComment(next.ID, tr.Comment); err != nil {
+							log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
+						} else {
+							log.Log("Added triage comment to %s", next.ID)
+						}
+					}
+					shouldUnclaim = true
+				}
 			}
 		} else {
 			// Check for task decomposition first.
@@ -469,7 +534,18 @@ func run(cfg *Config) error {
 				stats.TasksCompleted++
 			} else {
 				if !decomposed {
-					failedIDs[next.ID]++
+					// Track failures by triage outcome for skip logic.
+					if lastTriageOutcome != nil && *lastTriageOutcome == TriageNoProgress {
+						h := failHistory[next.ID]
+						if h == nil {
+							h = &taskHistory{}
+							failHistory[next.ID] = h
+						}
+						h.NoProgressCount++
+					} else if lastTriageOutcome != nil && *lastTriageOutcome == TriagePartial {
+						// Progress was made — reset the no-progress counter.
+						delete(failHistory, next.ID)
+					}
 				}
 				reason := "not completed by agent"
 				if decomposed {
@@ -634,6 +710,12 @@ func printSummary(log *Logger, stats *RunStats) {
 	log.Log("  Errors:            %d", stats.Errors)
 	if stats.WrapUpSessions > 0 {
 		log.Log("  Wrap-up sessions:  %d", stats.WrapUpSessions)
+	}
+	if stats.TriageSessions > 0 {
+		log.Log("  Triage sessions:   %d", stats.TriageSessions)
+	}
+	if stats.TriageSkipped > 0 {
+		log.Log("  %sTriage skipped:   %d%s", cYellow, stats.TriageSkipped, cReset)
 	}
 	if stats.ReviewSessions > 0 {
 		log.Log("  Review sessions:   %d", stats.ReviewSessions)

@@ -115,6 +115,38 @@ func hasUncommittedChanges() bool {
 	return len(strings.TrimSpace(string(out))) > 0
 }
 
+// commitsBetween returns git log --oneline from..to.
+func commitsBetween(from, to string) (string, error) {
+	out, err := exec.Command("git", "log", "--oneline", from+".."+to).Output()
+	if err != nil {
+		return "", fmt.Errorf("git log %s..%s: %w", from, to, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// diffStatBetween returns git diff --stat from..to.
+func diffStatBetween(from, to string) (string, error) {
+	out, err := exec.Command("git", "diff", "--stat", from+".."+to).Output()
+	if err != nil {
+		return "", fmt.Errorf("git diff --stat %s..%s: %w", from, to, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// commitCountBetween returns the number of commits between two SHAs.
+func commitCountBetween(from, to string) (int, error) {
+	out, err := exec.Command("git", "rev-list", "--count", from+".."+to).Output()
+	if err != nil {
+		return 0, fmt.Errorf("git rev-list --count %s..%s: %w", from, to, err)
+	}
+	s := strings.TrimSpace(string(out))
+	var count int
+	if _, err := fmt.Sscanf(s, "%d", &count); err != nil {
+		return 0, fmt.Errorf("parse count %q: %w", s, err)
+	}
+	return count, nil
+}
+
 // headSHA returns the current HEAD commit SHA.
 func headSHA() (string, error) {
 	out, err := exec.Command("git", "rev-parse", "HEAD").Output()

@@ -93,6 +93,8 @@ type RunStats struct {
 	ReviewBeadsFromPost int
 	ReviewFixesApplied  int
 	MaxTurnsHitCount    int
+	TriageSessions      int
+	TriageSkipped       int
 	ScopeReconciled     int
 	StartedAt           time.Time
 	TotalCostUSD        float64
@@ -134,6 +136,54 @@ type ReviewRound struct {
 	Status     *ReviewStatus
 	BeadsFiled []ReviewBead
 	HeadSHA    string
+}
+
+// TriageEvidence holds signals collected after a session for post-session triage.
+type TriageEvidence struct {
+	TaskID         string
+	TaskTitle      string
+	PreSHA         string
+	PostSHA        string
+	CommitCount    int
+	CommitSummary  string // git log --oneline
+	DiffStats      string // git diff --stat
+	HasUncommitted bool
+	BeadsCreated   []BeadTask // beads created during session
+	TaskStatus     string     // from bd show
+	NumTurns       int
+	MaxTurns       int
+	SessionID      string
+	HadError       bool
+}
+
+// TriageOutcome represents the triage decision for a session without structured output.
+type TriageOutcome int
+
+const (
+	TriageComplete   TriageOutcome = iota // heuristic-only: bd show confirms closed
+	TriagePartial                         // commits/beads exist, add context comment
+	TriageNoProgress                      // nothing happened
+	TriageNeedsAgent                      // ambiguous, spawn Layer 2
+)
+
+// TriageResult holds the outcome from triage (heuristic or agent).
+type TriageResult struct {
+	Outcome      TriageOutcome
+	Reason       string
+	Comment      string
+	AgentSpawned bool // true if Layer 2 triage agent was used
+	// Cost fields from the triage agent session (zero if heuristic-only).
+	TotalCostUSD float64
+	InputTokens  int
+	OutputTokens int
+	NumTurns     int
+}
+
+// TriageStatus is the structured output from a triage agent session.
+type TriageStatus struct {
+	Outcome string  `json:"outcome"`
+	Comment string  `json:"comment"`
+	Error   *string `json:"error"`
 }
 
 // ReviewStats tracks cumulative stats for the review run.
