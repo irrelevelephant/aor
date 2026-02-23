@@ -7,13 +7,14 @@ import (
 
 // BeadTask represents a task from bd ready --json.
 type BeadTask struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Priority    int    `json:"priority"`
-	Status      string `json:"status"`
-	Type        string `json:"type"`
-	Description string `json:"description,omitempty"`
-	CreatedAt   string `json:"created_at,omitempty"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Priority    int      `json:"priority"`
+	Status      string   `json:"status"`
+	Type        string   `json:"type"`
+	Description string   `json:"description,omitempty"`
+	CreatedAt   string   `json:"created_at,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
 }
 
 // RunnerStatus is the structured output expected from Claude Code at the end of a session.
@@ -52,10 +53,10 @@ type ClaudeStreamMsg struct {
 // ContentBlock is a block within a Claude stream message.
 // It can represent text, tool_use, or tool_result content.
 type ContentBlock struct {
-	Type  string `json:"type"`
-	Text  string `json:"text,omitempty"`
-	Name  string `json:"name,omitempty"`  // tool_use: tool name
-	ID    string `json:"id,omitempty"`    // tool_use: call ID
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	Name  string          `json:"name,omitempty"`  // tool_use: tool name
+	ID    string          `json:"id,omitempty"`    // tool_use: call ID
 	Input json.RawMessage `json:"input,omitempty"` // tool_use: tool input
 }
 
@@ -92,6 +93,7 @@ type RunStats struct {
 	ReviewBeadsFromPost int
 	ReviewFixesApplied  int
 	MaxTurnsHitCount    int
+	ScopeReconciled     int
 	StartedAt           time.Time
 	TotalCostUSD        float64
 	TotalInput          int
@@ -136,10 +138,11 @@ type ReviewRound struct {
 
 // ReviewStats tracks cumulative stats for the review run.
 type ReviewStats struct {
-	RoundsRun  int
-	TotalBeads int
-	TotalFixes int
-	StopReason  string
-	CommitSweep bool
-	StartedAt   time.Time
+	RoundsRun       int
+	TotalBeads      int
+	TotalFixes      int
+	ScopeReconciled int
+	StopReason      string
+	CommitSweep     bool
+	StartedAt       time.Time
 }

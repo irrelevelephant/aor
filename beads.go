@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // findBeadsDB verifies that the bd CLI can find a beads database,
@@ -117,6 +118,53 @@ func countUnscopedReadyTasks() int {
 		return 0
 	}
 	return len(tasks)
+}
+
+// reconcileScope finds issues created during the session that lack the scope
+// label and applies it. Returns the number of issues fixed.
+func reconcileScope(scope string, startTime time.Time, log *Logger) int {
+	if scope == "" {
+		return 0
+	}
+
+	out, err := exec.Command("bd", "list",
+		"--created-after", startTime.Format(time.RFC3339),
+		"--json", "--limit", "0").Output()
+	if err != nil {
+		log.Log("%sScope reconciliation: bd list --created-after failed: %v%s", cYellow, err, cReset)
+		return 0
+	}
+
+	var tasks []BeadTask
+	if err := json.Unmarshal(out, &tasks); err != nil {
+		log.Log("%sScope reconciliation: parse error: %v%s", cYellow, err, cReset)
+		return 0
+	}
+
+	fixed := 0
+	for _, t := range tasks {
+		hasScope := false
+		for _, l := range t.Labels {
+			if l == scope {
+				hasScope = true
+				break
+			}
+		}
+		if hasScope {
+			continue
+		}
+
+		labelOut, labelErr := exec.Command("bd", "label", "add", t.ID, scope).CombinedOutput()
+		if labelErr != nil {
+			log.Log("%sScope reconciliation: failed to label %s: %v (%s)%s",
+				cYellow, t.ID, labelErr, strings.TrimSpace(string(labelOut)), cReset)
+			continue
+		}
+		log.Log("Scope reconciliation: labeled %s with %q", t.ID, scope)
+		fixed++
+	}
+
+	return fixed
 }
 
 // topTask returns the highest-priority task (lowest priority number),

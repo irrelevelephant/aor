@@ -76,8 +76,12 @@ func runRev(args []string) error {
 		fmt.Printf("\n%s─── Review round %d/%d ──────────────────────────────────%s\n\n",
 			cBlue, round, cfg.MaxRounds, cReset)
 
+		roundStart := time.Now()
 		result := runSession(sessionCfg, log, prompt, stdinCh)
 		stats.RoundsRun = round
+
+		// Reconcile scope labels for beads created during this review round.
+		stats.ScopeReconciled += reconcileScope(cfg.Scope, roundStart, log)
 
 		if result.Error != nil {
 			log.Log("%sSession error: %v%s", cRed, result.Error, cReset)
@@ -144,7 +148,9 @@ func runRev(args []string) error {
 			Yolo:     sessionCfg.Yolo,
 			LogDir:   sessionCfg.LogDir,
 		}
+		sweepStart := time.Now()
 		sweepResult := runSession(sweepCfg, log, commitPrompt, stdinCh)
+		stats.ScopeReconciled += reconcileScope(cfg.Scope, sweepStart, log)
 		if sweepResult.Error != nil {
 			log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
 		} else {
@@ -312,6 +318,9 @@ func printReviewSummary(log *Logger, stats *ReviewStats) {
 	log.Log("  Beads filed:       %s%d%s", colorForBeadCount(stats.TotalBeads), stats.TotalBeads, cReset)
 	log.Log("  Fixes applied:     %s%d%s", cGreen, stats.TotalFixes, cReset)
 	log.Log("  Stop reason:       %s", stats.StopReason)
+	if stats.ScopeReconciled > 0 {
+		log.Log("  %sScope reconciled: %d%s", cYellow, stats.ScopeReconciled, cReset)
+	}
 	if stats.CommitSweep {
 		log.Log("  Commit sweep:      %syes%s", cGreen, cReset)
 	}

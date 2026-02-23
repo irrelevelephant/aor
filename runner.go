@@ -50,6 +50,18 @@ For each additional task, claim it with bd update <id> --claim --json before wor
 You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSize)
 	}
 
+	// Build scope-aware instructions for discovered issues and decomposition.
+	discoveredInstruction := "2. File discovered-from beads for any new issues found outside current scope."
+	if scope != "" {
+		discoveredInstruction = fmt.Sprintf(`2. File discovered-from beads for any new issues found outside current scope.
+   Use: bd create --title "<issue>" --type <bug|task|enhancement> --labels "%s" --json`, scope)
+	}
+
+	decomposeCmd := `bd create --deps "blocks:<parent-id>" --title "Subtask: ..." --type task`
+	if scope != "" {
+		decomposeCmd += fmt.Sprintf(` --labels "%s"`, scope)
+	}
+
 	earlyExitTurn := maxTurns * 80 / 100
 	additionalTasks += fmt.Sprintf(`
 
@@ -63,7 +75,7 @@ Turn budget: You have %d turns for this session.
 
 For each task:
 1. Implement the work. Make atomic commits with descriptive messages (NO bead IDs in commits — stealth mode).
-2. File discovered-from beads for any new issues found outside current scope.
+%s
 3. Close the task with a descriptive reason.
 
 CRITICAL — After completing %d task(s) or if bd ready is empty, you MUST do this:
@@ -90,13 +102,13 @@ Context management:
 
 Task decomposition:
 - If a task is too complex for this session, break it into subtasks:
-  1. Create child beads: bd create --deps "blocks:<parent-id>" --title "Subtask: ..." --type task [--labels "<scope>"]
+  1. Create child beads: %s
   2. Commit any progress you've made so far.
   3. Output BEADS_RUNNER_STATUS with "decomposed_into": ["<child-ids>"] and "completed": [].
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
-Start now.`, scopeInstruction, scopeLabelInstruction, claimedInstruction, additionalTasks, batchSize)
+Start now.`, scopeInstruction, scopeLabelInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
 }
 
 // buildWrapUpPrompt constructs a focused prompt for resuming a session that
@@ -300,7 +312,11 @@ func run(cfg *Config) error {
 		fmt.Printf("\n%s─── Session %d ──────────────────────────────────────────%s\n\n",
 			cBlue, stats.SessionsRun, cReset)
 
+		sessionStart := time.Now()
 		result := runSession(cfg, log, prompt, stdinCh)
+
+		// Reconcile scope labels for any beads created during this session.
+		stats.ScopeReconciled += reconcileScope(cfg.Scope, sessionStart, log)
 
 		// Log session usage if available.
 		if result.InputTokens > 0 || result.OutputTokens > 0 {
@@ -355,8 +371,12 @@ func run(cfg *Config) error {
 				fmt.Printf("\n%s─── Wrap-up: %s ──────────────────────────────────────%s\n\n",
 					cYellow, next.ID, cReset)
 
+				wrapStart := time.Now()
 				wrapResult := runSession(wrapUpCfg, log, wrapUpPrompt, stdinCh)
 				stats.WrapUpSessions++
+
+				// Reconcile scope labels for beads created during wrap-up.
+				stats.ScopeReconciled += reconcileScope(cfg.Scope, wrapStart, log)
 
 				// Accumulate wrap-up costs.
 				if wrapResult.InputTokens > 0 || wrapResult.OutputTokens > 0 {
@@ -526,8 +546,12 @@ func run(cfg *Config) error {
 						cMagenta, next.ID, cReset)
 					log.Log("Launching post-task review for %s ...", next.ID)
 
+					reviewStart := time.Now()
 					reviewResult := runSession(reviewCfg, log, reviewPrompt, stdinCh)
 					stats.ReviewSessions++
+
+					// Reconcile scope labels for beads created during review.
+					stats.ScopeReconciled += reconcileScope(cfg.Scope, reviewStart, log)
 
 					// Accumulate review session costs.
 					if reviewResult.InputTokens > 0 || reviewResult.OutputTokens > 0 {
@@ -615,6 +639,9 @@ func printSummary(log *Logger, stats *RunStats) {
 		log.Log("  Review sessions:   %d", stats.ReviewSessions)
 		log.Log("  Review beads:      %d", stats.ReviewBeadsFromPost)
 		log.Log("  Review fixes:      %d", stats.ReviewFixesApplied)
+	}
+	if stats.ScopeReconciled > 0 {
+		log.Log("  %sScope reconciled: %d%s", cYellow, stats.ScopeReconciled, cReset)
 	}
 	if stats.TotalInput > 0 || stats.TotalOutput > 0 {
 		log.Log("  Tokens (in/out):   %s / %s", formatTokens(stats.TotalInput), formatTokens(stats.TotalOutput))
