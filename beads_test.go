@@ -28,21 +28,16 @@ func TestCheckScope_MissingLabel(t *testing.T) {
 }
 
 func TestCheckScope_EmptyLabels(t *testing.T) {
-	err := checkScope("claim", "T-1", "wt-abc", []string{})
-	if err == nil {
-		t.Fatal("expected error for empty labels slice")
-	}
-	if !errors.Is(err, ErrScopeViolation) {
-		t.Fatalf("expected ErrScopeViolation, got: %v", err)
+	// Empty labels = unknown (bd ready --json doesn't populate labels).
+	// Trust upstream filtering; do not reject.
+	if err := checkScope("claim", "T-1", "wt-abc", []string{}); err != nil {
+		t.Fatalf("empty labels should pass (unknown), got: %v", err)
 	}
 }
 
 func TestCheckScope_NilLabels(t *testing.T) {
-	err := checkScope("claim", "T-1", "wt-abc", nil)
-	if err == nil {
-		t.Fatal("expected error for nil labels")
-	}
-	if !errors.Is(err, ErrScopeViolation) {
-		t.Fatalf("expected ErrScopeViolation, got: %v", err)
+	// Nil labels = unknown; same as empty.
+	if err := checkScope("claim", "T-1", "wt-abc", nil); err != nil {
+		t.Fatalf("nil labels should pass (unknown), got: %v", err)
 	}
 }

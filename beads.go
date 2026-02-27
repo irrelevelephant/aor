@@ -15,10 +15,16 @@ import (
 var ErrScopeViolation = errors.New("scope violation")
 
 // checkScope verifies that a bead belongs to the active scope before mutating it.
-// Returns nil when scope is empty (no enforcement) or the scope label is present.
+// Returns nil when scope is empty (no enforcement), the scope label is present,
+// or labels are unknown (nil/empty) — since bd ready --json does not populate
+// labels, tasks fetched via --label filtering will have empty labels here.
+// The guard only rejects when labels are populated AND the scope label is absent.
 func checkScope(op, id, scope string, labels []string) error {
 	if scope == "" {
 		return nil
+	}
+	if len(labels) == 0 {
+		return nil // labels unknown — trust upstream filtering
 	}
 	for _, l := range labels {
 		if l == scope {
