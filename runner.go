@@ -464,7 +464,7 @@ func run(cfg *Config) error {
 							result.Status = &RunnerStatus{Completed: []string{next.ID}}
 						} else {
 							if tr.Outcome == TriagePartial && tr.Comment != "" {
-								if err := addComment(next.ID, tr.Comment, cfg.Scope, task.Labels); err != nil {
+								if err := addComment(next.ID, tr.Comment, cfg.Scope, next.Labels); err != nil {
 									log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
 								}
 							}
