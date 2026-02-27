@@ -205,7 +205,7 @@ func run(cfg *Config) error {
 		sig := <-exitSigCh
 		if id := tracker.get(); id != "" {
 			fmt.Fprintf(os.Stderr, "\n%s[aor] Caught %s — unclaiming %s before exit%s\n", cYellow, sig, id, cReset)
-			_ = unclaimTask(id)
+			_ = unclaimTask(id, "", nil)
 		}
 		os.Exit(1)
 	}()
@@ -314,7 +314,7 @@ func run(cfg *Config) error {
 
 		// Pre-claim the task before launching the session.
 		log.Log("Claiming %s ...", next.ID)
-		if err := claimTask(next.ID); err != nil {
+		if err := claimTask(next.ID, cfg.Scope, next.Labels); err != nil {
 			log.Log("%sFailed to claim %s: %v — skipping%s", cRed, next.ID, err, cReset)
 			stats.Errors++
 			continue
@@ -464,7 +464,7 @@ func run(cfg *Config) error {
 							result.Status = &RunnerStatus{Completed: []string{next.ID}}
 						} else {
 							if tr.Outcome == TriagePartial && tr.Comment != "" {
-								if err := addComment(next.ID, tr.Comment); err != nil {
+								if err := addComment(next.ID, tr.Comment, cfg.Scope, task.Labels); err != nil {
 									log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
 								}
 							}
@@ -491,7 +491,7 @@ func run(cfg *Config) error {
 					result.Status = &RunnerStatus{Completed: []string{next.ID}}
 				} else {
 					if tr.Outcome == TriagePartial && tr.Comment != "" {
-						if err := addComment(next.ID, tr.Comment); err != nil {
+						if err := addComment(next.ID, tr.Comment, cfg.Scope, next.Labels); err != nil {
 							log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
 						} else {
 							log.Log("Added triage comment to %s", next.ID)
@@ -552,7 +552,11 @@ func run(cfg *Config) error {
 					reason = "decomposed into subtasks"
 				}
 				log.Log("Unclaiming %s (%s)", next.ID, reason)
-				if err := unclaimTask(next.ID); err != nil {
+				unclaimLabels := next.Labels
+				if task != nil && len(task.Labels) > 0 {
+					unclaimLabels = task.Labels
+				}
+				if err := unclaimTask(next.ID, cfg.Scope, unclaimLabels); err != nil {
 					log.Log("%sFailed to unclaim %s: %v%s", cRed, next.ID, err, cReset)
 				}
 			}

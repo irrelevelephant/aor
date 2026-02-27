@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,23 @@ import (
 	"strings"
 	"time"
 )
+
+// ErrScopeViolation is returned when a mutation targets a bead outside the active scope.
+var ErrScopeViolation = errors.New("scope violation")
+
+// checkScope verifies that a bead belongs to the active scope before mutating it.
+// Returns nil when scope is empty (no enforcement) or the scope label is present.
+func checkScope(op, id, scope string, labels []string) error {
+	if scope == "" {
+		return nil
+	}
+	for _, l := range labels {
+		if l == scope {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s %s: label %q not found in %v: %w", op, id, scope, labels, ErrScopeViolation)
+}
 
 // findBeadsDB verifies that the bd CLI can find a beads database,
 // either project-local (.beads/) or global (~/.beads/).
@@ -79,7 +97,10 @@ func getReadyTasks(epicFilter, scope string) ([]BeadTask, error) {
 // Dolt mode (uses s.db instead of tx for a fallback query when the issue is
 // already assigned, blocking on the single-connection pool). Instead we set
 // status and assignee directly, which is safe since aor is the sole claimer.
-func claimTask(id string) error {
+func claimTask(id, scope string, labels []string) error {
+	if err := checkScope("claim", id, scope, labels); err != nil {
+		return err
+	}
 	out, err := exec.Command("bd", "update", id,
 		"--status", "in_progress",
 		"--json").CombinedOutput()
@@ -90,7 +111,11 @@ func claimTask(id string) error {
 }
 
 // unclaimTask resets a task back to open with no assignee.
-func unclaimTask(id string) error {
+// Pass empty scope and nil labels to bypass scope enforcement (e.g. signal-handler cleanup).
+func unclaimTask(id, scope string, labels []string) error {
+	if err := checkScope("unclaim", id, scope, labels); err != nil {
+		return err
+	}
 	out, err := exec.Command("bd", "update", id, "--status", "open", "--assignee", "", "--json").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bd update --unclaim failed: %w (%s)", err, strings.TrimSpace(string(out)))
@@ -174,7 +199,10 @@ func reconcileScope(scope string, startTime time.Time, log *Logger) int {
 }
 
 // addComment adds a comment to a bead.
-func addComment(id, body string) error {
+func addComment(id, body, scope string, labels []string) error {
+	if err := checkScope("comment", id, scope, labels); err != nil {
+		return err
+	}
 	out, err := exec.Command("bd", "comments", "add", id, body).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bd comments add %s: %w (%s)", id, err, strings.TrimSpace(string(out)))
