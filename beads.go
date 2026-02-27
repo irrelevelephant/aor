@@ -46,7 +46,7 @@ func resolveLogDir() string {
 // getReadyTasks fetches unblocked tasks from beads, optionally filtered by epic prefix
 // and scope label.
 func getReadyTasks(epicFilter, scope string) ([]BeadTask, error) {
-	args := []string{"ready", "--json"}
+	args := []string{"ready", "--json", "--limit", "0"}
 	if scope != "" {
 		args = append(args, "--label", scope)
 	}
@@ -115,7 +115,7 @@ func getTaskStatus(id string) (*BeadTask, error) {
 // countUnscopedReadyTasks returns the number of ready tasks globally (no label filter).
 // Used to detect scope mismatches when scoped queries return empty.
 func countUnscopedReadyTasks() int {
-	out, err := exec.Command("bd", "ready", "--json").Output()
+	out, err := exec.Command("bd", "ready", "--json", "--limit", "0").Output()
 	if err != nil {
 		return 0
 	}
