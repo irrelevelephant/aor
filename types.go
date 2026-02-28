@@ -96,11 +96,23 @@ type RunStats struct {
 	TriageSessions      int
 	TriageSkipped       int
 	ScopeReconciled     int
+	RecoveredTasks      int
+	EpicsClosed         int
 	StartedAt           time.Time
 	TotalCostUSD        float64
 	TotalInput          int
 	TotalOutput         int
 	TotalTurns          int
+}
+
+// LockInfo holds metadata written to a PID lock file when a task is claimed.
+// Used to detect and recover orphaned in_progress tasks after a crash.
+type LockInfo struct {
+	PID       int    `json:"pid"`
+	StartTime uint64 `json:"start_time"` // process start time from /proc (guards PID reuse)
+	Hostname  string `json:"hostname"`
+	Scope     string `json:"scope,omitempty"`
+	ClaimedAt string `json:"claimed_at"`
 }
 
 // ReviewConfig holds configuration for the rev subcommand.

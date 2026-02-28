@@ -201,11 +201,14 @@ func run(cfg *Config) error {
 	// can unclaim the in-flight task before exiting.
 	exitSigCh := make(chan os.Signal, 1)
 	signal.Notify(exitSigCh, syscall.SIGTERM, syscall.SIGHUP)
+	lockDir := resolveLockDir()
+
 	go func() {
 		sig := <-exitSigCh
 		if id := tracker.get(); id != "" {
 			fmt.Fprintf(os.Stderr, "\n%s[aor] Caught %s — unclaiming %s before exit%s\n", cYellow, sig, id, cReset)
 			_ = unclaimTask(id, "", nil)
+			_ = removeLockFile(lockDir, id)
 		}
 		os.Exit(1)
 	}()
@@ -233,6 +236,11 @@ func run(cfg *Config) error {
 	fmt.Println()
 
 	for {
+		// Recover any tasks orphaned by a previous crashed runner.
+		if n := recoverStuckTasks(lockDir, cfg.Scope, log); n > 0 {
+			stats.RecoveredTasks += n
+		}
+
 		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.Scope)
 		if err != nil {
 			log.Log("%sError checking ready tasks: %v%s", cRed, err, cReset)
@@ -320,6 +328,9 @@ func run(cfg *Config) error {
 			continue
 		}
 		tracker.set(next.ID)
+		if err := writeLockFile(lockDir, next.ID, cfg.Scope); err != nil {
+			log.Log("%sWarning: failed to write lock file for %s: %v%s", cYellow, next.ID, err, cReset)
+		}
 
 		stats.SessionsRun++
 
@@ -562,6 +573,7 @@ func run(cfg *Config) error {
 			}
 		}
 		tracker.clear()
+		removeLockFile(lockDir, next.ID)
 
 		if result.Status != nil {
 			s := result.Status
@@ -677,6 +689,16 @@ func run(cfg *Config) error {
 		time.Sleep(3 * time.Second)
 	}
 
+	// Auto-close any epics whose children are all complete.
+	if stats.TasksCompleted > 0 {
+		if closed, err := closeEligibleEpics(); err != nil {
+			log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
+		} else if len(closed) > 0 {
+			stats.EpicsClosed += len(closed)
+			log.Log("Auto-closed %d epic(s): %s", len(closed), strings.Join(closed, ", "))
+		}
+	}
+
 	printSummary(log, stats)
 	return nil
 }
@@ -710,6 +732,9 @@ func printSummary(log *Logger, stats *RunStats) {
 	if stats.Decomposed > 0 {
 		log.Log("  Decomposed:        %d", stats.Decomposed)
 	}
+	if stats.EpicsClosed > 0 {
+		log.Log("  Epics closed:      %s%d%s", cGreen, stats.EpicsClosed, cReset)
+	}
 	log.Log("  Sessions run:      %d", stats.SessionsRun)
 	log.Log("  Errors:            %d", stats.Errors)
 	if stats.WrapUpSessions > 0 {
@@ -725,6 +750,9 @@ func printSummary(log *Logger, stats *RunStats) {
 		log.Log("  Review sessions:   %d", stats.ReviewSessions)
 		log.Log("  Review beads:      %d", stats.ReviewBeadsFromPost)
 		log.Log("  Review fixes:      %d", stats.ReviewFixesApplied)
+	}
+	if stats.RecoveredTasks > 0 {
+		log.Log("  %sRecovered tasks:  %d%s", cYellow, stats.RecoveredTasks, cReset)
 	}
 	if stats.ScopeReconciled > 0 {
 		log.Log("  %sScope reconciled: %d%s", cYellow, stats.ScopeReconciled, cReset)

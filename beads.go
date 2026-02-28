@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -204,6 +206,29 @@ func reconcileScope(scope string, startTime time.Time, log *Logger) int {
 	return fixed
 }
 
+// closeEligibleEpics runs bd epic close-eligible to auto-close any epics
+// whose children are all complete. Returns the IDs of closed epics.
+func closeEligibleEpics() ([]string, error) {
+	out, err := exec.Command("bd", "epic", "close-eligible", "--json").Output()
+	if err != nil {
+		return nil, fmt.Errorf("bd epic close-eligible: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	var closed []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(out, &closed); err != nil {
+		return nil, fmt.Errorf("parse bd epic close-eligible output: %w", err)
+	}
+
+	var ids []string
+	for _, e := range closed {
+		ids = append(ids, e.ID)
+	}
+	return ids, nil
+}
+
 // addComment adds a comment to a bead.
 func addComment(id, body, scope string, labels []string) error {
 	if err := checkScope("comment", id, scope, labels); err != nil {
@@ -255,4 +280,192 @@ func topTask(tasks []BeadTask) *BeadTask {
 		}
 	}
 	return best
+}
+
+// --- PID lock file functions for stuck-task recovery ---
+
+// resolveLockDir determines where to write PID lock files. Mirrors resolveLogDir.
+func resolveLockDir() string {
+	if info, err := os.Stat(".beads"); err == nil && info.IsDir() {
+		return filepath.Join(".beads", "runner-locks")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".beads", "runner-locks")
+	}
+	return filepath.Join(home, ".beads", "runner-locks")
+}
+
+// writeLockFile atomically writes a PID lock file for the given task.
+func writeLockFile(lockDir, taskID, scope string) error {
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		return fmt.Errorf("create lock dir: %w", err)
+	}
+
+	hostname, _ := os.Hostname()
+	pid := os.Getpid()
+	startTime, _ := procStartTime(pid)
+
+	info := LockInfo{
+		PID:       pid,
+		StartTime: startTime,
+		Hostname:  hostname,
+		Scope:     scope,
+		ClaimedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	data, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("marshal lock info: %w", err)
+	}
+
+	// Atomic write: tmp file + rename.
+	tmp := filepath.Join(lockDir, taskID+".lock.tmp")
+	target := filepath.Join(lockDir, taskID+".lock")
+
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write tmp lock file: %w", err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename lock file: %w", err)
+	}
+	return nil
+}
+
+// removeLockFile removes the lock file for a task. No-op if absent.
+func removeLockFile(lockDir, taskID string) error {
+	path := filepath.Join(lockDir, taskID+".lock")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// readLockFile parses a lock file at the given path.
+func readLockFile(path string) (*LockInfo, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var info LockInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// procStartTime reads the process start time from /proc/<pid>/stat.
+// Returns 0 on any error (non-Linux, process gone, etc.).
+func procStartTime(pid int) (uint64, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, err
+	}
+	// Format: pid (comm) state ... field22=starttime
+	// The comm field can contain spaces and parens, so find the last ')'.
+	s := string(data)
+	idx := strings.LastIndex(s, ")")
+	if idx < 0 || idx+2 >= len(s) {
+		return 0, fmt.Errorf("cannot parse /proc/%d/stat", pid)
+	}
+	fields := strings.Fields(s[idx+2:])
+	// After ')' and state, starttime is field index 19 (0-based from after comm).
+	// Fields after ')': state(0) ppid(1) pgrp(2) session(3) tty_nr(4) tpgid(5)
+	// flags(6) minflt(7) cminflt(8) majflt(9) cmajflt(10) utime(11) stime(12)
+	// cutime(13) cstime(14) priority(15) nice(16) num_threads(17) itrealvalue(18) starttime(19)
+	if len(fields) < 20 {
+		return 0, fmt.Errorf("too few fields in /proc/%d/stat", pid)
+	}
+	st, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse starttime: %w", err)
+	}
+	return st, nil
+}
+
+// isProcessAlive checks whether a process with the given PID and start time
+// is still running. The start time comparison guards against PID reuse.
+func isProcessAlive(pid int, startTime uint64) bool {
+	// Check if process exists.
+	err := syscall.Kill(pid, 0)
+	if err != nil {
+		return false
+	}
+	// If we recorded a start time, verify it matches to guard PID reuse.
+	if startTime > 0 {
+		currentStart, err := procStartTime(pid)
+		if err != nil {
+			return false
+		}
+		if currentStart != startTime {
+			return false
+		}
+	}
+	return true
+}
+
+// recoverStuckTasks scans the lock directory for orphaned tasks (owner PID dead)
+// and unclaims them. Returns the number of tasks recovered.
+func recoverStuckTasks(lockDir, scope string, log *Logger) int {
+	entries, err := os.ReadDir(lockDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0
+		}
+		log.Log("%sStuck-task recovery: cannot read lock dir: %v%s", cYellow, err, cReset)
+		return 0
+	}
+
+	hostname, _ := os.Hostname()
+	recovered := 0
+
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".lock") {
+			continue
+		}
+
+		path := filepath.Join(lockDir, e.Name())
+		info, err := readLockFile(path)
+		if err != nil {
+			log.Log("%sStuck-task recovery: corrupt lock file %s: %v — removing%s", cYellow, e.Name(), err, cReset)
+			os.Remove(path)
+			continue
+		}
+
+		// Skip lock files from different hosts (shared-filesystem safety).
+		if info.Hostname != hostname {
+			continue
+		}
+
+		// Skip if the owning process is still alive.
+		if isProcessAlive(info.PID, info.StartTime) {
+			continue
+		}
+
+		taskID := strings.TrimSuffix(e.Name(), ".lock")
+
+		// Verify task is still in_progress before unclaiming.
+		task, ferr := getTaskStatus(taskID)
+		if ferr != nil {
+			log.Log("%sStuck-task recovery: cannot check %s: %v — removing stale lock%s", cYellow, taskID, ferr, cReset)
+			os.Remove(path)
+			continue
+		}
+		if task.Status != "in_progress" {
+			// Task was resolved by other means; remove stale lock.
+			os.Remove(path)
+			continue
+		}
+
+		log.Log("Stuck-task recovery: %s (PID %d dead) — unclaiming", taskID, info.PID)
+		if err := unclaimTask(taskID, "", nil); err != nil {
+			log.Log("%sStuck-task recovery: failed to unclaim %s: %v%s", cRed, taskID, err, cReset)
+			continue
+		}
+		os.Remove(path)
+		recovered++
+	}
+
+	return recovered
 }
