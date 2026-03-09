@@ -30,6 +30,7 @@ type Config struct {
 	DryRun          bool
 	Supervised      bool
 	Yolo            bool
+	Unclaim         bool
 	LogDir          string
 	Scope           string
 	ResumeSessionID string // set internally for wrap-up sessions
@@ -56,6 +57,7 @@ func main() {
 	flag.IntVar(&cfg.MaxTurns, "max-turns", 150, "Max agent turns per session")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
+	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to open and exit")
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
 	noScope := flag.Bool("no-scope", false, "Disable worktree scope auto-detection")
 
@@ -94,6 +96,14 @@ Flags:
 
 	if cfg.LogDir == "" {
 		cfg.LogDir = resolveLogDir()
+	}
+
+	if cfg.Unclaim {
+		if err := runUnclaim(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if err := run(cfg); err != nil {

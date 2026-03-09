@@ -469,3 +469,42 @@ func recoverStuckTasks(lockDir, scope string, log *Logger) int {
 
 	return recovered
 }
+
+// runUnclaim resets all in-progress tasks back to open and exits.
+// Respects scope filtering: auto-detected worktree scope, -scope flag, or -no-scope.
+func runUnclaim(cfg *Config) error {
+	args := []string{"list", "--status", "in_progress", "--json", "--limit", "0"}
+	if cfg.Scope != "" {
+		args = append(args, "--label", cfg.Scope)
+	}
+
+	out, err := exec.Command("bd", args...).Output()
+	if err != nil && len(out) == 0 {
+		return fmt.Errorf("bd list --status in_progress failed: %w", err)
+	}
+
+	var tasks []BeadTask
+	if err := json.Unmarshal(out, &tasks); err != nil {
+		return fmt.Errorf("parse bd list output: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	if len(tasks) == 0 {
+		fmt.Println("no in-progress tasks found")
+		return nil
+	}
+
+	lockDir := resolveLockDir()
+
+	for _, t := range tasks {
+		// Bypass scope enforcement — upstream --label already filtered.
+		if err := unclaimTask(t.ID, "", nil); err != nil {
+			fmt.Fprintf(os.Stderr, "%sfailed to unclaim %s: %v%s\n", cRed, t.ID, err, cReset)
+			continue
+		}
+		removeLockFile(lockDir, t.ID)
+		fmt.Printf("  unclaimed %s  %s\n", t.ID, t.Title)
+	}
+
+	fmt.Printf("\nunclaimed %d task(s)\n", len(tasks))
+	return nil
+}
