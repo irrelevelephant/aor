@@ -15,7 +15,6 @@ const (
 	cGreen      = "\033[32m"
 	cYellow     = "\033[33m"
 	cBlue       = "\033[34m"
-	cMagenta    = "\033[35m"
 	cCyan       = "\033[36m"
 	cGray       = "\033[90m"
 	cBgDarkRed  = "\033[48;5;52m"
@@ -31,7 +30,6 @@ type Config struct {
 	DryRun          bool
 	Supervised      bool
 	Yolo            bool
-	SkipReview      bool
 	LogDir          string
 	Scope           string
 	ResumeSessionID string // set internally for wrap-up sessions
@@ -58,8 +56,6 @@ func main() {
 	flag.IntVar(&cfg.MaxTurns, "max-turns", 150, "Max agent turns per session")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
-	flag.BoolVar(&cfg.SkipReview, "no-review", false, "Skip post-task review agent")
-
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
 	noScope := flag.Bool("no-scope", false, "Disable worktree scope auto-detection")
 

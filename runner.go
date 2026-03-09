@@ -51,9 +51,9 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	}
 
 	// Build scope-aware instructions for discovered issues and decomposition.
-	discoveredInstruction := "2. File discovered-from beads for any new issues found outside current scope."
+	discoveredInstruction := "5. File discovered-from beads for any new issues found outside current scope."
 	if scope != "" {
-		discoveredInstruction = fmt.Sprintf(`2. File discovered-from beads for any new issues found outside current scope.
+		discoveredInstruction = fmt.Sprintf(`5. File discovered-from beads for any new issues found outside current scope.
    Use: bd create --title "<issue>" --type <bug|task|enhancement> --labels "%s" --json`, scope)
 	}
 
@@ -74,9 +74,12 @@ Turn budget: You have %d turns for this session.
 %s%s%s%s
 
 For each task:
-1. Implement the work. Make atomic commits with descriptive messages (NO bead IDs in commits — stealth mode).
+1. Implement the work.
+2. Self-review: run git diff to inspect your changes. Look for correctness, bugs, security, error handling, performance, and code quality issues. Fix anything you find.
+3. Run /simplify to check for reuse, quality, and efficiency issues. Fix anything it finds.
+4. Make atomic commits with descriptive messages (NO bead IDs in commits — stealth mode).
 %s
-3. Close the task with a descriptive reason.
+6. Close the task with a descriptive reason.
 
 CRITICAL — After completing %d task(s) or if bd ready is empty, you MUST do this:
 1. Run bd sync.
@@ -132,22 +135,6 @@ You MUST wrap up immediately. Do NOT continue working on the task. You have 5 tu
    BEADS_RUNNER_STATUS:{"completed": ["<ids>"], "discovered": [], "review_beads": [], "decomposed_into": ["<child-ids-if-any>"], "remaining_ready": -1, "error": null}
 
 This is mandatory. The orchestrator cannot continue without it.`, taskID, taskTitle, taskID, taskID, scopeLabel)
-}
-
-// reviewTurnsForDiff returns an adaptive MaxTurns for post-task review
-// based on the number of lines in the diff.
-func reviewTurnsForDiff(diff string) int {
-	lines := strings.Count(diff, "\n")
-	switch {
-	case lines < 50:
-		return 10
-	case lines < 200:
-		return 15
-	case lines < 500:
-		return 25
-	default:
-		return 30
-	}
 }
 
 // claimTracker keeps track of the currently claimed task so we can
@@ -224,8 +211,8 @@ func run(cfg *Config) error {
 	effectiveBatchSize := cfg.BatchSize
 
 	log.Log("Agent orchestration runner started (stealth mode)")
-	log.Log("Config: batch_size=%d max_tasks=%d max_turns=%d yolo=%v skip_review=%v",
-		cfg.BatchSize, cfg.MaxTasks, cfg.MaxTurns, cfg.Yolo, cfg.SkipReview)
+	log.Log("Config: batch_size=%d max_tasks=%d max_turns=%d yolo=%v",
+		cfg.BatchSize, cfg.MaxTasks, cfg.MaxTurns, cfg.Yolo)
 	if cfg.EpicFilter != "" {
 		log.Log("Config: epic_filter=%s", cfg.EpicFilter)
 	}
@@ -618,64 +605,6 @@ func run(cfg *Config) error {
 			}
 		}
 
-		// Post-task review: launch independent review sub-agent.
-		if !cfg.SkipReview && !result.UserQuit && !result.UserSkipped &&
-			result.Status != nil && len(result.Status.Completed) > 0 {
-			postSHA, _ := headSHA()
-			if postSHA != preSHA {
-				diff, diffErr := diffBetween(preSHA, postSHA)
-				if diffErr != nil {
-					log.Log("%sPost-task review: diff error: %v%s", cYellow, diffErr, cReset)
-				} else if strings.TrimSpace(diff) != "" {
-					reviewPrompt := buildPostTaskReviewPrompt(diff, next.ID, next.Title, cfg.Scope)
-					reviewCfg := &Config{
-						MaxTurns: reviewTurnsForDiff(diff),
-						Yolo:     cfg.Yolo,
-						LogDir:   cfg.LogDir,
-					}
-
-					fmt.Printf("\n%s─── Review: %s ──────────────────────────────────────%s\n\n",
-						cMagenta, next.ID, cReset)
-					log.Log("Launching post-task review for %s ...", next.ID)
-
-					reviewStart := time.Now()
-					reviewResult := runSession(reviewCfg, log, reviewPrompt, stdinCh)
-					stats.ReviewSessions++
-
-					// Reconcile scope labels for beads created during review.
-					stats.ScopeReconciled += reconcileScope(cfg.Scope, reviewStart, log)
-
-					// Accumulate review session costs.
-					if reviewResult.InputTokens > 0 || reviewResult.OutputTokens > 0 {
-						log.Log("Review usage: %s input + %s output tokens, $%.4f, %d turns",
-							formatTokens(reviewResult.InputTokens), formatTokens(reviewResult.OutputTokens),
-							reviewResult.TotalCostUSD, reviewResult.NumTurns)
-						stats.TotalCostUSD += reviewResult.TotalCostUSD
-						stats.TotalInput += reviewResult.InputTokens
-						stats.TotalOutput += reviewResult.OutputTokens
-						stats.TotalTurns += reviewResult.NumTurns
-					}
-
-					// Parse REVIEW_STATUS sentinel.
-					reviewStatus := parseSentinelJSON[ReviewStatus](reviewResult.RawOutput, "REVIEW_STATUS:")
-					if reviewStatus != nil {
-						stats.ReviewBeadsFromPost += len(reviewStatus.BeadsFiled)
-						stats.ReviewFixesApplied += len(reviewStatus.FixesApplied)
-						log.Log("Post-task review: %d beads filed, %d fixes applied, severity=%s",
-							len(reviewStatus.BeadsFiled), len(reviewStatus.FixesApplied), reviewStatus.Severity)
-					} else if reviewResult.Error != nil {
-						log.Log("%sReview session error: %v%s", cRed, reviewResult.Error, cReset)
-					} else {
-						log.Log("%sWARNING: No structured status from review agent.%s", cYellow, cReset)
-					}
-
-					if reviewResult.UserQuit {
-						result.UserQuit = true
-					}
-				}
-			}
-		}
-
 		if result.UserQuit {
 			log.Log("Quitting at user request.")
 			break
@@ -745,11 +674,6 @@ func printSummary(log *Logger, stats *RunStats) {
 	}
 	if stats.TriageSkipped > 0 {
 		log.Log("  %sTriage skipped:   %d%s", cYellow, stats.TriageSkipped, cReset)
-	}
-	if stats.ReviewSessions > 0 {
-		log.Log("  Review sessions:   %d", stats.ReviewSessions)
-		log.Log("  Review beads:      %d", stats.ReviewBeadsFromPost)
-		log.Log("  Review fixes:      %d", stats.ReviewFixesApplied)
 	}
 	if stats.RecoveredTasks > 0 {
 		log.Log("  %sRecovered tasks:  %d%s", cYellow, stats.RecoveredTasks, cReset)

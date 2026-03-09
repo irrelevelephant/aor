@@ -89,9 +89,6 @@ type RunStats struct {
 	SessionsRun         int
 	WrapUpSessions      int
 	Errors              int
-	ReviewSessions      int
-	ReviewBeadsFromPost int
-	ReviewFixesApplied  int
 	MaxTurnsHitCount    int
 	TriageSessions      int
 	TriageSkipped       int
