@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -214,11 +215,17 @@ func closeEligibleEpics() ([]string, error) {
 		return nil, fmt.Errorf("bd epic close-eligible: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 
+	// bd returns [] when no epics are eligible, or {"closed":[...],"count":N} when some were closed.
+	trimmed := bytes.TrimSpace(out)
+	if len(trimmed) == 0 || string(trimmed) == "[]" || string(trimmed) == "null" {
+		return nil, nil
+	}
+
 	var result struct {
 		Closed []string `json:"closed"`
 		Count  int      `json:"count"`
 	}
-	if err := json.Unmarshal(out, &result); err != nil {
+	if err := json.Unmarshal(trimmed, &result); err != nil {
 		return nil, fmt.Errorf("parse bd epic close-eligible output: %w", err)
 	}
 
