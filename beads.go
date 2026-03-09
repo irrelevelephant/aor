@@ -214,19 +214,15 @@ func closeEligibleEpics() ([]string, error) {
 		return nil, fmt.Errorf("bd epic close-eligible: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 
-	var closed []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
+	var result struct {
+		Closed []string `json:"closed"`
+		Count  int      `json:"count"`
 	}
-	if err := json.Unmarshal(out, &closed); err != nil {
+	if err := json.Unmarshal(out, &result); err != nil {
 		return nil, fmt.Errorf("parse bd epic close-eligible output: %w", err)
 	}
 
-	var ids []string
-	for _, e := range closed {
-		ids = append(ids, e.ID)
-	}
-	return ids, nil
+	return result.Closed, nil
 }
 
 // addComment adds a comment to a bead.
