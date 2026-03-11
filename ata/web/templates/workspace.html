@@ -30,9 +30,7 @@
     </div>
 </form>
 
-<div class="columns"
-     hx-ext="sse"
-     sse-connect="/events?workspace={{.Path}}">
+<div class="columns" data-sse-workspace="{{.Path}}">
 
     <div class="column">
         <h2>Queue <span class="count">{{len .Queue}}</span></h2>

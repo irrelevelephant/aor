@@ -1,4 +1,16 @@
+// Update the count badges next to column headers based on actual task rows.
+function updateColumnCounts() {
+    document.querySelectorAll('.task-list').forEach(function(list) {
+        var count = list.querySelectorAll('.task-row').length;
+        var heading = list.parentElement.querySelector('h2 .count');
+        if (heading) heading.textContent = count;
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Suppress SSE reloads briefly after local actions to avoid self-triggered reloads.
+    var localActionUntil = 0;
+
     // Sortable.js on drag-to-reorder lists.
     // Queue and backlog share a group so tasks can be dragged between them.
     document.querySelectorAll('.sortable').forEach(function(el) {
@@ -14,14 +26,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (targetStatus) {
                     body += '&status=' + encodeURIComponent(targetStatus);
                 }
+                localActionUntil = Date.now() + 1000;
                 fetch('/reorder', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                     body: body
                 });
+                updateColumnCounts();
             }
         });
     });
+
+    // SSE: reload page when tasks change externally (e.g. CLI moves).
+    var sseEl = document.querySelector('[data-sse-workspace]');
+    if (sseEl) {
+        var ws = sseEl.getAttribute('data-sse-workspace');
+        var es = new EventSource('/events?workspace=' + encodeURIComponent(ws));
+        var reloadTimer = null;
+        ['task_created', 'task_updated', 'task_closed', 'task_reordered'].forEach(function(evt) {
+            es.addEventListener(evt, function() {
+                if (Date.now() < localActionUntil) return;
+                clearTimeout(reloadTimer);
+                reloadTimer = setTimeout(function() { window.location.reload(); }, 300);
+            });
+        });
+    }
 
     // Quick-add textarea: Enter to submit, Shift+Enter for newline.
     var quickAdd = document.querySelector('.quick-add-input');
