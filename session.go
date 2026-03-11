@@ -271,7 +271,7 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 	result.DurationMS = durationMS
 	mu.Unlock()
 
-	result.Status = parseSentinelJSON[RunnerStatus](result.RawOutput, "BEADS_RUNNER_STATUS:")
+	result.Status = parseSentinelJSON[RunnerStatus](result.RawOutput, "ATA_RUNNER_STATUS:")
 
 	// Ctrl+C should stop the entire runner, not just the current session.
 	if ctrlC.Load() {

@@ -58,10 +58,10 @@ func TestTriageHeuristic(t *testing.T) {
 			want: TriageNeedsAgent,
 		},
 		{
-			name: "beads created but no commits",
+			name: "tasks created but no commits",
 			evidence: TriageEvidence{
 				CommitCount:  0,
-				BeadsCreated: []BeadTask{{ID: "TSK-1", Title: "subtask"}},
+				TasksCreated: []AtaTask{{ID: "TSK-1", Title: "subtask"}},
 				NumTurns:     30,
 				MaxTurns:     100,
 			},
@@ -146,7 +146,7 @@ func TestBuildTriageComment(t *testing.T) {
 		CommitCount: 3,
 		CommitSummary: "abc1234 first commit\ndef5678 second commit\nghi9012 third commit",
 		DiffStats:   " file1.go | 10 +++\n file2.go | 5 --",
-		BeadsCreated: []BeadTask{
+		TasksCreated: []AtaTask{
 			{ID: "TSK-43", Title: "Subtask A"},
 		},
 	}
@@ -165,7 +165,7 @@ func TestBuildTriageComment(t *testing.T) {
 		"Commits: 3",
 		"abc1234 first commit",
 		"file1.go",
-		"Beads created: 1",
+		"Tasks created: 1",
 		"TSK-43: Subtask A",
 	} {
 		if !strings.Contains(comment, want) {

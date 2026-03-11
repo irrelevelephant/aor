@@ -1,8 +1,12 @@
-# AOR Architecture — How the Agent Orchestrator Calls Claude Code
+# Architecture
 
-## How it calls Claude Code
+## Overview
 
-The core is in `session.go:20-269` — the `runSession` function. It spawns Claude Code as a **child process** via `exec.Command`:
+aor is a **process-level orchestrator** — it never uses the Claude API directly. It shells out to the `claude` CLI in headless mode, reads structured JSON from stdout, renders a terminal UI, and coordinates task state through the `ata` CLI. The sentinel pattern (magic prefix + JSON) is the contract between the orchestrator and the inner Claude agent for passing structured results back.
+
+## How aor calls Claude Code
+
+The core is in `session.go` — the `runSession` function spawns Claude Code as a child process:
 
 ```go
 args := []string{
@@ -18,95 +22,197 @@ cmd := exec.Command("claude", args...)
 ```
 
 Key flags:
-- **`-p <prompt>`** — runs Claude in non-interactive (headless) mode with the prompt as the sole input
-- **`--output-format stream-json`** — Claude emits one JSON object per line on stdout instead of plain text
-- **`--dangerously-skip-permissions`** — (default on, `--no-yolo` to disable) lets the agent run tools without human approval
+- **`-p <prompt>`** — headless mode, prompt as sole input
+- **`--output-format stream-json`** — one JSON object per line on stdout
+- **`--dangerously-skip-permissions`** — (default on, `--no-yolo` to disable) skip tool approval prompts
 
-## Input: How prompts are constructed
+## Prompt Construction
 
-There are **three prompt builders**, each for a different mode:
+Three prompt builders, each for a different mode:
 
-1. **Task execution** (`runner.go:16-75`, `buildPrompt`) — Tells Claude it has a pre-claimed beads task to work on, instructs it to implement, commit, and close the task. Includes batch size (how many additional tasks to pick up) and scope labels.
+1. **Task execution** (`runner.go`, `buildPrompt`) — Tells Claude it has a pre-claimed task, instructs it to implement, commit, and close. Injects the epic spec when the task belongs to an epic. Includes workspace path and batch size for multi-task sessions.
 
-2. **Code review** (`review_prompt.go:11-105`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Used by `aor rev`.
+2. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Used by `aor rev`.
 
-3. **Post-task review** (`review_prompt.go:110-222`, `buildPostTaskReviewPrompt`) — After each completed task, a separate session reviews the diff across 8 dimensions (correctness, security, performance, etc.).
+3. **Post-task triage** (`triage.go`) — After each session, gathers evidence (commits, diff stats, task status) and either heuristically determines the outcome or spawns a triage agent to assess ambiguous results.
 
-All prompts end with a **sentinel instruction** — a required structured JSON line the agent must output as its final action so the orchestrator can parse results.
+All prompts end with a **sentinel instruction** — a required structured JSON line the agent must output as its final action.
 
-## Output: How results come back
+## Stream Processing
 
-### Stream processing (`session.go:111-157`)
-
-Claude's stdout is piped and read line-by-line. Each line is a `ClaudeStreamMsg` JSON object with a `type` field:
+Claude's stdout is piped and read line-by-line. Each line is a JSON object with a `type` field:
 
 | Type | What happens |
 |------|-------------|
-| `system` (subtype `init`) | Logs session init, captures `session_id` |
-| `assistant` | Text is printed bold; tool calls are rendered with a gutter (`│`) — Edit calls show syntax-highlighted diffs, Bash shows the command, etc. |
-| `user` | Tool results — suppressed to avoid noise |
-| `result` | Final message — captures token usage, cost, turn count, duration |
+| `system` (subtype `init`) | Captures `session_id` |
+| `assistant` | Text printed bold; tool calls rendered with gutter — Edit calls show syntax-highlighted diffs |
+| `user` | Tool results — suppressed to reduce noise |
+| `result` | Token usage, cost, turn count, duration |
 
-All raw JSON is also written to a per-session log file.
+All raw JSON is also written to a per-session log file in `~/.ata/runner-logs/`.
 
-### Sentinel parsing (`session.go:432-489`)
+## Sentinel Parsing
 
-After the session ends, `parseSentinelJSON` scans the raw output for a magic prefix like `BEADS_RUNNER_STATUS:` or `REVIEW_STATUS:` followed by JSON. It tries two strategies:
-1. Per-line scan (fast path)
-2. Concatenated text scan (handles streaming splits across messages)
-
-This gives the orchestrator structured data like:
-```json
-BEADS_RUNNER_STATUS:{"completed": ["T-42"], "discovered": ["T-99"], ...}
-```
-
-## The orchestration loop (`runner.go:104-413`)
+After a session ends, `parseSentinelJSON` scans the output for a magic prefix followed by JSON:
 
 ```
-┌─────────────────────────────────────────┐
-│  bd ready --json  →  get ready tasks    │
-│         ↓                               │
-│  topTask() → pick highest priority      │
-│         ↓                               │
-│  bd update <id> --claim  (pre-claim)    │
-│         ↓                               │
-│  buildPrompt() → construct instructions │
-│         ↓                               │
-│  runSession() → spawn `claude -p ...`   │
-│    ├── stream stdout (display + log)    │
-│    ├── monitor stdin (i/s/q controls)   │
-│    └── handle Ctrl+C signals            │
-│         ↓                               │
-│  parseSentinelJSON → extract status     │
-│         ↓                               │
-│  If completed: update stats             │
-│  If not: unclaim task, track failure    │
-│         ↓                               │
-│  Post-task review session (optional)    │
-│         ↓                               │
-│  Loop back to top (3s pause)            │
-└─────────────────────────────────────────┘
+ATA_RUNNER_STATUS:{"completed": ["f7q"], "discovered": ["x2k"], ...}
+REVIEW_STATUS:{"fixes_applied": [...], "severity": "minor", ...}
+TRIAGE_STATUS:{"outcome": "complete", "comment": "..."}
 ```
 
-## Interactive controls during a session
+Two scan strategies: per-line (fast path), then concatenated text (handles streaming splits across messages).
 
-A goroutine reads stdin via a shared channel (`startStdinReader`). While Claude is running:
+## The Orchestration Loop
 
-- **`i` + Enter** — Kills the headless session, then runs `claude --resume <session_id>` with full stdin/stdout/stderr attached, giving you an interactive terminal session. When you exit, the runner loop continues.
-- **`s` + Enter** — Kills the session, unclaims the task, moves to next.
-- **`q` + Enter** — Gracefully stops, finishes current session, exits.
-- **Ctrl+C** — Sends SIGINT to Claude. Double-press within 2s force-kills it.
+```
+┌──────────────────────────────────────────┐
+│  ata ready --json  →  get queue tasks    │
+│         ↓                                │
+│  topTask() → pick lowest sort_order      │
+│         ↓                                │
+│  ata claim <id>  (pre-claim with PID)    │
+│         ↓                                │
+│  buildPrompt() → inject spec, workspace  │
+│         ↓                                │
+│  runSession() → spawn `claude -p ...`    │
+│    ├── stream stdout (display + log)     │
+│    ├── monitor stdin (i/s/q controls)    │
+│    └── handle Ctrl+C signals             │
+│         ↓                                │
+│  parseSentinelJSON → extract status      │
+│         ↓                                │
+│  If completed: update stats, close task  │
+│  If not: triage → unclaim or comment     │
+│         ↓                                │
+│  ata epic-close-eligible → auto-close    │
+│         ↓                                │
+│  ata recover → reclaim dead-PID tasks    │
+│         ↓                                │
+│  Loop back to top (3s pause)             │
+└──────────────────────────────────────────┘
+```
 
-## The `aor rev` subcommand (`review.go`)
+### Stuck Task Recovery
 
-A separate iterative review loop:
+Tasks track the PID of the aor process that claimed them (`claimed_pid` column). On each loop iteration, `ata recover` checks for in-progress tasks whose PID is no longer alive (via `kill -0`) and resets them to queue.
+
+### Epic Auto-Close
+
+After each task completion, `ata epic-close-eligible` finds epics where all children are closed and closes them automatically.
+
+## Interactive Controls
+
+A goroutine reads stdin via a shared channel. While Claude is running:
+
+- **`i` + Enter** — Kill headless session, run `claude --resume <session_id>` interactively. On exit, the runner loop resumes.
+- **`s` + Enter** — Kill session, unclaim task, move to next.
+- **`q` + Enter** — Finish current session, then exit.
+- **Ctrl+C** — SIGINT to Claude. Double-press within 2s force-kills.
+
+## `aor rev` — Iterative Code Review
+
+A separate loop in `review.go`:
+
 1. Compute `git diff <base>...HEAD` + working tree changes
-2. Spawn a Claude session with the review prompt
+2. Spawn Claude session with review prompt
 3. Parse `REVIEW_STATUS:` sentinel
 4. Check convergence (no issues, all minor, repeating issues, HEAD cycling)
 5. Repeat up to `--max-rounds` (default 3)
-6. If uncommitted fixes remain, run a final "commit sweep" session
+6. If uncommitted fixes remain, run a final commit sweep session
 
-## Summary
+## ata — Task Management
 
-The entire system is a **process-level orchestrator** — it never uses the Claude API directly. It shells out to the `claude` CLI in headless mode (`-p` + `--output-format stream-json`), reads structured JSON from stdout line by line, renders a curated terminal UI (syntax-highlighted diffs, tool gutters), and coordinates task state through the `bd` CLI. The sentinel pattern (magic prefix + JSON) is the contract between the outer Go orchestrator and the inner Claude agent for passing structured results back.
+ata is a separate Go module (`aor/ata`) linked via `go.work`. It provides:
+
+- **SQLite storage** (`~/.ata/ata.db`, WAL mode) — no external services or sync
+- **CLI** — CRUD, claim/unclaim, epic management, dependencies, tags, workspace management, recovery, all with `--json` support
+- **Web UI** — htmx + SSE on `:4400` with drag-to-reorder, cross-list drag, inline editing, tag filter bar, dependency management, live updates
+- **Workspace scoping** — tasks are scoped by registered workspace path, with git worktree resolution
+
+### Data Model
+
+```sql
+-- Schema V1: Core tables
+tasks:      id (base36), title, body, status, sort_order, epic_id, workspace,
+            is_epic, spec, claimed_pid, claimed_at, closed_at, close_reason,
+            created_at, updated_at
+
+comments:   id, task_id, body, author (human|agent|system), created_at
+
+-- Schema V2: Workspace registration + worktree tracking
+workspaces: path (PK), created_at
+
+tasks += worktree (where agent is currently working, transient)
+tasks += created_in (where task was originally created, immutable)
+
+-- Schema V3: Workspace naming
+workspaces += name (short alias for cleaner URLs and CLI usage)
+
+-- Schema V4: Task dependencies
+task_deps:  task_id, depends_on (composite PK), created_at
+            CHECK (task_id != depends_on)  -- no self-deps
+
+-- Schema V5: Task tags
+task_tags:  task_id, tag (composite PK, COLLATE NOCASE), created_at
+            -- case-insensitive: "Bug" and "bug" are the same tag
+            -- no registry table: SELECT DISTINCT tag FROM task_tags is the source of truth
+            -- cascade-deleted when parent task is deleted
+```
+
+Task statuses: `backlog` → `queue` → `in_progress` → `closed`
+
+IDs are 3-char base36 random strings (e.g. `f7q`), escalating to 4+ chars on collision.
+
+### Tags
+
+Tags are free-form, case-insensitive labels stored in the `task_tags` join table (V5 migration). Any string is a valid tag — no registration step.
+
+Auto-coloring: the web UI assigns each tag a deterministic HSL color derived from an FNV-1a hash of the lowercased tag name. Same tag = same color everywhere.
+
+DB layer (`db/tags.go`): `AddTag` (INSERT OR IGNORE), `RemoveTag`, `GetTags` (single task), `GetTagsForTasks` (batch load via IN clause), `ListAllTags` (distinct tags, optional workspace filter).
+
+Filtering: `ListTasks` and `ReadyTasks` accept an optional `tag` parameter that adds `AND id IN (SELECT task_id FROM task_tags WHERE tag = ?)`. The web workspace handler derives the filter bar tags from `tagMap` when unfiltered, falling back to `ListAllTags` only when a tag filter is active (since `tagMap` reflects only the filtered subset).
+
+### Workspace Resolution
+
+When a command needs the current workspace, `detectWorkspace` in `cmd/util.go`:
+
+1. Gets `git rev-parse --show-toplevel`
+2. Checks if that path is a registered workspace → use it
+3. Runs `git worktree list --porcelain`, takes the main worktree path
+4. Checks if the main worktree is registered → use it
+5. Falls back to the git toplevel
+
+This ensures all worktrees of the same repo resolve to a single workspace.
+
+### Dependency System
+
+Dependencies are stored in the `task_deps` table (V4 migration). Cycle detection uses a recursive CTE in `AddDep`:
+
+```sql
+WITH RECURSIVE chain(id) AS (
+    SELECT ? -- start from the would-be depended-on task
+    UNION ALL
+    SELECT td.depends_on FROM task_deps td JOIN chain c ON c.id = td.task_id
+)
+SELECT 1 FROM chain WHERE id = ? -- check if we'd reach the task itself
+```
+
+Blocked tasks (those with unclosed blockers) are excluded from `ReadyTasks` and rejected by `ClaimTask`.
+
+### Web UI Architecture
+
+The web server (`web/server.go`) uses Go 1.22's `http.ServeMux` with path parameters. Templates are parsed per-page (each gets layout + partials + its own template) to avoid `"content"` block conflicts.
+
+Key patterns:
+- **htmx mutations** — POST handlers detect `HX-Request` header and respond with `HX-Redirect` or rendered partials
+- **SSE hub** — pub/sub broadcast for real-time updates; workspace-scoped event filtering
+- **SortableJS** — drag-to-reorder with `group` option for cross-list moves (queue ↔ backlog); sends target status + position
+- **Named workspace URLs** — workspaces with a name use `/w/{name}` routes; unnamed fall back to `/w?path=...`
+- **Tag filter bar** — workspace view renders all tags as clickable auto-colored pills; clicking filters all status columns by that tag
+- **Tag management** — task detail page has a tag editor with add/remove and `<datalist>` autocomplete from existing workspace tags
+
+### How aor uses ata
+
+aor shells out to the `ata` CLI binary (not a library import) via `ata.go`. This keeps the two modules loosely coupled — ata can be used standalone, and aor treats it as an external dependency in PATH.

@@ -1,0 +1,77 @@
+{{template "layout" .}}
+{{define "content"}}
+{{with .Epic}}
+<div class="epic-detail">
+    <a href="{{$.WorkspaceURL}}" class="back-link">&larr; {{if $.WorkspaceName}}{{$.WorkspaceName}}{{else}}{{.Workspace}}{{end}}</a>
+
+    <div class="task-header">
+        <span class="id-badge">{{.ID}}</span>
+        <h1>{{.Title}}</h1>
+        <span class="badge epic-badge">epic</span>
+        <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
+    </div>
+
+    {{if $.Progress}}
+    <div class="progress-section">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <span class="progress-text">{{$.Progress.Closed}}/{{$.Progress.Total}} closed</span>
+        <script>
+            (function(){
+                var total = {{$.Progress.Total}}, closed = {{$.Progress.Closed}};
+                var pct = total > 0 ? (closed / total * 100) : 0;
+                document.getElementById('progress-fill').style.width = pct + '%';
+            })();
+        </script>
+    </div>
+    {{end}}
+
+    <div class="spec-section">
+        <h2>Spec</h2>
+        {{if .Spec}}
+        <div class="markdown-body spec-body">{{renderMarkdown .Spec}}</div>
+        {{else}}
+        <p class="empty">No spec defined.</p>
+        {{end}}
+        <details>
+            <summary>Edit spec</summary>
+            <form action="/epic/{{.ID}}/spec" method="POST">
+                <textarea name="spec" rows="12" class="spec-editor">{{.Spec}}</textarea>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+        </details>
+    </div>
+{{end}}
+
+    <div class="children-section">
+        <h2>Sub-tasks</h2>
+        {{if .Children}}
+        <div class="task-list">
+            {{range .Children}}
+            <div class="task-row" data-id="{{.ID}}" id="task-{{.ID}}">
+                <span class="id-badge">{{.ID}}</span>
+                <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
+                <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
+                {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
+                {{range index $.TagMap .ID}}<span class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</span>{{end}}
+            </div>
+            {{end}}
+        </div>
+        {{else}}
+        <p class="empty">No sub-tasks.</p>
+        {{end}}
+    </div>
+
+    {{if .Comments}}
+    <div class="comments-section">
+        <h2>Comments</h2>
+        <div class="comments-list">
+            {{range .Comments}}
+            {{template "comment.html" .}}
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}

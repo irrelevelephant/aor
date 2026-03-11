@@ -6,16 +6,16 @@ import (
 	"time"
 )
 
-// gatherTriageEvidence collects git and beads signals from the session.
+// gatherTriageEvidence collects git and task signals from the session.
 func gatherTriageEvidence(taskID, taskTitle, preSHA string,
-	sessionStart time.Time, result *SessionResult, maxTurns int) *TriageEvidence {
+	sessionStart time.Time, result *SessionResult, cfg *Config) *TriageEvidence {
 
 	ev := &TriageEvidence{
 		TaskID:    taskID,
 		TaskTitle: taskTitle,
 		PreSHA:    preSHA,
 		NumTurns:  result.NumTurns,
-		MaxTurns:  maxTurns,
+		MaxTurns:  cfg.MaxTurns,
 		SessionID: result.SessionID,
 		HadError:  result.Error != nil,
 	}
@@ -41,14 +41,14 @@ func gatherTriageEvidence(taskID, taskTitle, preSHA string,
 	// Uncommitted changes.
 	ev.HasUncommitted = hasUncommittedChanges()
 
-	// Task status from beads.
+	// Task status from ata.
 	if task, err := getTaskStatus(taskID); err == nil {
 		ev.TaskStatus = task.Status
 	}
 
-	// Beads created during session.
-	if beads, err := getBeadsCreatedAfter(sessionStart); err == nil {
-		ev.BeadsCreated = beads
+	// Tasks created during session.
+	if tasks, err := getTasksCreatedAfter(sessionStart, cfg.Workspace); err == nil {
+		ev.TasksCreated = tasks
 	}
 
 	return ev
@@ -61,26 +61,26 @@ func triageHeuristic(ev *TriageEvidence) *TriageResult {
 	if ev.TaskStatus == "closed" {
 		return &TriageResult{
 			Outcome: TriageComplete,
-			Reason:  "task already closed (bd show confirms)",
+			Reason:  "task already closed (ata show confirms)",
 		}
 	}
 
 	hasCommits := ev.CommitCount > 0
-	hasBeads := len(ev.BeadsCreated) > 0
+	hasTasks := len(ev.TasksCreated) > 0
 	turnRatio := float64(0)
 	if ev.MaxTurns > 0 {
 		turnRatio = float64(ev.NumTurns) / float64(ev.MaxTurns)
 	}
 
 	// No progress at all — nothing happened.
-	if !hasCommits && !hasBeads && !ev.HasUncommitted {
+	if !hasCommits && !hasTasks && !ev.HasUncommitted {
 		return &TriageResult{
 			Outcome: TriageNoProgress,
-			Reason:  "no commits, no beads created, no uncommitted changes",
+			Reason:  "no commits, no tasks created, no uncommitted changes",
 		}
 	}
 
-	// Commits exist, >50% turns used → agent made progress but ran out of budget.
+	// Commits exist, >50% turns used — agent made progress but ran out of budget.
 	if hasCommits && turnRatio > 0.5 {
 		return &TriageResult{
 			Outcome: TriagePartial,
@@ -88,7 +88,7 @@ func triageHeuristic(ev *TriageEvidence) *TriageResult {
 		}
 	}
 
-	// Commits exist, <50% turns, session had error → crashed mid-work.
+	// Commits exist, <50% turns, session had error — crashed mid-work.
 	if hasCommits && turnRatio <= 0.5 && ev.HadError {
 		return &TriageResult{
 			Outcome: TriagePartial,
@@ -96,15 +96,15 @@ func triageHeuristic(ev *TriageEvidence) *TriageResult {
 		}
 	}
 
-	// Beads created during session but no commits → planning happened, no code.
-	if hasBeads && !hasCommits {
+	// Tasks created during session but no commits — planning happened, no code.
+	if hasTasks && !hasCommits {
 		return &TriageResult{
 			Outcome: TriagePartial,
-			Reason:  fmt.Sprintf("%d beads created but no commits", len(ev.BeadsCreated)),
+			Reason:  fmt.Sprintf("%d tasks created but no commits", len(ev.TasksCreated)),
 		}
 	}
 
-	// Commits exist, low turn usage, no error → ambiguous. Needs agent to examine.
+	// Commits exist, low turn usage, no error — ambiguous. Needs agent to examine.
 	if hasCommits && turnRatio <= 0.5 && !ev.HadError {
 		return &TriageResult{
 			Outcome: TriageNeedsAgent,
@@ -113,21 +113,21 @@ func triageHeuristic(ev *TriageEvidence) *TriageResult {
 	}
 
 	// Fallback: uncommitted changes only.
-	if ev.HasUncommitted && !hasCommits && !hasBeads {
+	if ev.HasUncommitted && !hasCommits && !hasTasks {
 		return &TriageResult{
 			Outcome: TriagePartial,
-			Reason:  "uncommitted changes present but no commits or beads",
+			Reason:  "uncommitted changes present but no commits or tasks",
 		}
 	}
 
-	// Catch-all: if we get here, treat as partial.
+	// Catch-all.
 	return &TriageResult{
 		Outcome: TriagePartial,
 		Reason:  "unhandled evidence combination — treating as partial",
 	}
 }
 
-// buildTriageComment creates a markdown summary for attachment to the bead.
+// buildTriageComment creates a markdown summary for attachment to the task.
 func buildTriageComment(ev *TriageEvidence, outcome *TriageResult) string {
 	var b strings.Builder
 
@@ -162,10 +162,10 @@ func buildTriageComment(ev *TriageEvidence, outcome *TriageResult) string {
 		b.WriteString("- Uncommitted changes: yes\n")
 	}
 
-	if len(ev.BeadsCreated) > 0 {
-		b.WriteString(fmt.Sprintf("- Beads created: %d\n", len(ev.BeadsCreated)))
-		for _, bead := range ev.BeadsCreated {
-			b.WriteString(fmt.Sprintf("  - %s: %s\n", bead.ID, bead.Title))
+	if len(ev.TasksCreated) > 0 {
+		b.WriteString(fmt.Sprintf("- Tasks created: %d\n", len(ev.TasksCreated)))
+		for _, task := range ev.TasksCreated {
+			b.WriteString(fmt.Sprintf("  - %s: %s\n", task.ID, task.Title))
 		}
 	}
 
@@ -193,7 +193,7 @@ func buildTriagePrompt(ev *TriageEvidence) string {
 		b.WriteString(fmt.Sprintf(" (%.0f%%)", float64(ev.NumTurns)/float64(ev.MaxTurns)*100))
 	}
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("- Task status (bd show): %s\n", ev.TaskStatus))
+	b.WriteString(fmt.Sprintf("- Task status (ata show): %s\n", ev.TaskStatus))
 	b.WriteString(fmt.Sprintf("- Commits: %d\n", ev.CommitCount))
 
 	if ev.CommitSummary != "" {
@@ -209,10 +209,10 @@ func buildTriagePrompt(ev *TriageEvidence) string {
 	if ev.HasUncommitted {
 		b.WriteString("- Uncommitted working tree changes: yes\n")
 	}
-	if len(ev.BeadsCreated) > 0 {
-		b.WriteString(fmt.Sprintf("- Beads created during session: %d\n", len(ev.BeadsCreated)))
-		for _, bead := range ev.BeadsCreated {
-			b.WriteString(fmt.Sprintf("  - %s: %s\n", bead.ID, bead.Title))
+	if len(ev.TasksCreated) > 0 {
+		b.WriteString(fmt.Sprintf("- Tasks created during session: %d\n", len(ev.TasksCreated)))
+		for _, task := range ev.TasksCreated {
+			b.WriteString(fmt.Sprintf("  - %s: %s\n", task.ID, task.Title))
 		}
 	}
 	if ev.HadError {
@@ -221,7 +221,7 @@ func buildTriagePrompt(ev *TriageEvidence) string {
 
 	b.WriteString("\n## Your Task\n\n")
 	b.WriteString("Examine the evidence above. You may also:\n")
-	b.WriteString("- Run `bd show " + ev.TaskID + " --json` to check current task state\n")
+	b.WriteString("- Run `ata show " + ev.TaskID + " --json` to check current task state\n")
 	b.WriteString("- Examine git log and diff to understand what the previous agent did\n")
 	b.WriteString("- Read files to check the state of the work\n\n")
 
@@ -292,13 +292,9 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 		outcome := TriagePartial // default
 		switch triageStatus.Outcome {
 		case "complete":
-			// Triage agent thinks it's complete — verify via fresh bd show.
-			// (The evidence snapshot may be stale if the agent ran bd close.)
 			if task, err := getTaskStatus(ev.TaskID); err == nil && task.Status == "closed" {
 				outcome = TriageComplete
 			} else {
-				// Agent says complete but task isn't closed. Treat as partial
-				// and include the agent's assessment in the comment.
 				outcome = TriagePartial
 			}
 		case "no_progress":

@@ -15,126 +15,132 @@ import (
 // claimedTask is the task already claimed by the runner before launching the session.
 // maxTurns must match the --max-turns value passed to the session so the agent's
 // turn-budget guidance is accurate.
-func buildPrompt(batchSize, maxTurns int, epicFilter, scope string, claimedTask *BeadTask) string {
-	scopeInstruction := ""
+func buildPrompt(batchSize, maxTurns int, epicFilter, workspace string, claimedTask *AtaTask) string {
+	epicInstruction := ""
 	if epicFilter != "" {
-		scopeInstruction = fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
+		epicInstruction = fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
 	}
 
-	scopeLabelInstruction := ""
-	if scope != "" {
-		scopeLabelInstruction = fmt.Sprintf(`Worktree scope: %s
-- Add --labels "%s" on ALL bd create / bd q calls so new beads stay in this scope.
-- When fetching additional batch work, use bd ready --label "%s" --json.
-
-`, scope, scope, scope)
+	// Inject epic spec if the task belongs to an epic.
+	specInstruction := ""
+	if claimedTask.EpicID != "" {
+		spec := getEpicSpec(claimedTask.EpicID)
+		if spec != "" {
+			specInstruction = fmt.Sprintf("## Epic Spec (epic %s)\n\n%s\n\n---\n\n", claimedTask.EpicID, spec)
+		}
 	}
 
-	claimedInstruction := fmt.Sprintf(`Your first task is already claimed: %s — %s (P%d, %s)
-Work on it immediately. Do not run bd ready or bd update --claim for this task.`, claimedTask.ID, claimedTask.Title, claimedTask.Priority, claimedTask.Type)
+	workspaceInstruction := ""
+	if workspace != "" {
+		workspaceInstruction = fmt.Sprintf("Workspace: %s\n- When creating tasks, use: ata create \"title\" --workspace \"%s\" --json\n- When creating tasks under an epic, add: --epic EPIC_ID\n\n", workspace, workspace)
+	}
 
-	if claimedTask.Description != "" {
-		claimedInstruction += fmt.Sprintf("\n\nTask description:\n%s", claimedTask.Description)
+	claimedInstruction := fmt.Sprintf(`Your first task is already claimed: %s — %s
+Work on it immediately. Do not run ata ready or ata claim for this task.`, claimedTask.ID, claimedTask.Title)
+
+	if claimedTask.Body != "" {
+		claimedInstruction += fmt.Sprintf("\n\nTask description:\n%s", claimedTask.Body)
 	}
 
 	additionalTasks := ""
 	if batchSize > 1 {
-		readyCmd := "bd ready --json"
-		if scope != "" {
-			readyCmd = fmt.Sprintf("bd ready --label \"%s\" --json", scope)
+		readyCmd := "ata ready --json"
+		if workspace != "" {
+			readyCmd = fmt.Sprintf("ata ready --workspace \"%s\" --json", workspace)
 		}
 		additionalTasks = fmt.Sprintf(`
 After completing the claimed task, run %s for up to %d additional task(s).
-For each additional task, claim it with bd update <id> --claim --json before working on it.
+For each additional task, claim it with ata claim <id> --json before working on it.
 
 You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSize)
 	}
 
-	// Build scope-aware instructions for discovered issues and decomposition.
-	discoveredInstruction := "5. File discovered-from beads for any new issues found outside current scope."
-	if scope != "" {
-		discoveredInstruction = fmt.Sprintf(`5. File discovered-from beads for any new issues found outside current scope.
-   Use: bd create --title "<issue>" --type <bug|task|enhancement> --labels "%s" --json`, scope)
+	// Build discovered task instruction.
+	discoveredInstruction := "5. File discovered issues for any new problems found outside current scope."
+	createCmd := `ata create "<issue>" --status queue`
+	if workspace != "" {
+		createCmd += fmt.Sprintf(` --workspace "%s"`, workspace)
 	}
+	if claimedTask.EpicID != "" {
+		createCmd += fmt.Sprintf(` --epic %s`, claimedTask.EpicID)
+	}
+	discoveredInstruction = fmt.Sprintf(`5. File discovered issues for any new problems found outside current scope.
+   Use: %s --json`, createCmd)
 
-	decomposeCmd := `bd create --deps "blocks:<parent-id>" --title "Subtask: ..." --type task`
-	if scope != "" {
-		decomposeCmd += fmt.Sprintf(` --labels "%s"`, scope)
+	decomposeCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic %s`, claimedTask.ID)
+	if workspace != "" {
+		decomposeCmd += fmt.Sprintf(` --workspace "%s"`, workspace)
 	}
 
 	earlyExitTurn := maxTurns * 80 / 100
 	additionalTasks += fmt.Sprintf(`
 
 Turn budget: You have %d turns for this session.
-- If you reach turn ~%d without finishing: commit your progress, output the BEADS_RUNNER_STATUS sentinel with what you've completed, and stop.
+- If you reach turn ~%d without finishing: commit your progress, output the ATA_RUNNER_STATUS sentinel with what you've completed, and stop.
 - The orchestrator will continue with a fresh session — do not try to rush or skip steps.`, maxTurns, earlyExitTurn)
 
-	return fmt.Sprintf(`You are working through beads tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
+	return fmt.Sprintf(`You are working through tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
 
-%s%s%s%s
+%s%s%s%s%s
 
 For each task:
 1. Implement the work.
 2. Self-review: run git diff to inspect your changes. Look for correctness, bugs, security, error handling, performance, and code quality issues. Fix anything you find.
 3. Run /simplify to check for reuse, quality, and efficiency issues. Fix anything it finds.
-4. Make atomic commits with descriptive messages (NO bead IDs in commits — stealth mode).
+4. Make atomic commits with descriptive messages.
 %s
-6. Close the task with a descriptive reason.
+6. Close the task: ata close <id> "reason" --json
 
-CRITICAL — After completing %d task(s) or if bd ready is empty, you MUST do this:
-1. Run bd sync.
-2. Output the following status line EXACTLY on its own line (no markdown fences, no extra text on the same line):
+CRITICAL — After completing %d task(s) or if ata ready is empty, you MUST output the following status line EXACTLY on its own line (no markdown fences, no extra text on the same line):
 
-BEADS_RUNNER_STATUS:{"completed": ["<bead-ids>"], "discovered": ["<bead-ids>"], "review_beads": ["<bead-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}
+ATA_RUNNER_STATUS:{"completed": ["<task-ids>"], "discovered": ["<task-ids>"], "review_tasks": ["<task-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}
 
 If you encounter an unrecoverable error:
-BEADS_RUNNER_STATUS:{"completed": [], "discovered": [], "review_beads": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}
+ATA_RUNNER_STATUS:{"completed": [], "discovered": [], "review_tasks": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}
 
 The orchestrator CANNOT parse your session without this line. Always output it as your final action.
-
-Important: Stealth mode — do NOT commit or push .beads/ files. Do NOT reference bead IDs in commits.
 
 Context management:
 - Conserve context — delegate exploration to Task subagents, avoid verbose tool output.
 - Prefer targeted file reads over reading entire large files.
-- Do NOT run bd show or bd ready for the claimed task — all context is above.
+- Do NOT run ata show or ata ready for the claimed task — all context is above.
 - Make atomic commits as you go — do not accumulate a large uncommitted diff.
 - Do NOT read files speculatively. Search first (grep/glob), then read only what you need.
-- If context feels constrained, output BEADS_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.
-- Always output the BEADS_RUNNER_STATUS sentinel as your final action, even if you feel the conversation is getting long.
+- If context feels constrained, output ATA_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.
+- Always output the ATA_RUNNER_STATUS sentinel as your final action, even if you feel the conversation is getting long.
 
 Task decomposition:
 - If a task is too complex for this session, break it into subtasks:
-  1. Create child beads: %s
+  1. Create child tasks: %s --json
   2. Commit any progress you've made so far.
-  3. Output BEADS_RUNNER_STATUS with "decomposed_into": ["<child-ids>"] and "completed": [].
+  3. Output ATA_RUNNER_STATUS with "decomposed_into": ["<child-ids>"] and "completed": [].
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
-Start now.`, scopeInstruction, scopeLabelInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
+Start now.`, specInstruction, epicInstruction, workspaceInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
 }
 
 // buildWrapUpPrompt constructs a focused prompt for resuming a session that
-// hit the max-turns limit. The resumed session has the agent's full context,
-// so it can commit progress, decompose if needed, and emit the sentinel.
-func buildWrapUpPrompt(taskID, taskTitle, scope string) string {
-	scopeLabel := ""
-	if scope != "" {
-		scopeLabel = fmt.Sprintf(` --labels "%s"`, scope)
+// hit the max-turns limit.
+func buildWrapUpPrompt(taskID, taskTitle, workspace string) string {
+	createCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic %s`, taskID)
+	if workspace != "" {
+		createCmd += fmt.Sprintf(` --workspace "%s"`, workspace)
 	}
+
 	return fmt.Sprintf(`Your previous session ran out of turns while working on %s — %s.
 
 You MUST wrap up immediately. Do NOT continue working on the task. You have 5 turns.
 
 1. If you have uncommitted changes, commit them now with a descriptive message.
 2. Determine outcome:
-   a. If the task is COMPLETE: close it with bd close %s "<reason>".
-   b. If more work remains and it's too complex: decompose it — create child beads with bd create --deps "blocks:%s" --title "Subtask: ..."%s --type task, then run bd sync.
+   a. If the task is COMPLETE: close it with ata close %s "<reason>" --json.
+   b. If more work remains and it's too complex: decompose it — create child tasks with %s --json.
    c. If you made partial progress but it's a single remaining step: just note what's left.
-3. Output the BEADS_RUNNER_STATUS sentinel as your final action:
-   BEADS_RUNNER_STATUS:{"completed": ["<ids>"], "discovered": [], "review_beads": [], "decomposed_into": ["<child-ids-if-any>"], "remaining_ready": -1, "error": null}
+3. Output the ATA_RUNNER_STATUS sentinel as your final action:
+   ATA_RUNNER_STATUS:{"completed": ["<ids>"], "discovered": [], "review_tasks": [], "decomposed_into": ["<child-ids-if-any>"], "remaining_ready": -1, "error": null}
 
-This is mandatory. The orchestrator cannot continue without it.`, taskID, taskTitle, taskID, taskID, scopeLabel)
+This is mandatory. The orchestrator cannot continue without it.`, taskID, taskTitle, taskID, createCmd)
 }
 
 // claimTracker keeps track of the currently claimed task so we can
@@ -162,16 +168,13 @@ func (ct *claimTracker) get() string {
 	return ct.id
 }
 
-// run is the main orchestration loop. It fetches ready tasks from beads
+// run is the main orchestration loop. It fetches ready tasks from ata
 // and launches Claude Code sessions to work through them.
 func run(cfg *Config) error {
-	for _, tool := range []string{"claude", "bd"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			return fmt.Errorf("%s not found in PATH", tool)
-		}
+	if _, err := exec.LookPath("claude"); err != nil {
+		return fmt.Errorf("claude not found in PATH")
 	}
-
-	if err := findBeadsDB(); err != nil {
+	if err := findAta(); err != nil {
 		return err
 	}
 
@@ -188,14 +191,12 @@ func run(cfg *Config) error {
 	// can unclaim the in-flight task before exiting.
 	exitSigCh := make(chan os.Signal, 1)
 	signal.Notify(exitSigCh, syscall.SIGTERM, syscall.SIGHUP)
-	lockDir := resolveLockDir()
 
 	go func() {
 		sig := <-exitSigCh
 		if id := tracker.get(); id != "" {
 			fmt.Fprintf(os.Stderr, "\n%s[aor] Caught %s — unclaiming %s before exit%s\n", cYellow, sig, id, cReset)
-			_ = unclaimTask(id, "", nil)
-			_ = removeLockFile(lockDir, id)
+			_ = unclaimTask(id)
 		}
 		os.Exit(1)
 	}()
@@ -210,25 +211,25 @@ func run(cfg *Config) error {
 	alreadySkipped := map[string]bool{}
 	effectiveBatchSize := cfg.BatchSize
 
-	log.Log("Agent orchestration runner started (stealth mode)")
+	log.Log("Agent orchestration runner started")
 	log.Log("Config: batch_size=%d max_tasks=%d max_turns=%d yolo=%v",
 		cfg.BatchSize, cfg.MaxTasks, cfg.MaxTurns, cfg.Yolo)
 	if cfg.EpicFilter != "" {
 		log.Log("Config: epic_filter=%s", cfg.EpicFilter)
 	}
-	if cfg.Scope != "" {
-		log.Log("Config: scope=%s", cfg.Scope)
+	if cfg.Workspace != "" {
+		log.Log("Config: workspace=%s", cfg.Workspace)
 	}
 	log.Log("Controls: i=interject, s=skip, q=quit, Ctrl+C=stop & exit")
 	fmt.Println()
 
 	for {
 		// Recover any tasks orphaned by a previous crashed runner.
-		if n := recoverStuckTasks(lockDir, cfg.Scope, log); n > 0 {
+		if n := recoverStuckTasks(cfg.Workspace, log); n > 0 {
 			stats.RecoveredTasks += n
 		}
 
-		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.Scope)
+		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.Workspace)
 		if err != nil {
 			log.Log("%sError checking ready tasks: %v%s", cRed, err, cReset)
 			stats.Errors++
@@ -236,23 +237,14 @@ func run(cfg *Config) error {
 		}
 
 		if len(tasks) == 0 {
-			if cfg.Scope != "" {
-				if total := countUnscopedReadyTasks(); total > 0 {
-					log.Log("%sNo tasks matching scope %q, but %d unscoped task(s) exist. Add label %q to include them.%s",
-						cYellow, cfg.Scope, total, cfg.Scope, cReset)
-				} else {
-					log.Log("%sNo ready tasks. All done!%s", cGreen, cReset)
-				}
-			} else {
-				log.Log("%sNo ready tasks. All done!%s", cGreen, cReset)
-			}
+			log.Log("%sNo ready tasks. All done!%s", cGreen, cReset)
 			break
 		}
 
 		log.Log("Ready queue: %d task(s) available", len(tasks))
 
 		// Filter out tasks that have been triaged as stuck (repeated no-progress).
-		var eligible []BeadTask
+		var eligible []AtaTask
 		for _, t := range tasks {
 			if h := failHistory[t.ID]; h != nil && h.NoProgressCount >= 2 {
 				if !alreadySkipped[t.ID] {
@@ -276,8 +268,8 @@ func run(cfg *Config) error {
 			break
 		}
 
-		log.Log("Next: %s%s%s — %s (P%d, %s)",
-			cBold, next.ID, cReset, next.Title, next.Priority, next.Type)
+		log.Log("Next: %s%s%s — %s",
+			cBold, next.ID, cReset, next.Title)
 
 		if cfg.MaxTasks > 0 && stats.SessionsRun >= cfg.MaxTasks {
 			log.Log("Reached max tasks limit (%d). Stopping.", cfg.MaxTasks)
@@ -309,24 +301,21 @@ func run(cfg *Config) error {
 
 		// Pre-claim the task before launching the session.
 		log.Log("Claiming %s ...", next.ID)
-		if err := claimTask(next.ID, cfg.Scope, next.Labels); err != nil {
+		if err := claimTask(next.ID); err != nil {
 			log.Log("%sFailed to claim %s: %v — skipping%s", cRed, next.ID, err, cReset)
 			stats.Errors++
 			continue
 		}
 		tracker.set(next.ID)
-		if err := writeLockFile(lockDir, next.ID, cfg.Scope); err != nil {
-			log.Log("%sWarning: failed to write lock file for %s: %v%s", cYellow, next.ID, err, cReset)
-		}
 
 		stats.SessionsRun++
 
 		// Inject previous-attempt context so the next agent knows what happened.
 		if comments, err := getTaskComments(next.ID); err == nil && comments != "" {
-			next.Description += "\n\n## Previous Attempt Notes\n" + comments
+			next.Body += "\n\n## Previous Attempt Notes\n" + comments
 		}
 
-		prompt := buildPrompt(effectiveBatchSize, cfg.MaxTurns, cfg.EpicFilter, cfg.Scope, next)
+		prompt := buildPrompt(effectiveBatchSize, cfg.MaxTurns, cfg.EpicFilter, cfg.Workspace, next)
 
 		// Capture pre-task HEAD for post-task review diffing.
 		preSHA, _ := headSHA()
@@ -336,9 +325,6 @@ func run(cfg *Config) error {
 
 		sessionStart := time.Now()
 		result := runSession(cfg, log, prompt, stdinCh)
-
-		// Reconcile scope labels for any beads created during this session.
-		stats.ScopeReconciled += reconcileScope(cfg.Scope, sessionStart, log)
 
 		// Log session usage if available.
 		if result.InputTokens > 0 || result.OutputTokens > 0 {
@@ -373,17 +359,17 @@ func run(cfg *Config) error {
 			shouldUnclaim = true
 		} else if result.Status == nil {
 			// Fallback: agent didn't output the sentinel, but may have
-			// closed the task via bd close. Check beads directly.
+			// closed the task via ata close. Check directly.
 			task, ferr := getTaskStatus(next.ID)
 			if ferr == nil && task.Status == "closed" {
-				log.Log("Task %s was closed by agent (no structured status, detected via beads)", next.ID)
+				log.Log("Task %s was closed by agent (no structured status, detected via ata)", next.ID)
 				result.Status = &RunnerStatus{
 					Completed: []string{next.ID},
 				}
 			} else if result.NumTurns > 0 && result.NumTurns >= cfg.MaxTurns && result.SessionID != "" {
 				log.Log("Session hit max turns (%d) — attempting wrap-up resumption...", cfg.MaxTurns)
 
-				wrapUpPrompt := buildWrapUpPrompt(next.ID, next.Title, cfg.Scope)
+				wrapUpPrompt := buildWrapUpPrompt(next.ID, next.Title, cfg.Workspace)
 				wrapUpCfg := &Config{
 					MaxTurns:        5,
 					Yolo:            cfg.Yolo,
@@ -394,12 +380,8 @@ func run(cfg *Config) error {
 				fmt.Printf("\n%s─── Wrap-up: %s ──────────────────────────────────────%s\n\n",
 					cYellow, next.ID, cReset)
 
-				wrapStart := time.Now()
 				wrapResult := runSession(wrapUpCfg, log, wrapUpPrompt, stdinCh)
 				stats.WrapUpSessions++
-
-				// Reconcile scope labels for beads created during wrap-up.
-				stats.ScopeReconciled += reconcileScope(cfg.Scope, wrapStart, log)
 
 				// Accumulate wrap-up costs.
 				if wrapResult.InputTokens > 0 || wrapResult.OutputTokens > 0 {
@@ -415,7 +397,6 @@ func run(cfg *Config) error {
 				// If wrap-up produced a sentinel, use it.
 				if wrapResult.Status != nil {
 					result.Status = wrapResult.Status
-					// Re-evaluate: check if the task is now completed or decomposed.
 					if len(result.Status.DecomposedInto) > 0 {
 						log.Log("Task %s decomposed during wrap-up into %d subtask(s): %s",
 							next.ID, len(result.Status.DecomposedInto),
@@ -436,18 +417,15 @@ func run(cfg *Config) error {
 						}
 					}
 				} else {
-					// No sentinel from wrap-up either — check if the agent
-					// managed to close the task via bd close during wrap-up.
 					task, ferr := getTaskStatus(next.ID)
 					if ferr == nil && task.Status == "closed" {
-						log.Log("Task %s closed during wrap-up (no sentinel, detected via beads)", next.ID)
+						log.Log("Task %s closed during wrap-up (no sentinel, detected via ata)", next.ID)
 						result.Status = &RunnerStatus{
 							Completed: []string{next.ID},
 						}
 					} else {
-						// Wrap-up also failed — run triage on combined evidence.
 						log.Log("Wrap-up produced no status — running triage for %s", next.ID)
-						ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg.MaxTurns)
+						ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg)
 						tr := runTriage(ev, cfg, log, stdinCh)
 						if tr.AgentSpawned {
 							stats.TriageSessions++
@@ -462,7 +440,7 @@ func run(cfg *Config) error {
 							result.Status = &RunnerStatus{Completed: []string{next.ID}}
 						} else {
 							if tr.Outcome == TriagePartial && tr.Comment != "" {
-								if err := addComment(next.ID, tr.Comment, cfg.Scope, next.Labels); err != nil {
+								if err := addComment(next.ID, tr.Comment, "system"); err != nil {
 									log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
 								}
 							}
@@ -471,10 +449,8 @@ func run(cfg *Config) error {
 					}
 				}
 			} else {
-				// No sentinel, task not closed, no session ID for wrap-up (or
-				// max turns hit without session ID). Run triage.
 				log.Log("No structured status — running post-session triage for %s", next.ID)
-				ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg.MaxTurns)
+				ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg)
 				tr := runTriage(ev, cfg, log, stdinCh)
 				if tr.AgentSpawned {
 					stats.TriageSessions++
@@ -489,7 +465,7 @@ func run(cfg *Config) error {
 					result.Status = &RunnerStatus{Completed: []string{next.ID}}
 				} else {
 					if tr.Outcome == TriagePartial && tr.Comment != "" {
-						if err := addComment(next.ID, tr.Comment, cfg.Scope, next.Labels); err != nil {
+						if err := addComment(next.ID, tr.Comment, "system"); err != nil {
 							log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
 						} else {
 							log.Log("Added triage comment to %s", next.ID)
@@ -508,7 +484,6 @@ func run(cfg *Config) error {
 				shouldUnclaim = true
 				decomposed = true
 			} else {
-				// Check if the claimed task appears in the completed list.
 				found := false
 				for _, cid := range result.Status.Completed {
 					if cid == next.ID {
@@ -523,8 +498,6 @@ func run(cfg *Config) error {
 		}
 
 		if shouldUnclaim {
-			// Safety: re-check task status before unclaiming — the agent
-			// may have closed it even though we failed to parse the sentinel.
 			task, ferr := getTaskStatus(next.ID)
 			if ferr == nil && task.Status == "closed" {
 				log.Log("Task %s is closed (detected on re-check), skipping unclaim", next.ID)
@@ -532,7 +505,6 @@ func run(cfg *Config) error {
 				stats.TasksCompleted++
 			} else {
 				if !decomposed {
-					// Track failures by triage outcome for skip logic.
 					if lastTriageOutcome != nil && *lastTriageOutcome == TriageNoProgress {
 						h := failHistory[next.ID]
 						if h == nil {
@@ -541,7 +513,6 @@ func run(cfg *Config) error {
 						}
 						h.NoProgressCount++
 					} else if lastTriageOutcome != nil && *lastTriageOutcome == TriagePartial {
-						// Progress was made — reset the no-progress counter.
 						delete(failHistory, next.ID)
 					}
 				}
@@ -550,34 +521,29 @@ func run(cfg *Config) error {
 					reason = "decomposed into subtasks"
 				}
 				log.Log("Unclaiming %s (%s)", next.ID, reason)
-				unclaimLabels := next.Labels
-				if task != nil && len(task.Labels) > 0 {
-					unclaimLabels = task.Labels
-				}
-				if err := unclaimTask(next.ID, cfg.Scope, unclaimLabels); err != nil {
+				if err := unclaimTask(next.ID); err != nil {
 					log.Log("%sFailed to unclaim %s: %v%s", cRed, next.ID, err, cReset)
 				}
 			}
 		}
 		tracker.clear()
-		removeLockFile(lockDir, next.ID)
 
 		if result.Status != nil {
 			s := result.Status
 			completed := len(s.Completed)
 			discovered := len(s.Discovered)
-			review := len(s.ReviewBeads)
+			review := len(s.ReviewTasks)
 
 			stats.TasksCompleted += completed
 			stats.Discovered += discovered
-			stats.ReviewBeads += review
+			stats.ReviewTasks += review
 
 			completedStr := "none"
 			if len(s.Completed) > 0 {
 				completedStr = strings.Join(s.Completed, ", ")
 			}
 
-			log.Log("Session result: %d completed [%s], %d discovered, %d review beads",
+			log.Log("Session result: %d completed [%s], %d discovered, %d review tasks",
 				completed, completedStr, discovered, review)
 
 			if s.Error != nil {
@@ -590,7 +556,7 @@ func run(cfg *Config) error {
 				break
 			}
 
-			// Adaptive batch sizing: adjust based on how many tasks the agent completed.
+			// Adaptive batch sizing.
 			if effectiveBatchSize > 1 {
 				if completed < effectiveBatchSize && s.Error == nil {
 					effectiveBatchSize = completed
@@ -620,7 +586,7 @@ func run(cfg *Config) error {
 
 	// Auto-close any epics whose children are all complete.
 	if stats.TasksCompleted > 0 {
-		if closed, err := closeEligibleEpics(); err != nil {
+		if closed, err := closeEligibleEpics(cfg.Workspace); err != nil {
 			log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
 		} else if len(closed) > 0 {
 			stats.EpicsClosed += len(closed)
@@ -657,7 +623,7 @@ func printSummary(log *Logger, stats *RunStats) {
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 	log.Log("  Tasks completed:   %s%d%s", cGreen, stats.TasksCompleted, cReset)
 	log.Log("  Issues discovered: %d", stats.Discovered)
-	log.Log("  Review beads:      %d", stats.ReviewBeads)
+	log.Log("  Review tasks:      %d", stats.ReviewTasks)
 	if stats.Decomposed > 0 {
 		log.Log("  Decomposed:        %d", stats.Decomposed)
 	}
@@ -677,9 +643,6 @@ func printSummary(log *Logger, stats *RunStats) {
 	}
 	if stats.RecoveredTasks > 0 {
 		log.Log("  %sRecovered tasks:  %d%s", cYellow, stats.RecoveredTasks, cReset)
-	}
-	if stats.ScopeReconciled > 0 {
-		log.Log("  %sScope reconciled: %d%s", cYellow, stats.ScopeReconciled, cReset)
 	}
 	if stats.TotalInput > 0 || stats.TotalOutput > 0 {
 		log.Log("  Tokens (in/out):   %s / %s", formatTokens(stats.TotalInput), formatTokens(stats.TotalOutput))

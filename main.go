@@ -4,20 +4,22 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 )
 
 // ANSI escape codes for terminal output.
 const (
-	cReset      = "\033[0m"
-	cBold       = "\033[1m"
-	cDim        = "\033[2m"
-	cRed        = "\033[31m"
-	cGreen      = "\033[32m"
-	cYellow     = "\033[33m"
-	cBlue       = "\033[34m"
-	cCyan       = "\033[36m"
-	cGray       = "\033[90m"
-	cBgDarkRed  = "\033[48;5;52m"
+	cReset       = "\033[0m"
+	cBold        = "\033[1m"
+	cDim         = "\033[2m"
+	cRed         = "\033[31m"
+	cGreen       = "\033[32m"
+	cYellow      = "\033[33m"
+	cBlue        = "\033[34m"
+	cCyan        = "\033[36m"
+	cGray        = "\033[90m"
+	cBgDarkRed   = "\033[48;5;52m"
 	cBgDarkGreen = "\033[48;5;22m"
 )
 
@@ -32,7 +34,7 @@ type Config struct {
 	Yolo            bool
 	Unclaim         bool
 	LogDir          string
-	Scope           string
+	Workspace       string
 	ResumeSessionID string // set internally for wrap-up sessions
 }
 
@@ -57,18 +59,17 @@ func main() {
 	flag.IntVar(&cfg.MaxTurns, "max-turns", 150, "Max agent turns per session")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
-	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to open and exit")
+	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to queue and exit")
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
-	noScope := flag.Bool("no-scope", false, "Disable worktree scope auto-detection")
 
-	flag.StringVar(&cfg.LogDir, "log-dir", "", "Log directory (default: auto-detect from beads location)")
-	flag.StringVar(&cfg.Scope, "scope", "", "Scope label for worktree isolation (default: auto-detect from git worktree)")
+	flag.StringVar(&cfg.LogDir, "log-dir", "", "Log directory (default: ~/.ata/runner-logs)")
+	flag.StringVar(&cfg.Workspace, "workspace", "", "Workspace path (default: auto-detect from git)")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `aor — Agent Orchestration Runner for beads tasks
+		fmt.Fprintf(os.Stderr, `aor — Agent Orchestration Runner
 
 Each task runs in a fresh Claude Code context window. Output streams in real time.
-Beads data stays local (not committed to git). Only code changes are pushed.
+Tasks are managed by ata (SQLite-backed, workspace-scoped).
 
 Usage:
   aor [flags]              Run task orchestration loop
@@ -90,8 +91,8 @@ Flags:
 
 	cfg.Yolo = !*noYolo
 
-	if !*noScope && cfg.Scope == "" {
-		cfg.Scope = detectWorktreeScope()
+	if cfg.Workspace == "" {
+		cfg.Workspace = detectWorkspaceFromGit()
 	}
 
 	if cfg.LogDir == "" {
@@ -110,4 +111,14 @@ Flags:
 		fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
 		os.Exit(1)
 	}
+}
+
+// detectWorkspaceFromGit auto-detects the workspace path from git toplevel, falling back to cwd.
+func detectWorkspaceFromGit() string {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err == nil {
+		return strings.TrimSpace(string(out))
+	}
+	cwd, _ := os.Getwd()
+	return cwd
 }

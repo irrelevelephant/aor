@@ -1,0 +1,106 @@
+{{template "layout" .}}
+{{define "content"}}
+<div class="workspace-header">
+    <h1>{{if .Name}}{{.Name}} <span class="workspace-path-subtitle">{{.Path}}</span>{{else}}{{.Path}}{{end}}</h1>
+    <div class="workspace-controls">
+        {{if .ShowClosed}}
+        <a href="{{.WorkspaceURL}}" class="btn btn-sm">Hide closed</a>
+        {{else}}
+        <a href="{{.ShowClosedURL}}" class="btn btn-sm">Show closed</a>
+        {{end}}
+    </div>
+</div>
+
+{{if .AllTags}}
+<div class="tag-filter-bar">
+    {{if .ActiveTag}}<a href="{{.WorkspaceURL}}" class="badge tag-filter-pill tag-filter-clear">all</a>{{end}}
+    {{range .AllTags}}
+    <a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-filter-pill{{if eq . $.ActiveTag}} tag-filter-active{{end}}" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>
+    {{end}}
+</div>
+{{end}}
+
+<form class="quick-add" hx-post="/task" hx-swap="none">
+    <input type="hidden" name="workspace" value="{{.Path}}">
+    <input type="hidden" name="status" value="queue">
+    <textarea name="content" class="quick-add-input" placeholder="New task...&#10;&#10;First line becomes the title.&#10;Everything else becomes the description." rows="1" required></textarea>
+    <div class="quick-add-footer">
+        <span class="quick-add-hint">Enter to submit &middot; Shift+Enter for new line</span>
+        <button type="submit" class="btn btn-primary">Add</button>
+    </div>
+</form>
+
+<div class="columns"
+     hx-ext="sse"
+     sse-connect="/events?workspace={{.Path}}">
+
+    <div class="column">
+        <h2>Queue <span class="count">{{len .Queue}}</span></h2>
+        <div class="task-list sortable" id="queue-list" data-status="queue">
+            {{range .Queue}}
+            <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
+                <span class="id-badge">{{.ID}}</span>
+                <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
+                {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
+                {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
+                {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+                {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="column">
+        <h2>Backlog <span class="count">{{len .Backlog}}</span></h2>
+        <div class="task-list sortable" id="backlog-list" data-status="backlog">
+            {{range .Backlog}}
+            <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
+                <span class="id-badge">{{.ID}}</span>
+                <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
+                {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
+                {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
+                {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+                {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+            </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+
+{{if .InProgress}}
+<div class="in-progress-section">
+    <h2>In Progress <span class="count">{{len .InProgress}}</span></h2>
+    <div class="task-list" id="inprogress-list">
+        {{range .InProgress}}
+        <div class="task-row" data-id="{{.ID}}" id="task-{{.ID}}">
+            <span class="id-badge">{{.ID}}</span>
+            <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
+            {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
+            {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
+            {{if eq .Status "in_progress"}}{{if .ClaimedPID}}<span class="badge agent-badge">pid:{{.ClaimedPID}}</span>{{end}}{{if .Worktree}}<span class="badge worktree-badge" title="{{.Worktree}}">wt</span>{{end}}{{end}}
+            {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{if .ShowClosed}}
+{{if .Closed}}
+<div class="closed-section">
+    <h2>Closed <span class="count">{{len .Closed}}</span></h2>
+    <div class="task-list">
+        {{range .Closed}}
+        <div class="task-row" data-id="{{.ID}}" id="task-{{.ID}}">
+            <span class="id-badge">{{.ID}}</span>
+            <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
+            {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
+            {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
+            {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+{{end}}
+{{end}}

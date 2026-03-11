@@ -7,16 +7,13 @@ import (
 
 const maxInlineDiffChars = 50000
 
-// bdAddCmd returns the bd add command template, including --labels if scope is set.
-func bdAddCmd(scope string) string {
-	if scope != "" {
-		return fmt.Sprintf("`bd add --title \"<title>\" --priority <1-5> --type <bug|style|perf|security|logic|error-handling> --labels \"%s\" --json`", scope)
-	}
-	return "`bd add --title \"<title>\" --priority <1-5> --type <bug|style|perf|security|logic|error-handling> --json`"
+// ataCreateCmd returns the ata create command template for review.
+func ataCreateCmd() string {
+	return "`ata create \"<issue title>\" --status queue --json`"
 }
 
 // buildReviewPrompt constructs the prompt for a code review session.
-func buildReviewPrompt(diff, base string, round int, priorBeads []ReviewBead, scope string) string {
+func buildReviewPrompt(diff, base string, round int, priorTasks []ReviewTask) string {
 	var b strings.Builder
 
 	// Role.
@@ -37,21 +34,21 @@ func buildReviewPrompt(diff, base string, round int, priorBeads []ReviewBead, sc
 	}
 
 	// Prior round context (capped to avoid context bloat).
-	const maxPriorBeads = 30
-	if round > 1 && len(priorBeads) > 0 {
-		displayBeads := priorBeads
+	const maxPriorTasks = 30
+	if round > 1 && len(priorTasks) > 0 {
+		displayTasks := priorTasks
 		truncated := 0
-		if len(priorBeads) > maxPriorBeads {
-			displayBeads = priorBeads[len(priorBeads)-maxPriorBeads:]
-			truncated = len(priorBeads) - maxPriorBeads
+		if len(priorTasks) > maxPriorTasks {
+			displayTasks = priorTasks[len(priorTasks)-maxPriorTasks:]
+			truncated = len(priorTasks) - maxPriorTasks
 		}
 		b.WriteString("## Prior review rounds\n\n")
-		b.WriteString("The following beads were filed in earlier rounds. Do NOT re-file these — they are already tracked:\n\n")
+		b.WriteString("The following tasks were filed in earlier rounds. Do NOT re-file these — they are already tracked:\n\n")
 		if truncated > 0 {
-			fmt.Fprintf(&b, "(%d older beads omitted)\n", truncated)
+			fmt.Fprintf(&b, "(%d older tasks omitted)\n", truncated)
 		}
-		for _, bead := range displayBeads {
-			fmt.Fprintf(&b, "- %s (P%d, %s): %s\n", bead.ID, bead.Priority, bead.Type, bead.Title)
+		for _, task := range displayTasks {
+			fmt.Fprintf(&b, "- %s: %s\n", task.ID, task.Title)
 		}
 		b.WriteString("\n")
 	}
@@ -61,12 +58,12 @@ func buildReviewPrompt(diff, base string, round int, priorBeads []ReviewBead, sc
 
 For each issue you find:
 
-1. **Small/medium issues in the current diff**: Fix the code directly. Make a commit referencing the bead ID. Then close the bead with a reason.
-2. **Large issues or pre-existing issues** (not introduced in this diff): File a bead only. Do NOT attempt to fix these.
+1. **Small/medium issues in the current diff**: Fix the code directly. Make a commit. Then file a task noting the fix.
+2. **Large issues or pre-existing issues** (not introduced in this diff): File a task only. Do NOT attempt to fix these.
 
-Use ` + "`bd`" + ` to file beads:
-- ` + bdAddCmd(scope) + `
-- After fixing, close with: ` + "`bd update <id> --close --reason \"<what you did>\" --json`" + `
+Use ` + "`ata`" + ` to file tasks:
+- ` + ataCreateCmd() + `
+- After fixing an issue, close the filed task: ` + "`ata close <id> \"<what you did>\" --json`" + `
 
 ## Review focus (in priority order)
 
@@ -92,17 +89,16 @@ After your review, assess the overall severity of issues found:
 
 When you are done, output EXACTLY this line so the orchestrator can parse it:
 
-REVIEW_STATUS:{"beads_filed": [{"id": "<id>", "title": "<title>", "priority": <1-5>, "type": "<type>"}], "fixes_applied": ["<description>"], "summary": "<one-line summary>", "severity": "<critical|moderate|minor|trivial>", "error": null}
+REVIEW_STATUS:{"tasks_filed": [{"id": "<id>", "title": "<title>"}], "fixes_applied": ["<description>"], "summary": "<one-line summary>", "severity": "<critical|moderate|minor|trivial>", "error": null}
 
 If no issues were found:
-REVIEW_STATUS:{"beads_filed": [], "fixes_applied": [], "summary": "No issues found", "severity": "trivial", "error": null}
+REVIEW_STATUS:{"tasks_filed": [], "fixes_applied": [], "summary": "No issues found", "severity": "trivial", "error": null}
 
 If you encounter an error:
-REVIEW_STATUS:{"beads_filed": [], "fixes_applied": [], "summary": "", "severity": "", "error": "<description>"}
+REVIEW_STATUS:{"tasks_filed": [], "fixes_applied": [], "summary": "", "severity": "", "error": "<description>"}
 
 Start your review now.
 `)
 
 	return b.String()
 }
-

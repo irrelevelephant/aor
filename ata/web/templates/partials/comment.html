@@ -1,0 +1,9 @@
+{{define "comment.html"}}
+<div class="comment">
+    <div class="comment-meta">
+        <span class="comment-author {{.Author}}">{{.Author}}</span>
+        <span class="comment-time">{{.CreatedAt}}</span>
+    </div>
+    <div class="comment-body">{{renderMarkdown .Body}}</div>
+</div>
+{{end}}

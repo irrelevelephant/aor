@@ -54,7 +54,7 @@ func runRev(args []string) error {
 		LogDir:   cfg.LogDir,
 	}
 
-	var allBeads []ReviewBead
+	var allTasks []ReviewTask
 	var rounds []ReviewRound
 
 	for round := 1; round <= cfg.MaxRounds; round++ {
@@ -71,17 +71,13 @@ func runRev(args []string) error {
 			break
 		}
 
-		prompt := buildReviewPrompt(diff, base, round, allBeads, cfg.Scope)
+		prompt := buildReviewPrompt(diff, base, round, allTasks)
 
 		fmt.Printf("\n%s─── Review round %d/%d ──────────────────────────────────%s\n\n",
 			cBlue, round, cfg.MaxRounds, cReset)
 
-		roundStart := time.Now()
 		result := runSession(sessionCfg, log, prompt, stdinCh)
 		stats.RoundsRun = round
-
-		// Reconcile scope labels for beads created during this review round.
-		stats.ScopeReconciled += reconcileScope(cfg.Scope, roundStart, log)
 
 		if result.Error != nil {
 			log.Log("%sSession error: %v%s", cRed, result.Error, cReset)
@@ -108,24 +104,24 @@ func runRev(args []string) error {
 		}
 
 		if status != nil {
-			rr.BeadsFiled = status.BeadsFiled
-			allBeads = append(allBeads, status.BeadsFiled...)
-			stats.TotalBeads += len(status.BeadsFiled)
+			rr.TasksFiled = status.TasksFiled
+			allTasks = append(allTasks, status.TasksFiled...)
+			stats.TotalTasks += len(status.TasksFiled)
 			stats.TotalFixes += len(status.FixesApplied)
 
 			if status.Error != nil {
 				log.Log("%sAgent reported error: %s%s", cRed, *status.Error, cReset)
 			}
 
-			log.Log("Round %d: %d beads filed, %d fixes applied, severity=%s",
-				round, len(status.BeadsFiled), len(status.FixesApplied), status.Severity)
+			log.Log("Round %d: %d tasks filed, %d fixes applied, severity=%s",
+				round, len(status.TasksFiled), len(status.FixesApplied), status.Severity)
 		} else {
 			log.Log("%sWARNING: No structured status from review agent. Check session log.%s", cYellow, cReset)
 		}
 
 		rounds = append(rounds, rr)
 
-		if reason := shouldStop(rounds, allBeads); reason != "" {
+		if reason := shouldStop(rounds, allTasks); reason != "" {
 			stats.StopReason = reason
 			log.Log("Converged: %s", reason)
 			break
@@ -141,16 +137,13 @@ func runRev(args []string) error {
 		log.Log("Uncommitted review fixes detected — running commit sweep")
 		commitPrompt := "There are uncommitted changes from a code review. " +
 			"Run `git diff` to see what changed, then stage and commit the changes " +
-			"with a message summarizing the review fixes. Do NOT stage or commit " +
-			".beads/ files (stealth mode). Do not push."
+			"with a message summarizing the review fixes. Do not push."
 		sweepCfg := &Config{
 			MaxTurns: 5,
 			Yolo:     sessionCfg.Yolo,
 			LogDir:   sessionCfg.LogDir,
 		}
-		sweepStart := time.Now()
 		sweepResult := runSession(sweepCfg, log, commitPrompt, stdinCh)
-		stats.ScopeReconciled += reconcileScope(cfg.Scope, sweepStart, log)
 		if sweepResult.Error != nil {
 			log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
 		} else {
@@ -173,14 +166,12 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	fs.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Maximum review rounds")
 	fs.IntVar(&cfg.MaxTurns, "max-turns", 50, "Max agent turns per session")
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts")
-	noScope := fs.Bool("no-scope", false, "Disable worktree scope auto-detection")
 	fs.StringVar(&cfg.LogDir, "log-dir", "", "Log directory")
-	fs.StringVar(&cfg.Scope, "scope", "", "Scope label for worktree isolation (default: auto-detect)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), `aor rev — Iterative code review
 
-Reviews the diff from a base ref to HEAD + working tree. Files beads for issues,
+Reviews the diff from a base ref to HEAD + working tree. Files tasks for issues,
 fixes small/medium problems inline, and iterates until convergence.
 
 Usage:
@@ -199,10 +190,6 @@ Flags:
 
 	cfg.Yolo = !*noYolo
 
-	if !*noScope && cfg.Scope == "" {
-		cfg.Scope = detectWorktreeScope()
-	}
-
 	// Remaining positional arg is the base ref.
 	if fs.NArg() > 0 {
 		cfg.Base = fs.Arg(0)
@@ -213,7 +200,7 @@ Flags:
 
 // shouldStop checks convergence conditions and returns a stop reason,
 // or empty string to continue.
-func shouldStop(rounds []ReviewRound, allBeads []ReviewBead) string {
+func shouldStop(rounds []ReviewRound, allTasks []ReviewTask) string {
 	if len(rounds) == 0 {
 		return ""
 	}
@@ -221,45 +208,36 @@ func shouldStop(rounds []ReviewRound, allBeads []ReviewBead) string {
 	current := rounds[len(rounds)-1]
 
 	// No issues found.
-	if current.Status != nil && len(current.Status.BeadsFiled) == 0 && len(current.Status.FixesApplied) == 0 {
+	if current.Status != nil && len(current.Status.TasksFiled) == 0 && len(current.Status.FixesApplied) == 0 {
 		return "no issues found"
 	}
 
 	// All issues trivial/minor.
-	if current.Status != nil && len(current.Status.BeadsFiled) > 0 {
-		allMinor := true
-		for _, b := range current.Status.BeadsFiled {
-			if b.Priority < 4 { // P1-P3 are non-trivial
-				allMinor = false
-				break
-			}
-		}
-		if allMinor {
-			sev := strings.ToLower(current.Status.Severity)
-			if sev == "trivial" || sev == "minor" {
-				return "issues too minor"
-			}
+	if current.Status != nil && len(current.Status.TasksFiled) > 0 {
+		sev := strings.ToLower(current.Status.Severity)
+		if sev == "trivial" || sev == "minor" {
+			return "issues too minor"
 		}
 	}
 
-	// Repeating issues: >50% of new bead titles match prior rounds.
-	if len(rounds) > 1 && current.Status != nil && len(current.Status.BeadsFiled) > 0 {
+	// Repeating issues: >50% of new task titles match prior rounds.
+	if len(rounds) > 1 && current.Status != nil && len(current.Status.TasksFiled) > 0 {
 		priorTitles := make(map[string]bool)
 		for i := 0; i < len(rounds)-1; i++ {
 			if rounds[i].Status != nil {
-				for _, b := range rounds[i].Status.BeadsFiled {
-					priorTitles[normTitle(b.Title)] = true
+				for _, t := range rounds[i].Status.TasksFiled {
+					priorTitles[normTitle(t.Title)] = true
 				}
 			}
 		}
 
 		matches := 0
-		for _, b := range current.Status.BeadsFiled {
-			if priorTitles[normTitle(b.Title)] || fuzzyMatchAny(b.Title, priorTitles) {
+		for _, t := range current.Status.TasksFiled {
+			if priorTitles[normTitle(t.Title)] || fuzzyMatchAny(t.Title, priorTitles) {
 				matches++
 			}
 		}
-		if matches > len(current.Status.BeadsFiled)/2 {
+		if matches > len(current.Status.TasksFiled)/2 {
 			return "repeating issues"
 		}
 	}
@@ -276,7 +254,7 @@ func shouldStop(rounds []ReviewRound, allBeads []ReviewBead) string {
 	return ""
 }
 
-// normTitle normalizes a bead title for comparison.
+// normTitle normalizes a task title for comparison.
 func normTitle(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
@@ -315,12 +293,9 @@ func printReviewSummary(log *Logger, stats *ReviewStats) {
 	log.Log("%s  Code Review Summary%s", cBold, cReset)
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 	log.Log("  Rounds run:        %d", stats.RoundsRun)
-	log.Log("  Beads filed:       %s%d%s", colorForBeadCount(stats.TotalBeads), stats.TotalBeads, cReset)
+	log.Log("  Tasks filed:       %s%d%s", colorForTaskCount(stats.TotalTasks), stats.TotalTasks, cReset)
 	log.Log("  Fixes applied:     %s%d%s", cGreen, stats.TotalFixes, cReset)
 	log.Log("  Stop reason:       %s", stats.StopReason)
-	if stats.ScopeReconciled > 0 {
-		log.Log("  %sScope reconciled: %d%s", cYellow, stats.ScopeReconciled, cReset)
-	}
 	if stats.CommitSweep {
 		log.Log("  Commit sweep:      %syes%s", cGreen, cReset)
 	}
@@ -329,8 +304,8 @@ func printReviewSummary(log *Logger, stats *ReviewStats) {
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 }
 
-// colorForBeadCount returns a color code based on bead count.
-func colorForBeadCount(n int) string {
+// colorForTaskCount returns a color code based on task count.
+func colorForTaskCount(n int) string {
 	if n == 0 {
 		return cGreen
 	}

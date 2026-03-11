@@ -1,0 +1,116 @@
+package cmd
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
+	"aor/ata/db"
+)
+
+func outputJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// gitToplevel returns the git rev-parse --show-toplevel path, or "" if not in a git repo.
+func gitToplevel() string {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// gitMainWorktree returns the main worktree path from `git worktree list --porcelain`.
+func gitMainWorktree() string {
+	out, err := exec.Command("git", "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		return ""
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "worktree ") {
+			return strings.TrimPrefix(line, "worktree ")
+		}
+	}
+	return ""
+}
+
+// detectWorkspace auto-detects the workspace path, resolving worktrees
+// to their registered main repo when possible.
+func detectWorkspace(d *db.DB) string {
+	toplevel := gitToplevel()
+	if toplevel == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		return cwd
+	}
+
+	// If toplevel is a registered workspace, use it directly.
+	if ok, _ := d.IsRegisteredWorkspace(toplevel); ok {
+		return toplevel
+	}
+
+	// Try the main worktree (first entry in `git worktree list`).
+	main := gitMainWorktree()
+	if main != "" && main != toplevel {
+		if ok, _ := d.IsRegisteredWorkspace(main); ok {
+			return main
+		}
+	}
+
+	// Fall back to git toplevel.
+	return toplevel
+}
+
+// rawWorkingDir returns the raw git toplevel or cwd (before workspace resolution).
+// Used for created_in to record where the task was actually created.
+func rawWorkingDir() string {
+	toplevel := gitToplevel()
+	if toplevel != "" {
+		return toplevel
+	}
+	cwd, _ := os.Getwd()
+	return cwd
+}
+
+func exitUsage(msg string) error {
+	return fmt.Errorf("%s\nRun 'ata <command> --help' for usage", msg)
+}
+
+// splitFlagsAndPositional separates flag arguments from positional arguments.
+// flagsWithValue is a set of flag names (without --) that take a value argument.
+func splitFlagsAndPositional(args []string, flagsWithValue map[string]bool) (flags, positional []string) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-") {
+			name := strings.TrimLeft(arg, "-")
+			// Handle --flag=value
+			if idx := strings.Index(name, "="); idx >= 0 {
+				flags = append(flags, arg)
+				continue
+			}
+			flags = append(flags, arg)
+			// If the flag takes a value, consume the next arg too.
+			if flagsWithValue[name] && i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+	return
+}

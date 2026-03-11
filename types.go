@@ -5,23 +5,25 @@ import (
 	"time"
 )
 
-// BeadTask represents a task from bd ready --json.
-type BeadTask struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	Priority    int      `json:"priority"`
-	Status      string   `json:"status"`
-	Type        string   `json:"type"`
-	Description string   `json:"description,omitempty"`
-	CreatedAt   string   `json:"created_at,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
+// AtaTask represents a task from ata CLI JSON output.
+type AtaTask struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Body      string `json:"body,omitempty"`
+	Status    string `json:"status"`
+	SortOrder int    `json:"sort_order"`
+	EpicID    string `json:"epic_id,omitempty"`
+	Workspace string `json:"workspace"`
+	IsEpic    bool   `json:"is_epic"`
+	Spec      string `json:"spec,omitempty"`
+	CreatedAt string `json:"created_at"`
 }
 
 // RunnerStatus is the structured output expected from Claude Code at the end of a session.
 type RunnerStatus struct {
 	Completed      []string `json:"completed"`
 	Discovered     []string `json:"discovered"`
-	ReviewBeads    []string `json:"review_beads"`
+	ReviewTasks    []string `json:"review_tasks"`
 	DecomposedInto []string `json:"decomposed_into"`
 	RemainingReady int      `json:"remaining_ready"`
 	Error          *string  `json:"error"`
@@ -84,7 +86,7 @@ type SessionResult struct {
 type RunStats struct {
 	TasksCompleted      int
 	Discovered          int
-	ReviewBeads         int
+	ReviewTasks         int
 	Decomposed          int
 	SessionsRun         int
 	WrapUpSessions      int
@@ -92,7 +94,6 @@ type RunStats struct {
 	MaxTurnsHitCount    int
 	TriageSessions      int
 	TriageSkipped       int
-	ScopeReconciled     int
 	RecoveredTasks      int
 	EpicsClosed         int
 	StartedAt           time.Time
@@ -102,16 +103,6 @@ type RunStats struct {
 	TotalTurns          int
 }
 
-// LockInfo holds metadata written to a PID lock file when a task is claimed.
-// Used to detect and recover orphaned in_progress tasks after a crash.
-type LockInfo struct {
-	PID       int    `json:"pid"`
-	StartTime uint64 `json:"start_time"` // process start time from /proc (guards PID reuse)
-	Hostname  string `json:"hostname"`
-	Scope     string `json:"scope,omitempty"`
-	ClaimedAt string `json:"claimed_at"`
-}
-
 // ReviewConfig holds configuration for the rev subcommand.
 type ReviewConfig struct {
 	Base      string
@@ -119,31 +110,28 @@ type ReviewConfig struct {
 	MaxTurns  int
 	Yolo      bool
 	LogDir    string
-	Scope     string
 }
 
 // ReviewStatus is the structured output from a review session.
 type ReviewStatus struct {
-	BeadsFiled   []ReviewBead `json:"beads_filed"`
+	TasksFiled   []ReviewTask `json:"tasks_filed"`
 	FixesApplied []string     `json:"fixes_applied"`
 	Summary      string       `json:"summary"`
 	Severity     string       `json:"severity"`
 	Error        *string      `json:"error"`
 }
 
-// ReviewBead represents a bead filed during a review round.
-type ReviewBead struct {
+// ReviewTask represents a task filed during a review round.
+type ReviewTask struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
-	Priority int    `json:"priority"`
-	Type     string `json:"type"`
 }
 
 // ReviewRound records the outcome of a single review iteration.
 type ReviewRound struct {
 	Number     int
 	Status     *ReviewStatus
-	BeadsFiled []ReviewBead
+	TasksFiled []ReviewTask
 	HeadSHA    string
 }
 
@@ -157,8 +145,8 @@ type TriageEvidence struct {
 	CommitSummary  string // git log --oneline
 	DiffStats      string // git diff --stat
 	HasUncommitted bool
-	BeadsCreated   []BeadTask // beads created during session
-	TaskStatus     string     // from bd show
+	TasksCreated   []AtaTask // tasks created during session
+	TaskStatus     string    // from ata show
 	NumTurns       int
 	MaxTurns       int
 	SessionID      string
@@ -169,8 +157,8 @@ type TriageEvidence struct {
 type TriageOutcome int
 
 const (
-	TriageComplete   TriageOutcome = iota // heuristic-only: bd show confirms closed
-	TriagePartial                         // commits/beads exist, add context comment
+	TriageComplete   TriageOutcome = iota // heuristic-only: ata show confirms closed
+	TriagePartial                         // commits/tasks exist, add context comment
 	TriageNoProgress                      // nothing happened
 	TriageNeedsAgent                      // ambiguous, spawn Layer 2
 )
@@ -197,11 +185,10 @@ type TriageStatus struct {
 
 // ReviewStats tracks cumulative stats for the review run.
 type ReviewStats struct {
-	RoundsRun       int
-	TotalBeads      int
-	TotalFixes      int
-	ScopeReconciled int
-	StopReason      string
-	CommitSweep     bool
-	StartedAt       time.Time
+	RoundsRun  int
+	TotalTasks int
+	TotalFixes int
+	StopReason string
+	CommitSweep bool
+	StartedAt  time.Time
 }
