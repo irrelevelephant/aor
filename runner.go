@@ -619,7 +619,7 @@ func printSummary(log *Logger, stats *RunStats) {
 
 	fmt.Println()
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
-	log.Log("%s  Agent Orchestration Runner Summary%s", cBold, cReset)
+	log.Log("%s  Agent ORchestration Summary%s", cBold, cReset)
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 	log.Log("  Tasks completed:   %s%d%s", cGreen, stats.TasksCompleted, cReset)
 	log.Log("  Issues discovered: %d", stats.Discovered)

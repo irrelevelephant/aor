@@ -1,6 +1,6 @@
 # aor + ata
 
-**aor** (Agent Orchestration Runner) is a process-level orchestrator that drives [Claude Code](https://docs.anthropic.com/en/docs/claude-code) through a queue of tasks. **ata** (Agent Task Automator) is the SQLite-backed task manager it pulls work from.
+**aor** (Agent ORchestration) is a process-level orchestrator that drives [Claude Code](https://docs.anthropic.com/en/docs/claude-code) through a queue of tasks. **ata** (Agent TAsks) is the SQLite-backed task manager it pulls work from.
 
 Together they form a loop: you create and prioritize tasks in ata (via CLI or web UI), then aor works through them autonomously — claiming tasks, spawning Claude Code sessions, streaming output, and closing tasks on completion.
 
@@ -76,24 +76,24 @@ While aor is running:
 ## How It Works
 
 ```
-you (web UI / CLI)          aor (orchestrator)            claude (agent)
-─────────────────           ──────────────────            ──────────────
-create tasks ──────────►  ata ready --json
-prioritize queue            pick top task
-                            ata claim <id>
-                            build prompt ─────────────►  claude -p "..."
-                            stream stdout ◄────────────  JSON lines
-                            parse sentinel ◄───────────  ATA_RUNNER_STATUS:{...}
-                            ata close <id>
-                            loop ──────────────────────►  next task...
+you (web UI / CLI)        aor (orchestrator)          claude (agent)
+─────────────────         ──────────────────          ──────────────
+create tasks ────────►    ata ready --json
+prioritize queue          pick top task
+                          ata claim <id>
+                          build prompt ───────────►   claude -p "..."
+                          stream stdout ◄──────────   JSON lines
+                          parse sentinel ◄─────────   ATA_RUNNER_STATUS:{...}
+                          ata close <id>
+                          loop ────────────────────►  next task...
 ```
 
 ### Task Lifecycle
 
 ```
 backlog ──► queue ──► in_progress ──► closed
-   │                      │
-   └──────────────────────┘  (unclaim resets to queue)
+                          │
+                          └──► queue  (unclaim resets to queue)
 ```
 
 - **backlog** — raw ideas, not yet prioritized

@@ -88,7 +88,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `ata — Agent Task Automator
+	fmt.Fprintf(os.Stderr, `ata — Agent TAsks
 
 Usage:
   ata <command> [args]

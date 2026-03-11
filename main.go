@@ -66,7 +66,7 @@ func main() {
 	flag.StringVar(&cfg.Workspace, "workspace", "", "Workspace path (default: auto-detect from git)")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `aor — Agent Orchestration Runner
+		fmt.Fprintf(os.Stderr, `aor — Agent ORchestration
 
 Each task runs in a fresh Claude Code context window. Output streams in real time.
 Tasks are managed by ata (SQLite-backed, workspace-scoped).
