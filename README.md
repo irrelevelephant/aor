@@ -185,6 +185,8 @@ ata tag add TASK TAG [TAG...]                              Add tags
 ata tag rm TASK TAG [TAG...]                               Remove tags
 ata tag list [--workspace WS] [--json]                     List all tags in use
 ata reorder ID --position N
+ata move --from STATUS --to STATUS [--workspace WS] [--json]
+ata move ID [ID...] --to STATUS [--json]
 ata recover [--workspace PATH] [--json]
 ata epic-close-eligible [--workspace PATH] [--json]
 ata serve [--port 4400] [--addr 0.0.0.0]

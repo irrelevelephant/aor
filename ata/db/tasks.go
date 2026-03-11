@@ -362,6 +362,63 @@ func (d *DB) EpicProgress(epicID string) (*model.EpicProgress, error) {
 	return p, nil
 }
 
+// MoveTasks changes the status of tasks matching the filter criteria.
+// It preserves sort_order values. If specific IDs are given, only those are moved.
+// If fromStatus is given (and ids is empty), all tasks matching workspace+fromStatus are moved.
+// Returns the moved tasks (with their pre-move state for display).
+func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]model.Task, error) {
+	tx, err := d.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("move tasks: %w", err)
+	}
+	defer tx.Rollback()
+
+	var tasks []model.Task
+
+	if len(ids) > 0 {
+		// Move specific tasks by ID.
+		ph, phArgs := inPlaceholders(ids)
+		query := `SELECT ` + taskCols + ` FROM tasks WHERE id IN (` + ph + `) AND status != 'closed' ORDER BY sort_order ASC, created_at ASC`
+		rows, qErr := tx.Query(query, phArgs...)
+		if qErr != nil {
+			return nil, fmt.Errorf("move tasks: %w", qErr)
+		}
+		defer rows.Close()
+		tasks, err = d.scanTasks(rows)
+		if err != nil {
+			return nil, err
+		}
+		if len(tasks) == 0 {
+			return nil, nil
+		}
+		// Update using the same ID set, re-checking status to avoid reopening closed tasks.
+		args := []any{toStatus}
+		args = append(args, phArgs...)
+		_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id IN (`+ph+`) AND status != 'closed'`, args...)
+	} else if fromStatus != "" {
+		// Fetch matching tasks, then update with the same predicate directly.
+		tasks, err = d.ListTasks(workspace, fromStatus, "", "")
+		if err != nil {
+			return nil, err
+		}
+		if len(tasks) == 0 {
+			return nil, nil
+		}
+		_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE workspace = ? AND status = ?`,
+			toStatus, workspace, fromStatus)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("move tasks: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("move tasks commit: %w", err)
+	}
+
+	return tasks, nil
+}
+
 // RecoverStuckTasks finds in_progress tasks with dead PIDs and unclaims them.
 func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'in_progress' AND claimed_pid IS NOT NULL`

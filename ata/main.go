@@ -64,6 +64,8 @@ func main() {
 		cmdErr = cmd.Tag(d, args)
 	case "reorder":
 		cmdErr = cmd.Reorder(d, args)
+	case "move":
+		cmdErr = cmd.Move(d, args)
 	case "recover":
 		cmdErr = cmd.Recover(d, args)
 	case "epic-close-eligible":
@@ -108,6 +110,7 @@ Commands:
   dep       Manage task dependencies
   tag       Manage task tags
   reorder   Set task position in its list
+  move      Batch move tasks between statuses
   recover   Recover stuck in_progress tasks
   epic-close-eligible  List epics eligible for auto-close
   serve     Start web UI server
