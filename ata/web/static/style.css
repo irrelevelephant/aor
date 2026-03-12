@@ -130,12 +130,18 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 
 /* Back link */
 .back-link {
-    display: inline-block;
-    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.9rem;
     color: var(--text-dim);
+    padding: 0.35rem 0.65rem;
     margin-bottom: 1rem;
+    margin-left: -0.65rem;
+    border-radius: var(--radius);
+    transition: color 0.15s, background 0.15s;
 }
-.back-link:hover { color: var(--accent); }
+.back-link:hover { color: var(--accent); background: rgba(255,255,255,0.04); text-decoration: none; }
 
 /* Columns */
 .workspace-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
