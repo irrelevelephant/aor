@@ -73,6 +73,14 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
 
+	// Auto-promote parent to epic if it isn't one already.
+	if epicID != "" {
+		_, err = tx.Exec(`UPDATE tasks SET is_epic = 1 WHERE id = ? AND is_epic = 0`, epicID)
+		if err != nil {
+			return nil, fmt.Errorf("auto-promote epic: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
