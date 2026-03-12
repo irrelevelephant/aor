@@ -191,9 +191,10 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
+    min-width: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .columns { grid-template-columns: 1fr; }
 }
 
@@ -221,21 +222,25 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1rem;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .task-list { display: flex; flex-direction: column; gap: 0.25rem; min-height: 2rem; }
 
 .task-row {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
     padding: 0.5rem 0.5rem;
     border-radius: var(--radius);
     cursor: default;
     transition: background 0.1s;
+    min-width: 0;
 }
 .task-row:hover { background: rgba(255,255,255,0.04); }
-.task-link { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-link { flex: 1; min-width: 0; word-break: break-word; }
 
 .drag-handle {
     cursor: grab;
@@ -404,25 +409,6 @@ button.tag-badge { cursor: pointer; }
 }
 .task-row:hover .tag-remove-btn { opacity: 0.5; }
 .task-row .tag-remove-btn:hover { opacity: 1; }
-.tag-add-compact {
-    display: inline-flex;
-    margin: 0;
-}
-.tag-add-compact .chip-input-field {
-    width: 4ch;
-    min-width: 4ch;
-    padding: 0.1rem 0.3rem;
-    font-size: 0.8rem;
-    border: 1px solid transparent;
-    border-radius: var(--radius);
-    transition: width 0.15s, border-color 0.15s;
-}
-.tag-add-compact .chip-input-field:focus {
-    width: 10ch;
-    min-width: 10ch;
-    border-color: var(--border);
-    background: var(--bg);
-}
 
 
 /* Chip input for tags */

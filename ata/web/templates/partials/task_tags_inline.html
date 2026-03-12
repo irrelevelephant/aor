@@ -14,11 +14,4 @@
     {{end}}
 </span>
 {{end}}
-{{if $editable}}
-<form class="tag-add-inline tag-add-compact" method="POST" action="/task/{{$taskID}}/tags"
-      hx-post="/task/{{$taskID}}/tags" hx-swap="none"
-      hx-vals='js:{"redirect": location.pathname + location.search}'>
-    <input type="text" name="tag" class="chip-input-field" placeholder="+ tag" list="ws-tags" autocomplete="off">
-</form>
-{{end}}
 {{end}}

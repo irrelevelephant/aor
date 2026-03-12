@@ -212,7 +212,7 @@ function initInlineTagForms() {
 // Uses event delegation so it works for any number of forms without O(N) setup.
 function initTagFormSSESuppression() {
     document.body.addEventListener('htmx:beforeRequest', function(e) {
-        if (e.target.closest('.tag-add-compact, .tag-remove-inline')) {
+        if (e.target.closest('.tag-remove-inline')) {
             window._localActionUntil = Date.now() + 1000;
         }
     });
