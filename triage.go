@@ -232,6 +232,7 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 		MaxTurns: 10,
 		Yolo:     cfg.Yolo,
 		LogDir:   cfg.LogDir,
+		WorkDir:  cfg.WorkDir,
 	}
 
 	fmt.Printf("\n%s─── Triage: %s ──────────────────────────────────────%s\n\n",

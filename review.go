@@ -52,6 +52,7 @@ func runRev(args []string) error {
 		MaxTurns: cfg.MaxTurns,
 		Yolo:     cfg.Yolo,
 		LogDir:   cfg.LogDir,
+		WorkDir:  detectWorkDir(),
 	}
 
 	var allTasks []ReviewTask
@@ -142,6 +143,7 @@ func runRev(args []string) error {
 			MaxTurns: 5,
 			Yolo:     sessionCfg.Yolo,
 			LogDir:   sessionCfg.LogDir,
+			WorkDir:  sessionCfg.WorkDir,
 		}
 		sweepResult := runSession(sweepCfg, log, commitPrompt, stdinCh)
 		if sweepResult.Error != nil {

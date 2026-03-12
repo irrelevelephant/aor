@@ -12,14 +12,15 @@ import (
 )
 
 // buildPrompt constructs the system prompt for a Claude Code session.
+// batchSize may differ from cfg.BatchSize due to adaptive sizing.
 // claimedTask is the task already claimed by the runner before launching the session.
-func buildPrompt(batchSize int, epicFilter, tagFilter, workspace string, claimedTask *AtaTask) string {
+func buildPrompt(cfg *Config, batchSize int, claimedTask *AtaTask) string {
 	filterInstruction := ""
-	if epicFilter != "" {
-		filterInstruction += fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
+	if cfg.EpicFilter != "" {
+		filterInstruction += fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", cfg.EpicFilter)
 	}
-	if tagFilter != "" {
-		filterInstruction += fmt.Sprintf("Only work on tasks tagged \"%s\". Ignore unrelated ready items.\n\n", tagFilter)
+	if cfg.TagFilter != "" {
+		filterInstruction += fmt.Sprintf("Only work on tasks tagged \"%s\". Ignore unrelated ready items.\n\n", cfg.TagFilter)
 	}
 
 	// Inject epic spec if the task belongs to an epic.
@@ -32,8 +33,17 @@ func buildPrompt(batchSize int, epicFilter, tagFilter, workspace string, claimed
 	}
 
 	workspaceInstruction := ""
-	if workspace != "" {
-		workspaceInstruction = fmt.Sprintf("Workspace: %s\n- When creating tasks, use: ata create \"title\" --workspace \"%s\" --json\n- When creating tasks under an epic, add: --epic EPIC_ID\n\n", workspace, workspace)
+	if cfg.Workspace != "" {
+		workspaceInstruction = fmt.Sprintf("Workspace: %s\n- When creating tasks, use: ata create \"title\" --workspace \"%s\" --json\n- When creating tasks under an epic, add: --epic EPIC_ID\n\n", cfg.Workspace, cfg.Workspace)
+	}
+
+	worktreeInstruction := ""
+	if cfg.WorkDir != "" && cfg.WorkDir != cfg.Workspace {
+		worktreeInstruction = fmt.Sprintf("IMPORTANT — You are working in a git worktree at: %s\n"+
+			"All file edits, git commits, and git operations MUST happen in this worktree.\n"+
+			"Do NOT cd to or operate on the main repository at %s.\n"+
+			"The --workspace flag in ata commands refers to the task database, not your working directory.\n\n",
+			cfg.WorkDir, cfg.Workspace)
 	}
 
 	claimedInstruction := fmt.Sprintf(`Your first task is already claimed: %s — %s
@@ -46,14 +56,14 @@ Work on it immediately. Do not run ata ready or ata claim for this task.`, claim
 	additionalTasks := ""
 	if batchSize > 1 {
 		readyCmd := "ata ready --json"
-		if workspace != "" {
-			readyCmd = fmt.Sprintf("ata ready --workspace \"%s\" --json", workspace)
+		if cfg.Workspace != "" {
+			readyCmd = fmt.Sprintf("ata ready --workspace \"%s\" --json", cfg.Workspace)
 		}
-		if epicFilter != "" {
-			readyCmd += fmt.Sprintf(" --epic \"%s\"", epicFilter)
+		if cfg.EpicFilter != "" {
+			readyCmd += fmt.Sprintf(" --epic \"%s\"", cfg.EpicFilter)
 		}
-		if tagFilter != "" {
-			readyCmd += fmt.Sprintf(" --tag \"%s\"", tagFilter)
+		if cfg.TagFilter != "" {
+			readyCmd += fmt.Sprintf(" --tag \"%s\"", cfg.TagFilter)
 		}
 		additionalTasks = fmt.Sprintf(`
 After completing the claimed task, run %s for up to %d additional task(s).
@@ -64,29 +74,29 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 
 	// Build discovered task instruction.
 	createCmd := `ata create "<issue>" --status queue`
-	if workspace != "" {
-		createCmd += fmt.Sprintf(` --workspace "%s"`, workspace)
+	if cfg.Workspace != "" {
+		createCmd += fmt.Sprintf(` --workspace "%s"`, cfg.Workspace)
 	}
 	if claimedTask.EpicID != "" {
 		createCmd += fmt.Sprintf(` --epic %s`, claimedTask.EpicID)
 	}
-	if tagFilter != "" {
-		createCmd += fmt.Sprintf(` --tag "%s"`, tagFilter)
+	if cfg.TagFilter != "" {
+		createCmd += fmt.Sprintf(` --tag "%s"`, cfg.TagFilter)
 	}
 	discoveredInstruction := fmt.Sprintf(`5. File discovered issues for any new problems found outside current scope.
    Use: %s --json`, createCmd)
 
 	decomposeCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic %s`, claimedTask.ID)
-	if workspace != "" {
-		decomposeCmd += fmt.Sprintf(` --workspace "%s"`, workspace)
+	if cfg.Workspace != "" {
+		decomposeCmd += fmt.Sprintf(` --workspace "%s"`, cfg.Workspace)
 	}
-	if tagFilter != "" {
-		decomposeCmd += fmt.Sprintf(` --tag "%s"`, tagFilter)
+	if cfg.TagFilter != "" {
+		decomposeCmd += fmt.Sprintf(` --tag "%s"`, cfg.TagFilter)
 	}
 
 	return fmt.Sprintf(`You are working through tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
 
-%s%s%s%s%s
+%s%s%s%s%s%s
 
 For each task:
 1. Implement the work.
@@ -122,7 +132,7 @@ Task decomposition:
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
-Start now.`, specInstruction, filterInstruction, workspaceInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
+Start now.`, specInstruction, filterInstruction, workspaceInstruction, worktreeInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
 }
 
 // claimTracker keeps track of the currently claimed task so we can
@@ -204,6 +214,9 @@ func run(cfg *Config) error {
 	}
 	if cfg.Workspace != "" {
 		log.Log("Config: workspace=%s", cfg.Workspace)
+	}
+	if cfg.WorkDir != "" && cfg.WorkDir != cfg.Workspace {
+		log.Log("Config: workdir=%s (worktree mode)", cfg.WorkDir)
 	}
 	log.Log("Controls: i=interject, s=skip, q=quit, Ctrl+C=stop & exit")
 	fmt.Println()
@@ -300,7 +313,7 @@ func run(cfg *Config) error {
 			next.Body += "\n\n## Previous Attempt Notes\n" + comments
 		}
 
-		prompt := buildPrompt(effectiveBatchSize, cfg.EpicFilter, cfg.TagFilter, cfg.Workspace, next)
+		prompt := buildPrompt(cfg, effectiveBatchSize, next)
 
 		// Capture pre-task HEAD for post-task review diffing.
 		preSHA, _ := headSHA()

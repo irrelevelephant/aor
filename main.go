@@ -4,8 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 )
 
 // ANSI escape codes for terminal output.
@@ -36,6 +34,7 @@ type Config struct {
 	Unclaim         bool
 	LogDir          string
 	Workspace       string
+	WorkDir         string // actual working directory (worktree path when in a linked worktree)
 	ResumeSessionID string // set internally when resuming an existing session
 }
 
@@ -96,6 +95,7 @@ Flags:
 	if cfg.Workspace == "" {
 		cfg.Workspace = detectWorkspaceFromGit()
 	}
+	cfg.WorkDir = detectWorkDir()
 
 	if cfg.LogDir == "" {
 		cfg.LogDir = resolveLogDir()
@@ -119,12 +119,7 @@ Flags:
 // resolving linked worktrees to the main worktree so tasks are found under
 // the correct registered workspace.
 func detectWorkspaceFromGit() string {
-	toplevel, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		cwd, _ := os.Getwd()
-		return cwd
-	}
-	path := strings.TrimSpace(string(toplevel))
+	path := detectWorkDir()
 
 	// If we're in a linked worktree, resolve to the main worktree.
 	if mainWt := gitMainWorktree(); mainWt != "" {

@@ -49,6 +49,9 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 	}
 
 	cmd := exec.Command("claude", args...)
+	if cfg.WorkDir != "" {
+		cmd.Dir = cfg.WorkDir
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -235,7 +238,7 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 			mu.Unlock()
 
 			if sid != "" {
-				runInteractive(sid, cfg.Yolo)
+				runInteractive(sid, cfg.Yolo, cfg.WorkDir)
 			} else {
 				fmt.Printf("%s[runner] No session ID captured, can't resume interactively.%s\n", cRed, cReset)
 			}
@@ -503,7 +506,7 @@ func parseSentinelJSON[T any](output, sentinel string) *T {
 
 // runInteractive drops the user into an interactive Claude Code session
 // that resumes from the given session ID.
-func runInteractive(sessionID string, yolo bool) {
+func runInteractive(sessionID string, yolo bool, workDir string) {
 	fmt.Printf("%s[runner] Launching: claude --resume %s%s\n", cCyan, sessionID, cReset)
 	fmt.Printf("%s[runner] Exit the interactive session (Ctrl+D or /exit) to return to the runner.%s\n", cGray, cReset)
 
@@ -512,6 +515,9 @@ func runInteractive(sessionID string, yolo bool) {
 		args = append(args, "--dangerously-skip-permissions")
 	}
 	cmd := exec.Command("claude", args...)
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

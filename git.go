@@ -3,10 +3,23 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// detectWorkDir returns the actual git toplevel for the current directory,
+// WITHOUT resolving linked worktrees to the main worktree. This is the
+// directory where agents should execute and make changes.
+func detectWorkDir() string {
+	toplevel, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		cwd, _ := os.Getwd()
+		return cwd
+	}
+	return strings.TrimSpace(string(toplevel))
+}
 
 // resolveBase determines the base ref for diff comparison.
 // If explicit is non-empty, it is used directly. Otherwise, auto-detection
