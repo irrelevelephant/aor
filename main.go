@@ -26,6 +26,7 @@ const (
 // Config holds all runtime configuration from command-line flags.
 type Config struct {
 	EpicFilter      string
+	TagFilter       string
 	MaxTasks        int
 	BatchSize       int
 	MaxTurns        int
@@ -54,6 +55,7 @@ func main() {
 	cfg := &Config{}
 
 	flag.StringVar(&cfg.EpicFilter, "epic", "", "Only work on tasks under this epic")
+	flag.StringVar(&cfg.TagFilter, "tag", "", "Only work on tasks with this tag")
 	flag.IntVar(&cfg.MaxTasks, "max-tasks", 0, "Stop after N tasks (0 = unlimited)")
 	flag.IntVar(&cfg.BatchSize, "batch-size", 1, "Tasks per Claude session before fresh context")
 	flag.IntVar(&cfg.MaxTurns, "max-turns", 150, "Max agent turns per session")

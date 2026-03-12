@@ -28,13 +28,16 @@ func resolveLogDir() string {
 }
 
 // getReadyTasks fetches queue tasks from ata, optionally filtered by epic and workspace.
-func getReadyTasks(epicFilter, workspace string) ([]AtaTask, error) {
+func getReadyTasks(epicFilter, tagFilter, workspace string) ([]AtaTask, error) {
 	args := []string{"ready", "--json", "--limit", "0"}
 	if workspace != "" {
 		args = append(args, "--workspace", workspace)
 	}
 	if epicFilter != "" {
 		args = append(args, "--epic", epicFilter)
+	}
+	if tagFilter != "" {
+		args = append(args, "--tag", tagFilter)
 	}
 
 	out, err := exec.Command("ata", args...).Output()

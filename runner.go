@@ -15,10 +15,13 @@ import (
 // claimedTask is the task already claimed by the runner before launching the session.
 // maxTurns must match the --max-turns value passed to the session so the agent's
 // turn-budget guidance is accurate.
-func buildPrompt(batchSize, maxTurns int, epicFilter, workspace string, claimedTask *AtaTask) string {
-	epicInstruction := ""
+func buildPrompt(batchSize, maxTurns int, epicFilter, tagFilter, workspace string, claimedTask *AtaTask) string {
+	filterInstruction := ""
 	if epicFilter != "" {
-		epicInstruction = fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
+		filterInstruction += fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
+	}
+	if tagFilter != "" {
+		filterInstruction += fmt.Sprintf("Only work on tasks tagged \"%s\". Ignore unrelated ready items.\n\n", tagFilter)
 	}
 
 	// Inject epic spec if the task belongs to an epic.
@@ -47,6 +50,12 @@ Work on it immediately. Do not run ata ready or ata claim for this task.`, claim
 		readyCmd := "ata ready --json"
 		if workspace != "" {
 			readyCmd = fmt.Sprintf("ata ready --workspace \"%s\" --json", workspace)
+		}
+		if epicFilter != "" {
+			readyCmd += fmt.Sprintf(" --epic \"%s\"", epicFilter)
+		}
+		if tagFilter != "" {
+			readyCmd += fmt.Sprintf(" --tag \"%s\"", tagFilter)
 		}
 		additionalTasks = fmt.Sprintf(`
 After completing the claimed task, run %s for up to %d additional task(s).
@@ -117,7 +126,7 @@ Task decomposition:
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
-Start now.`, specInstruction, epicInstruction, workspaceInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
+Start now.`, specInstruction, filterInstruction, workspaceInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
 }
 
 // buildWrapUpPrompt constructs a focused prompt for resuming a session that
@@ -217,6 +226,9 @@ func run(cfg *Config) error {
 	if cfg.EpicFilter != "" {
 		log.Log("Config: epic_filter=%s", cfg.EpicFilter)
 	}
+	if cfg.TagFilter != "" {
+		log.Log("Config: tag_filter=%s", cfg.TagFilter)
+	}
 	if cfg.Workspace != "" {
 		log.Log("Config: workspace=%s", cfg.Workspace)
 	}
@@ -229,7 +241,7 @@ func run(cfg *Config) error {
 			stats.RecoveredTasks += n
 		}
 
-		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.Workspace)
+		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.TagFilter, cfg.Workspace)
 		if err != nil {
 			log.Log("%sError checking ready tasks: %v%s", cRed, err, cReset)
 			stats.Errors++
@@ -315,7 +327,7 @@ func run(cfg *Config) error {
 			next.Body += "\n\n## Previous Attempt Notes\n" + comments
 		}
 
-		prompt := buildPrompt(effectiveBatchSize, cfg.MaxTurns, cfg.EpicFilter, cfg.Workspace, next)
+		prompt := buildPrompt(effectiveBatchSize, cfg.MaxTurns, cfg.EpicFilter, cfg.TagFilter, cfg.Workspace, next)
 
 		// Capture pre-task HEAD for post-task review diffing.
 		preSHA, _ := headSHA()
