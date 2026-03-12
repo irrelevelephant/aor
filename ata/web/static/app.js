@@ -9,7 +9,7 @@ function updateColumnCounts() {
 
 document.addEventListener('DOMContentLoaded', function() {
     // Suppress SSE reloads briefly after local actions to avoid self-triggered reloads.
-    var localActionUntil = 0;
+    window._localActionUntil = 0;
 
     // Sortable.js on drag-to-reorder lists.
     // Queue and backlog share a group so tasks can be dragged between them.
@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (targetStatus) {
                     body += '&status=' + encodeURIComponent(targetStatus);
                 }
-                localActionUntil = Date.now() + 1000;
+                window._localActionUntil = Date.now() + 1000;
                 fetch('/reorder', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var reloadTimer = null;
         ['task_created', 'task_updated', 'task_closed', 'task_reordered'].forEach(function(evt) {
             es.addEventListener(evt, function() {
-                if (Date.now() < localActionUntil) return;
+                if (Date.now() < window._localActionUntil) return;
                 clearTimeout(reloadTimer);
                 reloadTimer = setTimeout(function() { window.location.reload(); }, 300);
             });
@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Chip inputs for tag entry.
     initChipInputs();
     initInlineTagForms();
+    initTagFormSSESuppression();
 
     // Body inline editing on task detail page.
     var bodyDisplay = document.getElementById('body-display');
@@ -169,6 +170,16 @@ function initChipInputs() {
             }
         });
 
+        // Commit pending tag text on datalist selection via change event.
+        field.addEventListener('change', function() {
+            if (field.value.trim()) addTag(field.value);
+        });
+
+        // Commit any pending tag text before the form submits.
+        form.addEventListener('submit', function() {
+            if (field.value.trim()) addTag(field.value);
+        });
+
         // Reset chips when form submits successfully.
         if (form.getAttribute('hx-post')) {
             form.addEventListener('htmx:afterRequest', function(e) {
@@ -181,7 +192,7 @@ function initChipInputs() {
     });
 }
 
-// --- Inline tag add on detail pages (Enter to submit) ---
+// --- Inline tag add on detail and workspace pages (Enter to submit) ---
 function initInlineTagForms() {
     document.querySelectorAll('.tag-add-inline').forEach(function(form) {
         var field = form.querySelector('.chip-input-field');
@@ -195,6 +206,16 @@ function initInlineTagForms() {
                 }
             }
         });
+    });
+}
+
+// Suppress SSE reloads when tag forms submit (htmx).
+// Uses event delegation so it works for any number of forms without O(N) setup.
+function initTagFormSSESuppression() {
+    document.body.addEventListener('htmx:beforeRequest', function(e) {
+        if (e.target.closest('.tag-add-compact, .tag-remove-inline')) {
+            window._localActionUntil = Date.now() + 1000;
+        }
     });
 }
 

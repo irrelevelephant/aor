@@ -1,0 +1,24 @@
+{{define "task_tags_inline.html"}}
+{{$taskID := .TaskID}}
+{{$editable := .Editable}}
+{{range .Tags}}
+<span class="tag-item-inline">
+    <button type="button" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}" data-tag="{{.}}" onclick="includeTagFilter(this.dataset.tag)">{{.}}</button>
+    {{if $editable}}
+    <form class="tag-remove-inline" method="POST" action="/task/{{$taskID}}/tags/remove"
+          hx-post="/task/{{$taskID}}/tags/remove" hx-swap="none"
+          hx-vals='js:{"redirect": location.pathname + location.search}'>
+        <input type="hidden" name="tag" value="{{.}}">
+        <button type="submit" class="btn-icon tag-remove-btn" title="Remove tag">&times;</button>
+    </form>
+    {{end}}
+</span>
+{{end}}
+{{if $editable}}
+<form class="tag-add-inline tag-add-compact" method="POST" action="/task/{{$taskID}}/tags"
+      hx-post="/task/{{$taskID}}/tags" hx-swap="none"
+      hx-vals='js:{"redirect": location.pathname + location.search}'>
+    <input type="text" name="tag" class="chip-input-field" placeholder="+ tag" list="ws-tags" autocomplete="off">
+</form>
+{{end}}
+{{end}}

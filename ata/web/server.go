@@ -145,7 +145,16 @@ func Serve(d *db.DB, addr string) error {
 		// Default: HTML in markdown source is escaped (safe from XSS).
 	)
 
+	// dict builds an ad-hoc map from key/value pairs for template calls.
+	dict := func(pairs ...any) map[string]any {
+		m := make(map[string]any, len(pairs)/2)
+		for i := 0; i+1 < len(pairs); i += 2 {
+			m[pairs[i].(string)] = pairs[i+1]
+		}
+		return m
+	}
 	funcMap := template.FuncMap{
+		"dict": dict,
 		"renderMarkdown": func(s string) template.HTML {
 			var buf bytes.Buffer
 			if err := md.Convert([]byte(s), &buf); err != nil {
@@ -193,7 +202,7 @@ func Serve(d *db.DB, addr string) error {
 	// Each page gets: layout + partials + its own page template.
 	pageFiles := []string{"index.html", "workspace.html", "task.html", "epic.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
-	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html"}
+	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html"}
 	for _, page := range pageFiles {
 		t, err := template.New("").Funcs(funcMap).ParseFS(content, append(sharedFiles, "templates/"+page)...)
 		if err != nil {
@@ -625,13 +634,16 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 	s.hub.Broadcast("task_created", task.Workspace, task.ID)
 
-	// htmx redirect.
-	var wsName string
-	if ws, err := s.db.GetWorkspace(task.Workspace); err == nil && ws != nil {
-		wsName = ws.Name
+	// Redirect back to the referring page (preserving filters) or workspace root.
+	dest := r.FormValue("redirect")
+	if dest == "" || !strings.HasPrefix(dest, "/") || strings.HasPrefix(dest, "//") {
+		var wsName string
+		if ws, err := s.db.GetWorkspace(task.Workspace); err == nil && ws != nil {
+			wsName = ws.Name
+		}
+		dest = workspaceURL(task.Workspace, wsName)
 	}
-	wsURL := workspaceURL(task.Workspace, wsName)
-	s.hxRedirect(w, r, wsURL, http.StatusSeeOther)
+	s.hxRedirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
@@ -853,7 +865,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 // tagRedirect returns the appropriate redirect URL after a tag mutation.
 // Uses the "redirect" form parameter if set, otherwise falls back to task/epic based on type.
 func (s *Server) tagRedirect(id string, task *model.Task, r *http.Request) string {
-	if dest := r.FormValue("redirect"); dest != "" {
+	if dest := r.FormValue("redirect"); dest != "" && strings.HasPrefix(dest, "/") && !strings.HasPrefix(dest, "//") {
 		return dest
 	}
 	if task != nil && task.IsEpic {

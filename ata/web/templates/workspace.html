@@ -12,17 +12,19 @@
     </div>
 </div>
 
-<form class="quick-add" hx-post="/task" hx-swap="none">
+<datalist id="ws-tags">
+    {{range .AllTags}}<option value="{{.}}">{{end}}
+</datalist>
+
+<form class="quick-add" hx-post="/task" hx-swap="none"
+      hx-vals='js:{"redirect": location.pathname + location.search}'>
     <input type="hidden" name="workspace" value="{{.Path}}">
     <input type="hidden" name="status" value="queue">
     <input type="hidden" name="tags" value="">
     <textarea name="content" class="quick-add-input" placeholder="New task...&#10;&#10;First line becomes the title.&#10;Everything else becomes the description." rows="1" required></textarea>
     <div class="chip-input-row">
         <span class="chip-input-chips"></span>
-        <input type="text" class="chip-input-field" placeholder="Add tags..." list="quick-add-tags" autocomplete="off">
-        <datalist id="quick-add-tags">
-            {{range .AllTags}}<option value="{{.}}">{{end}}
-        </datalist>
+        <input type="text" class="chip-input-field" placeholder="Add tags..." list="ws-tags" autocomplete="off">
     </div>
     <div class="quick-add-footer">
         <span class="quick-add-hint">Enter to submit &middot; Shift+Enter for new line</span>
@@ -42,7 +44,7 @@
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
                 {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
                 {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+                {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
             </div>
             {{end}}
         </div>
@@ -58,7 +60,7 @@
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
                 {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
                 {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+                {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
             </div>
             {{end}}
         </div>
@@ -76,7 +78,7 @@
             {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
             {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
             {{if eq .Status "in_progress"}}{{if .ClaimedPID}}<span class="badge agent-badge">pid:{{.ClaimedPID}}</span>{{end}}{{if .Worktree}}<span class="badge worktree-badge" title="{{.Worktree}}">wt</span>{{end}}{{end}}
-            {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+            {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
         </div>
         {{end}}
     </div>
@@ -94,7 +96,7 @@
             <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
             {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
             {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
-            {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+            {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" false)}}
         </div>
         {{end}}
     </div>

@@ -372,9 +372,41 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 /* Tag badges */
 .tag-badge { text-decoration: none; }
 .tag-badge:hover { opacity: 0.85; text-decoration: none; }
+button.tag-badge { cursor: pointer; }
 .tags-section { margin-bottom: 1.5rem; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.75rem; }
 .tag-item { display: inline-flex; align-items: center; gap: 0.15rem; }
+
+/* Inline tag management on task rows */
+.tag-item-inline { display: inline-flex; align-items: center; gap: 0; }
+.tag-remove-inline { display: inline; }
+.tag-remove-btn {
+    font-size: 0.75rem;
+    padding: 0 0.15rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.task-row:hover .tag-remove-btn { opacity: 0.5; }
+.task-row .tag-remove-btn:hover { opacity: 1; }
+.tag-add-compact {
+    display: inline-flex;
+    margin: 0;
+}
+.tag-add-compact .chip-input-field {
+    width: 4ch;
+    min-width: 4ch;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.8rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    transition: width 0.15s, border-color 0.15s;
+}
+.tag-add-compact .chip-input-field:focus {
+    width: 10ch;
+    min-width: 10ch;
+    border-color: var(--border);
+    background: var(--bg);
+}
 
 
 /* Chip input for tags */
