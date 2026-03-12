@@ -16,9 +16,8 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.sortable').forEach(function(el) {
         new Sortable(el, {
             group: 'tasks',
+            handle: '.drag-handle',
             animation: 150,
-            delay: 300,
-            delayOnTouchOnly: true,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
             onEnd: function(evt) {

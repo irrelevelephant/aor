@@ -40,6 +40,7 @@
         <div class="task-list sortable" id="queue-list" data-status="queue">
             {{range .Queue}}
             <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
+                <span class="drag-handle">⠿</span>
                 <span class="id-badge">{{.ID}}</span>
                 <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
@@ -56,6 +57,7 @@
         <div class="task-list sortable" id="backlog-list" data-status="backlog">
             {{range .Backlog}}
             <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
+                <span class="drag-handle">⠿</span>
                 <span class="id-badge">{{.ID}}</span>
                 <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}

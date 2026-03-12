@@ -237,7 +237,23 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .task-row:hover { background: rgba(255,255,255,0.04); }
 .task-link { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.sortable .task-row { cursor: grab; }
+.drag-handle {
+    cursor: grab;
+    color: var(--text-dim);
+    font-size: 1rem;
+    padding: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+.drag-handle:active { cursor: grabbing; }
+@media (pointer: coarse) {
+    .drag-handle { min-width: 44px; min-height: 44px; }
+}
 .sortable-ghost { opacity: 0.4; }
 .sortable-chosen { background: rgba(88,166,255,0.1); }
 
