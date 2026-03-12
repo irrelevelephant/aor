@@ -177,10 +177,26 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .quick-add-input::placeholder { color: var(--text-dim); }
 .quick-add-footer {
     display: flex;
-    justify-content: space-between;
+    flex-wrap: wrap;
     align-items: center;
+    gap: 0.4rem;
     padding: 0.4rem 0.75rem;
     border-top: 1px solid var(--border);
+}
+.quick-add-footer .chip-input-row {
+    border-top: none;
+    padding: 0;
+    margin-left: auto;
+}
+.quick-add-footer > .btn { flex-shrink: 0; }
+@media (max-width: 600px) {
+    .quick-add-footer .chip-input-row {
+        order: -1;
+        flex-basis: 100%;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.35rem;
+        margin-left: 0;
+    }
 }
 .quick-add-hint {
     font-size: 0.75rem;

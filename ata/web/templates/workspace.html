@@ -22,13 +22,13 @@
     <input type="hidden" name="status" value="queue">
     <input type="hidden" name="tags" value="">
     <textarea name="content" class="quick-add-input" placeholder="New task...&#10;&#10;First line becomes the title.&#10;Everything else becomes the description." rows="1" required></textarea>
-    <div class="chip-input-row">
-        <span class="chip-input-label">Tags</span>
-        <span class="chip-input-chips"></span>
-        <input type="text" class="chip-input-field" placeholder="Add tags..." list="ws-tags" autocomplete="off">
-    </div>
     <div class="quick-add-footer">
         <span class="quick-add-hint">Enter to submit &middot; Shift+Enter for new line</span>
+        <div class="chip-input-row">
+            <span class="chip-input-label">Tags</span>
+            <span class="chip-input-chips"></span>
+            <input type="text" class="chip-input-field" placeholder="Add tags..." list="ws-tags" autocomplete="off">
+        </div>
         <button type="submit" class="btn btn-primary">Add</button>
     </div>
 </form>
