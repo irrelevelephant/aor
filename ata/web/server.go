@@ -263,6 +263,16 @@ func Serve(d *db.DB, addr string) error {
 	return http.ListenAndServe(addr, handler)
 }
 
+// hxRedirect sends an HX-Redirect for htmx requests, or a standard HTTP redirect otherwise.
+func (s *Server) hxRedirect(w http.ResponseWriter, r *http.Request, dest string, code int) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", dest)
+		w.WriteHeader(200)
+		return
+	}
+	http.Redirect(w, r, dest, code)
+}
+
 // render executes a page template by name.
 func (s *Server) render(w http.ResponseWriter, page string, data any) {
 	t, ok := s.pages[page]
@@ -307,13 +317,25 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 
-	queue, _ := s.db.ListTasks(path, model.StatusQueue, "", tag, xtag)
-	inProgress, _ := s.db.ListTasks(path, model.StatusInProgress, "", tag, xtag)
-	backlog, _ := s.db.ListTasks(path, model.StatusBacklog, "", tag, xtag)
+	queue, err := s.db.ListTasks(path, model.StatusQueue, "", tag, xtag)
+	if err != nil {
+		log.Printf("ListTasks queue: %v", err)
+	}
+	inProgress, err := s.db.ListTasks(path, model.StatusInProgress, "", tag, xtag)
+	if err != nil {
+		log.Printf("ListTasks in_progress: %v", err)
+	}
+	backlog, err := s.db.ListTasks(path, model.StatusBacklog, "", tag, xtag)
+	if err != nil {
+		log.Printf("ListTasks backlog: %v", err)
+	}
 
 	var closed []model.Task
 	if showClosed {
-		closed, _ = s.db.ListTasks(path, model.StatusClosed, "", tag, xtag)
+		closed, err = s.db.ListTasks(path, model.StatusClosed, "", tag, xtag)
+		if err != nil {
+			log.Printf("ListTasks closed: %v", err)
+		}
 	}
 
 	// Collect all visible task IDs for batch queries.
@@ -331,19 +353,28 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		allIDs = append(allIDs, t.ID)
 	}
 
-	blockedIDs, _ := s.db.BlockedTaskIDs(allIDs)
+	blockedIDs, err := s.db.BlockedTaskIDs(allIDs)
+	if err != nil {
+		log.Printf("BlockedTaskIDs: %v", err)
+	}
 	if blockedIDs == nil {
 		blockedIDs = make(map[string]bool)
 	}
 
-	tagMap, _ := s.db.GetTagsForTasks(allIDs)
+	tagMap, err := s.db.GetTagsForTasks(allIDs)
+	if err != nil {
+		log.Printf("GetTagsForTasks: %v", err)
+	}
 	if tagMap == nil {
 		tagMap = make(map[string][]string)
 	}
 
 	// Always fetch the full tag list — needed for quick-add autocomplete
 	// and for the filter bar when a filter is active.
-	allTags, _ := s.db.ListAllTags(path)
+	allTags, err := s.db.ListAllTags(path)
+	if err != nil {
+		log.Printf("ListAllTags: %v", err)
+	}
 
 	// For the filter bar when unfiltered, derive from visible tasks to avoid
 	// showing tags that only appear on closed/hidden tasks.
@@ -442,8 +473,14 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 
-	blockers, _ := s.db.GetBlockers(id, false)
-	blocking, _ := s.db.GetBlocking(id)
+	blockers, err := s.db.GetBlockers(id, false)
+	if err != nil {
+		log.Printf("GetBlockers %s: %v", id, err)
+	}
+	blocking, err := s.db.GetBlocking(id)
+	if err != nil {
+		log.Printf("GetBlocking %s: %v", id, err)
+	}
 	isBlocked := false
 	for _, b := range blockers {
 		if b.Status != model.StatusClosed {
@@ -452,8 +489,14 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tags, _ := s.db.GetTags(id)
-	allTags, _ := s.db.ListAllTags(twc.Workspace)
+	tags, err := s.db.GetTags(id)
+	if err != nil {
+		log.Printf("GetTags %s: %v", id, err)
+	}
+	allTags, err := s.db.ListAllTags(twc.Workspace)
+	if err != nil {
+		log.Printf("ListAllTags %s: %v", twc.Workspace, err)
+	}
 
 	s.render(w, "task.html", map[string]any{
 		"Task":          twc,
@@ -479,26 +522,41 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	children, _ := s.db.ListTasks("", "", id, tag, xtag)
-	progress, _ := s.db.EpicProgress(id)
-	comments, _ := s.db.ListComments(id)
+	children, err := s.db.ListTasks("", "", id, tag, xtag)
+	if err != nil {
+		log.Printf("ListTasks epic %s: %v", id, err)
+	}
+	progress, err := s.db.EpicProgress(id)
+	if err != nil {
+		log.Printf("EpicProgress %s: %v", id, err)
+	}
+	comments, err := s.db.ListComments(id)
+	if err != nil {
+		log.Printf("ListComments %s: %v", id, err)
+	}
 
 	// Batch-load tags for children.
 	childIDs := make([]string, len(children))
 	for i, c := range children {
 		childIDs[i] = c.ID
 	}
-	tagMap, _ := s.db.GetTagsForTasks(childIDs)
+	tagMap, err := s.db.GetTagsForTasks(childIDs)
+	if err != nil {
+		log.Printf("GetTagsForTasks epic %s: %v", id, err)
+	}
 	if tagMap == nil {
 		tagMap = make(map[string][]string)
 	}
 
-	// Build filter bar tags from all children (not just filtered subset).
-	var allTags []string
+	// Build filter bar tags from children (not just filtered subset).
+	var childFilterTags []string
 	if tag != "" || xtag != "" {
-		allTags, _ = s.db.ListTagsForEpic(id)
+		childFilterTags, err = s.db.ListTagsForEpic(id)
+		if err != nil {
+			log.Printf("ListTagsForEpic %s: %v", id, err)
+		}
 	} else {
-		allTags = uniqueSortedTags(tagMap)
+		childFilterTags = uniqueSortedTags(tagMap)
 	}
 
 	var wsName string
@@ -507,8 +565,14 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load tags for the epic itself.
-	epicTags, _ := s.db.GetTags(id)
-	epicAllTags, _ := s.db.ListAllTags(task.Workspace)
+	epicTags, err := s.db.GetTags(id)
+	if err != nil {
+		log.Printf("GetTags epic %s: %v", id, err)
+	}
+	allTags, err := s.db.ListAllTags(task.Workspace)
+	if err != nil {
+		log.Printf("ListAllTags %s: %v", task.Workspace, err)
+	}
 
 	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
@@ -519,10 +583,10 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		"WorkspaceName": wsName,
 		"WorkspaceURL":  workspaceURL(task.Workspace, wsName),
 		"TagMap":        tagMap,
-		"TagFilter":     tagFilterData(allTags, tag, xtag),
+		"TagFilter":     tagFilterData(childFilterTags, tag, xtag),
 		"EpicURL":       epicURL,
 		"Tags":          epicTags,
-		"AllTags":       epicAllTags,
+		"AllTags":       allTags,
 	})
 }
 
@@ -567,12 +631,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 	wsURL := workspaceURL(task.Workspace, wsName)
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", wsURL)
-		w.WriteHeader(200)
-		return
-	}
-	http.Redirect(w, r, wsURL, http.StatusSeeOther)
+	s.hxRedirect(w, r, wsURL, http.StatusSeeOther)
 }
 
 func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
@@ -596,7 +655,10 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	s.hub.Broadcast("task_updated", task.Workspace, id)
 
 	if r.Header.Get("HX-Request") == "true" {
-		task, _ = s.db.GetTask(id)
+		task, err = s.db.GetTask(id)
+		if err != nil {
+			log.Printf("GetTask %s: %v", id, err)
+		}
 		s.partials.ExecuteTemplate(w, "task_row.html", task)
 		return
 	}
@@ -616,12 +678,7 @@ func (s *Server) handleCloseTask(w http.ResponseWriter, r *http.Request) {
 
 	s.hub.Broadcast("task_closed", task.Workspace, id)
 
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/task/"+id)
-		w.WriteHeader(200)
-		return
-	}
-	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
@@ -634,12 +691,7 @@ func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
 
 	s.hub.Broadcast("task_updated", task.Workspace, id)
 
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/task/"+id)
-		w.WriteHeader(200)
-		return
-	}
-	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handlePromoteTask(w http.ResponseWriter, r *http.Request) {
@@ -669,8 +721,13 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, _ := s.db.GetTask(id)
-	s.hub.Broadcast("comment_added", task.Workspace, id)
+	task, err := s.db.GetTask(id)
+	if err != nil {
+		log.Printf("GetTask %s: %v", id, err)
+	}
+	if task != nil {
+		s.hub.Broadcast("comment_added", task.Workspace, id)
+	}
 
 	if r.Header.Get("HX-Request") == "true" {
 		s.partials.ExecuteTemplate(w, "comment.html", comment)
@@ -707,15 +764,15 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, _ := s.db.GetTask(id)
-	s.hub.Broadcast("task_updated", task.Workspace, id)
-
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/task/"+id)
-		w.WriteHeader(200)
-		return
+	task, err := s.db.GetTask(id)
+	if err != nil {
+		log.Printf("GetTask %s: %v", id, err)
 	}
-	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+	if task != nil {
+		s.hub.Broadcast("task_updated", task.Workspace, id)
+	}
+
+	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
@@ -732,15 +789,15 @@ func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, _ := s.db.GetTask(id)
-	s.hub.Broadcast("task_updated", task.Workspace, id)
-
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/task/"+id)
-		w.WriteHeader(200)
-		return
+	task, err := s.db.GetTask(id)
+	if err != nil {
+		log.Printf("GetTask %s: %v", id, err)
 	}
-	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+	if task != nil {
+		s.hub.Broadcast("task_updated", task.Workspace, id)
+	}
+
+	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
@@ -757,16 +814,15 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, _ := s.db.GetTask(id)
-	s.hub.Broadcast("task_updated", task.Workspace, id)
-
-	dest := s.tagRedirect(id, task, r)
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", dest)
-		w.WriteHeader(200)
-		return
+	task, err := s.db.GetTask(id)
+	if err != nil {
+		log.Printf("GetTask %s: %v", id, err)
 	}
-	http.Redirect(w, r, dest, http.StatusSeeOther)
+	if task != nil {
+		s.hub.Broadcast("task_updated", task.Workspace, id)
+	}
+
+	s.hxRedirect(w, r, s.tagRedirect(id, task, r), http.StatusSeeOther)
 }
 
 func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
@@ -783,16 +839,15 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, _ := s.db.GetTask(id)
-	s.hub.Broadcast("task_updated", task.Workspace, id)
-
-	dest := s.tagRedirect(id, task, r)
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", dest)
-		w.WriteHeader(200)
-		return
+	task, err := s.db.GetTask(id)
+	if err != nil {
+		log.Printf("GetTask %s: %v", id, err)
 	}
-	http.Redirect(w, r, dest, http.StatusSeeOther)
+	if task != nil {
+		s.hub.Broadcast("task_updated", task.Workspace, id)
+	}
+
+	s.hxRedirect(w, r, s.tagRedirect(id, task, r), http.StatusSeeOther)
 }
 
 // tagRedirect returns the appropriate redirect URL after a tag mutation.
@@ -820,8 +875,13 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, _ := s.db.GetTask(id)
-	s.hub.Broadcast("task_reordered", task.Workspace, id)
+	task, err := s.db.GetTask(id)
+	if err != nil {
+		log.Printf("GetTask %s: %v", id, err)
+	}
+	if task != nil {
+		s.hub.Broadcast("task_reordered", task.Workspace, id)
+	}
 	w.WriteHeader(200)
 }
 
@@ -880,6 +940,9 @@ func (s *Server) handlePartialTaskList(w http.ResponseWriter, r *http.Request) {
 	workspace := r.URL.Query().Get("workspace")
 	status := r.URL.Query().Get("status")
 
-	tasks, _ := s.db.ListTasks(workspace, status, "", "", "")
+	tasks, err := s.db.ListTasks(workspace, status, "", "", "")
+	if err != nil {
+		log.Printf("ListTasks partial: %v", err)
+	}
 	s.partials.ExecuteTemplate(w, "task_list.html", tasks)
 }
