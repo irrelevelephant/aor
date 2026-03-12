@@ -115,12 +115,21 @@ Flags:
 	}
 }
 
-// detectWorkspaceFromGit auto-detects the workspace path from git toplevel, falling back to cwd.
+// detectWorkspaceFromGit auto-detects the workspace path from git toplevel,
+// resolving linked worktrees to the main worktree so tasks are found under
+// the correct registered workspace.
 func detectWorkspaceFromGit() string {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err == nil {
-		return strings.TrimSpace(string(out))
+	toplevel, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		cwd, _ := os.Getwd()
+		return cwd
 	}
-	cwd, _ := os.Getwd()
-	return cwd
+	path := strings.TrimSpace(string(toplevel))
+
+	// If we're in a linked worktree, resolve to the main worktree.
+	if mainWt := gitMainWorktree(); mainWt != "" {
+		return mainWt
+	}
+
+	return path
 }

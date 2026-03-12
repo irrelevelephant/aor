@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -104,6 +105,23 @@ func worktreeName(gitDir, commonDir string) string {
 	}
 	// Linked worktree: git-dir is like <main>/.git/worktrees/<name>
 	return filepath.Base(gd)
+}
+
+// gitMainWorktree returns the main worktree path from `git worktree list --porcelain`.
+// The main worktree is always the first entry. Returns "" on error.
+func gitMainWorktree() string {
+	out, err := exec.Command("git", "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		return ""
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "worktree ") {
+			return strings.TrimPrefix(line, "worktree ")
+		}
+	}
+	return ""
 }
 
 // hasUncommittedChanges returns true if the working tree has uncommitted changes.
