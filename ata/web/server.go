@@ -341,14 +341,15 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		tagMap = make(map[string][]string)
 	}
 
-	// Build filter bar tags. When a tag filter is active, tagMap only has
-	// the filtered subset, so we need a DB query for the full list.
-	// When unfiltered, derive from tagMap to avoid a second query.
-	var allTags []string
-	if tag != "" || xtag != "" {
-		allTags, _ = s.db.ListAllTags(path)
-	} else {
-		allTags = uniqueSortedTags(tagMap)
+	// Always fetch the full tag list — needed for quick-add autocomplete
+	// and for the filter bar when a filter is active.
+	allTags, _ := s.db.ListAllTags(path)
+
+	// For the filter bar when unfiltered, derive from visible tasks to avoid
+	// showing tags that only appear on closed/hidden tasks.
+	filterBarTags := allTags
+	if tag == "" && xtag == "" {
+		filterBarTags = uniqueSortedTags(tagMap)
 	}
 
 	wsURL := workspaceURL(path, wsName)
@@ -394,7 +395,8 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		"ShowClosed":   showClosed,
 		"BlockedIDs":   blockedIDs,
 		"TagMap":       tagMap,
-		"TagFilter":    tagFilterData(allTags, tag, xtag),
+		"TagFilter":    tagFilterData(filterBarTags, tag, xtag),
+		"AllTags":      allTags,
 	})
 }
 
@@ -504,6 +506,10 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 
+	// Load tags for the epic itself.
+	epicTags, _ := s.db.GetTags(id)
+	epicAllTags, _ := s.db.ListAllTags(task.Workspace)
+
 	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
 		"Epic":          task,
@@ -515,6 +521,8 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		"TagMap":        tagMap,
 		"TagFilter":     tagFilterData(allTags, tag, xtag),
 		"EpicURL":       epicURL,
+		"Tags":          epicTags,
+		"AllTags":       epicAllTags,
 	})
 }
 
@@ -752,12 +760,13 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 	task, _ := s.db.GetTask(id)
 	s.hub.Broadcast("task_updated", task.Workspace, id)
 
+	dest := s.tagRedirect(id, task, r)
 	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/task/"+id)
+		w.Header().Set("HX-Redirect", dest)
 		w.WriteHeader(200)
 		return
 	}
-	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
@@ -777,12 +786,25 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 	task, _ := s.db.GetTask(id)
 	s.hub.Broadcast("task_updated", task.Workspace, id)
 
+	dest := s.tagRedirect(id, task, r)
 	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/task/"+id)
+		w.Header().Set("HX-Redirect", dest)
 		w.WriteHeader(200)
 		return
 	}
-	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// tagRedirect returns the appropriate redirect URL after a tag mutation.
+// Uses the "redirect" form parameter if set, otherwise falls back to task/epic based on type.
+func (s *Server) tagRedirect(id string, task *model.Task, r *http.Request) string {
+	if dest := r.FormValue("redirect"); dest != "" {
+		return dest
+	}
+	if task != nil && task.IsEpic {
+		return "/epic/" + id
+	}
+	return "/task/" + id
 }
 
 func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {

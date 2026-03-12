@@ -375,7 +375,71 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .tags-section { margin-bottom: 1.5rem; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.75rem; }
 .tag-item { display: inline-flex; align-items: center; gap: 0.15rem; }
-.tag-add-form { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
+
+
+/* Chip input for tags */
+.chip-input-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.75rem;
+    border-top: 1px solid var(--border);
+    min-height: 2rem;
+}
+.chip-input-chips {
+    display: contents;
+}
+.chip-input-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+.chip-input-chip .chip-remove {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0 0.1rem;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+.chip-input-chip .chip-remove:hover { opacity: 1; }
+.chip-input-field {
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+    min-width: 80px;
+    flex: 1;
+    padding: 0.15rem 0;
+}
+.chip-input-field::placeholder { color: var(--text-dim); }
+
+/* Inline tag add on detail pages */
+.tag-add-inline {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 0.25rem;
+}
+.tag-add-inline .chip-input-field {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    min-width: 120px;
+    flex: 0;
+    transition: border-color 0.15s;
+}
+.tag-add-inline .chip-input-field:focus { border-color: var(--accent); }
 .tag-filter-bar {
     display: flex;
     flex-wrap: wrap;

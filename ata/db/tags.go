@@ -21,7 +21,7 @@ func scanStrings(rows *sql.Rows) ([]string, error) {
 
 // AddTag adds a tag to a task. No-op if the tag already exists.
 func (d *DB) AddTag(taskID, tag string) error {
-	tag = strings.TrimSpace(tag)
+	tag = strings.ToLower(strings.TrimSpace(tag))
 	if tag == "" {
 		return fmt.Errorf("tag cannot be empty")
 	}
@@ -34,6 +34,10 @@ func (d *DB) AddTag(taskID, tag string) error {
 
 // RemoveTag removes a tag from a task.
 func (d *DB) RemoveTag(taskID, tag string) error {
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if tag == "" {
+		return fmt.Errorf("tag cannot be empty")
+	}
 	res, err := d.Exec(`DELETE FROM task_tags WHERE task_id = ? AND tag = ?`, taskID, tag)
 	if err != nil {
 		return fmt.Errorf("remove tag: %w", err)

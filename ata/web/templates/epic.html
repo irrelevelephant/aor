@@ -11,6 +11,34 @@
         <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
     </div>
 
+    <div class="tags-section">
+        <div class="tag-list">
+            {{range $.Tags}}
+            <span class="tag-item">
+                <a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>
+                {{if ne $.Epic.Status "closed"}}
+                <form action="/task/{{$.Epic.ID}}/tags/remove" method="POST" class="dep-remove-form"
+                      hx-post="/task/{{$.Epic.ID}}/tags/remove" hx-swap="none">
+                    <input type="hidden" name="tag" value="{{.}}">
+                    <input type="hidden" name="redirect" value="/epic/{{$.Epic.ID}}">
+                    <button type="submit" class="btn-icon" title="Remove tag">&times;</button>
+                </form>
+                {{end}}
+            </span>
+            {{end}}
+        </div>
+        {{if ne $.Epic.Status "closed"}}
+        <form class="tag-add-inline" action="/task/{{$.Epic.ID}}/tags" method="POST"
+              hx-post="/task/{{$.Epic.ID}}/tags" hx-swap="none">
+            <input type="hidden" name="redirect" value="/epic/{{$.Epic.ID}}">
+            <input type="text" name="tag" class="chip-input-field" placeholder="Add tag..." list="all-tags-{{$.Epic.ID}}" autocomplete="off">
+            <datalist id="all-tags-{{$.Epic.ID}}">
+                {{range $.AllTags}}<option value="{{.}}">{{end}}
+            </datalist>
+        </form>
+        {{end}}
+    </div>
+
     {{if $.Progress}}
     <div class="progress-section">
         <div class="progress-bar">

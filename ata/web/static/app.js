@@ -70,6 +70,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Chip inputs for tag entry.
+    initChipInputs();
+    initInlineTagForms();
+
     // Body inline editing on task detail page.
     var bodyDisplay = document.getElementById('body-display');
     var bodyEdit = document.getElementById('body-edit');
@@ -89,6 +93,110 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Deterministic tag hue matching the Go tagHue() implementation.
+// Uses FNV-1a hash into a curated palette avoiding purple (reserved for epics).
+function tagHue(tag) {
+    var palette = [0, 28, 55, 85, 125, 165, 195, 220, 320, 345];
+    tag = tag.toLowerCase();
+    var h = 0x811c9dc5;
+    for (var i = 0; i < tag.length; i++) {
+        h ^= tag.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return palette[h % palette.length];
+}
+
+// --- Chip input for quick-add tag entry ---
+function initChipInputs() {
+    document.querySelectorAll('.chip-input-row').forEach(function(row) {
+        var form = row.closest('form');
+        var hiddenInput = form.querySelector('input[name="tags"]');
+        var chipsContainer = row.querySelector('.chip-input-chips');
+        var field = row.querySelector('.chip-input-field');
+        var tags = [];
+
+        function renderChips() {
+            chipsContainer.innerHTML = '';
+            tags.forEach(function(t, i) {
+                var hue = tagHue(t);
+                var chip = document.createElement('span');
+                chip.className = 'chip-input-chip';
+                chip.style.color = 'hsl(' + hue + ', 70%, 75%)';
+                chip.style.background = 'hsl(' + hue + ', 50%, 18%)';
+                chip.textContent = t;
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'chip-remove';
+                btn.textContent = '\u00d7';
+                btn.addEventListener('click', function() {
+                    tags.splice(i, 1);
+                    renderChips();
+                });
+                chip.appendChild(btn);
+                chipsContainer.appendChild(chip);
+            });
+            hiddenInput.value = tags.join(',');
+        }
+
+        function addTag(value) {
+            var t = value.toLowerCase().trim();
+            if (t && tags.indexOf(t) === -1) {
+                tags.push(t);
+                renderChips();
+            }
+            field.value = '';
+        }
+
+        field.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+                if (field.value.trim()) {
+                    e.preventDefault();
+                    addTag(field.value);
+                }
+            }
+            if (e.key === 'Backspace' && field.value === '' && tags.length > 0) {
+                tags.pop();
+                renderChips();
+            }
+        });
+
+        // Handle datalist selection (input event fires when picking from dropdown).
+        field.addEventListener('input', function() {
+            var val = field.value;
+            if (val.indexOf(',') >= 0) {
+                val.split(',').forEach(function(v) { addTag(v); });
+            }
+        });
+
+        // Reset chips when form submits successfully.
+        if (form.getAttribute('hx-post')) {
+            form.addEventListener('htmx:afterRequest', function(e) {
+                if (e.detail.successful) {
+                    tags = [];
+                    renderChips();
+                }
+            });
+        }
+    });
+}
+
+// --- Inline tag add on detail pages (Enter to submit) ---
+function initInlineTagForms() {
+    document.querySelectorAll('.tag-add-inline').forEach(function(form) {
+        var field = form.querySelector('.chip-input-field');
+        field.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var val = field.value.toLowerCase().trim();
+                if (val) {
+                    field.value = val;
+                    form.requestSubmit();
+                }
+            }
+        });
+    });
+}
 
 // Called by Cancel button on body edit form.
 function cancelBodyEdit() {

@@ -57,17 +57,15 @@
             </span>
             {{end}}
         </div>
-        {{if not $.Tags}}<p class="empty">No tags.</p>{{end}}
         {{if ne .Status "closed"}}
-        <form class="tag-add-form" action="/task/{{.ID}}/tags" method="POST"
+        <form class="tag-add-inline" action="/task/{{.ID}}/tags" method="POST"
               hx-post="/task/{{.ID}}/tags" hx-swap="none">
-            <input type="text" name="tag" placeholder="Add tag..." class="input-sm" list="all-tags" required>
-            <datalist id="all-tags">
+            <input type="text" name="tag" class="chip-input-field" placeholder="Add tag..." list="all-tags-{{.ID}}" autocomplete="off">
+            <datalist id="all-tags-{{.ID}}">
                 {{range $.AllTags}}<option value="{{.}}">{{end}}
             </datalist>
-            <button type="submit" class="btn btn-sm">Add tag</button>
         </form>
-        {{end}}
+        {{else if not $.Tags}}<p class="empty">No tags.</p>{{end}}
     </div>
 
     <div class="deps-section">
