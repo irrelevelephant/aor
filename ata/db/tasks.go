@@ -263,9 +263,14 @@ func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
 }
 
 // CloseTask closes a task with a reason.
+// Epics cannot be closed while they have open subtasks.
 func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := d.Exec(`UPDATE tasks SET status = 'closed', close_reason = ?, closed_at = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id = ? AND status != 'closed'`,
+	res, err := d.Exec(`UPDATE tasks SET status = 'closed', close_reason = ?, closed_at = ?, claimed_pid = NULL, claimed_at = NULL, worktree = ''
+		WHERE id = ? AND status != 'closed'
+		AND NOT (is_epic = 1 AND EXISTS (
+			SELECT 1 FROM tasks AS sub WHERE sub.epic_id = tasks.id AND sub.status != 'closed'
+		))`,
 		reason, now, id)
 	if err != nil {
 		return nil, fmt.Errorf("close task: %w", err)
@@ -278,6 +283,13 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 		}
 		if task.Status == model.StatusClosed {
 			return nil, fmt.Errorf("task %s is already closed", id)
+		}
+		if task.IsEpic {
+			var openCount int
+			d.QueryRow(`SELECT COUNT(*) FROM tasks WHERE epic_id = ? AND status != 'closed'`, id).Scan(&openCount)
+			if openCount > 0 {
+				return nil, fmt.Errorf("cannot close epic %s: %d subtask(s) still open", id, openCount)
+			}
 		}
 		return nil, fmt.Errorf("cannot close task %s (status: %s)", id, task.Status)
 	}

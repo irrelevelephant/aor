@@ -2,6 +2,7 @@ package db
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"aor/ata/model"
@@ -164,6 +165,32 @@ func TestEpicCloseEligible(t *testing.T) {
 	}
 	if eligible[0].ID != epic.ID {
 		t.Errorf("expected epic %s, got %s", epic.ID, eligible[0].ID)
+	}
+}
+
+func TestCloseEpicWithOpenSubtasks(t *testing.T) {
+	d := testDB(t)
+
+	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+
+	c1, _ := d.CreateTask("Child 1", "", model.StatusQueue, epic.ID, "/ws", "")
+	d.CreateTask("Child 2", "", model.StatusQueue, epic.ID, "/ws", "")
+
+	// Should not be able to close epic with open subtasks.
+	_, err := d.CloseTask(epic.ID, "done")
+	if err == nil {
+		t.Fatal("expected error closing epic with open subtasks")
+	}
+	if !strings.Contains(err.Error(), "still open") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Close one child — still should fail.
+	d.CloseTask(c1.ID, "done")
+	_, err = d.CloseTask(epic.ID, "done")
+	if err == nil {
+		t.Fatal("expected error closing epic with 1 open subtask")
 	}
 }
 
