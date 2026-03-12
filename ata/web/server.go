@@ -275,6 +275,21 @@ func Serve(d *db.DB, addr string) error {
 	mux.HandleFunc("GET /partials/task-row/{id}", srv.handlePartialTaskRow)
 	mux.HandleFunc("GET /partials/task-list", srv.handlePartialTaskList)
 
+	// PWA files (must be at root for browser discovery / service worker scope).
+	// Read once at startup since embedded files are immutable.
+	serveStatic := func(embedPath, contentType string) http.HandlerFunc {
+		data, err := content.ReadFile(embedPath)
+		if err != nil {
+			log.Fatalf("embed missing %s: %v", embedPath, err)
+		}
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", contentType)
+			w.Write(data)
+		}
+	}
+	mux.HandleFunc("GET /manifest.json", serveStatic("static/manifest.json", "application/manifest+json"))
+	mux.HandleFunc("GET /sw.js", serveStatic("static/sw.js", "application/javascript"))
+
 	// Static files.
 	mux.Handle("GET /static/", http.FileServerFS(content))
 

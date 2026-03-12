@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ata{{if .Title}} — {{.Title}}{{end}}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#161b22">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 </head>
@@ -14,6 +20,7 @@
     </nav>
     <main>{{template "content" .}}</main>
     <script src="/static/app.js"></script>
+    <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js');</script>
 </body>
 </html>
 {{end}}
