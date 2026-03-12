@@ -13,7 +13,7 @@
 </div>
 
 <datalist id="ws-tags">
-    {{range .AllTags}}<option value="{{.}}">{{end}}
+    {{range .OpenTags}}<option value="{{.}}">{{end}}
 </datalist>
 
 <form class="quick-add" hx-post="/task" hx-swap="none"
@@ -23,6 +23,7 @@
     <input type="hidden" name="tags" value="">
     <textarea name="content" class="quick-add-input" placeholder="New task...&#10;&#10;First line becomes the title.&#10;Everything else becomes the description." rows="1" required></textarea>
     <div class="chip-input-row">
+        <span class="chip-input-label">Tags</span>
         <span class="chip-input-chips"></span>
         <input type="text" class="chip-input-field" placeholder="Add tags..." list="ws-tags" autocomplete="off">
     </div>

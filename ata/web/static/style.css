@@ -455,6 +455,21 @@ button.tag-badge { cursor: pointer; }
     padding: 0.15rem 0;
 }
 .chip-input-field::placeholder { color: var(--text-dim); }
+.quick-add .chip-input-label {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+.quick-add .chip-input-field,
+.tag-add-inline .chip-input-field {
+    border: 1px solid var(--border);
+    background: var(--bg);
+    border-radius: var(--radius);
+    padding: 0.25rem 0.5rem;
+    transition: border-color 0.15s;
+}
+.quick-add .chip-input-field:focus,
+.tag-add-inline .chip-input-field:focus { border-color: var(--accent); }
 
 /* Inline tag add on detail pages */
 .tag-add-inline {
@@ -463,15 +478,9 @@ button.tag-badge { cursor: pointer; }
     margin-top: 0.25rem;
 }
 .tag-add-inline .chip-input-field {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
     min-width: 120px;
     flex: 0;
-    transition: border-color 0.15s;
 }
-.tag-add-inline .chip-input-field:focus { border-color: var(--accent); }
 .tag-filter-bar {
     display: flex;
     flex-wrap: wrap;

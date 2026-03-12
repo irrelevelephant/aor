@@ -90,6 +90,25 @@ func uniqueSortedTags(tagMap map[string][]string) []string {
 	return result
 }
 
+// tagsForTasks returns a deduplicated, sorted list of tags that appear on the
+// given task slices, looked up from tagMap.
+func tagsForTasks(tagMap map[string][]string, slices ...[]model.Task) []string {
+	seen := make(map[string]bool)
+	for _, tasks := range slices {
+		for _, t := range tasks {
+			for _, tag := range tagMap[t.ID] {
+				seen[tag] = true
+			}
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for t := range seen {
+		result = append(result, t)
+	}
+	sort.Strings(result)
+	return result
+}
+
 // tagPalette contains well-spaced hues that avoid 250–310 (purple, used by epics).
 var tagPalette = []uint32{0, 28, 55, 85, 125, 165, 195, 220, 320, 345}
 
@@ -378,12 +397,16 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		tagMap = make(map[string][]string)
 	}
 
-	// Always fetch the full tag list — needed for quick-add autocomplete
-	// and for the filter bar when a filter is active.
+	// Always fetch the full tag list — needed for the filter bar when
+	// a filter is active (so filtered-out tags still appear clickable).
 	allTags, err := s.db.ListAllTags(path)
 	if err != nil {
 		log.Printf("ListAllTags: %v", err)
 	}
+
+	// Tags from open tasks only — used for quick-add autocomplete so stale
+	// tags from closed tasks don't clutter the suggestions.
+	openTags := tagsForTasks(tagMap, queue, backlog, inProgress)
 
 	// For the filter bar when unfiltered, derive from visible tasks to avoid
 	// showing tags that only appear on closed/hidden tasks.
@@ -437,6 +460,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		"TagMap":       tagMap,
 		"TagFilter":    tagFilterData(filterBarTags, tag, xtag),
 		"AllTags":      allTags,
+		"OpenTags":     openTags,
 	})
 }
 
