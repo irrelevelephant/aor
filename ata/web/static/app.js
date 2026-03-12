@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', function() {
         new Sortable(el, {
             group: 'tasks',
             animation: 150,
+            delay: 300,
+            delayOnTouchOnly: true,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
             onEnd: function(evt) {
