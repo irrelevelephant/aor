@@ -26,7 +26,7 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 		SourceName:    sourceName,
 	}
 
-	tasks, err := d.ListTasks(path, "", "", "")
+	tasks, err := d.ListTasks(path, "", "", "", "")
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("list tasks: %w", err)
 	}

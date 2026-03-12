@@ -46,6 +46,7 @@
 
     <div class="children-section">
         <h2>Sub-tasks</h2>
+        {{template "tag_filter_bar.html" $.TagFilter}}
         {{if .Children}}
         <div class="task-list">
             {{range .Children}}
@@ -54,12 +55,12 @@
                 <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
                 <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
-                {{range index $.TagMap .ID}}<span class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</span>{{end}}
+                {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.EpicURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
             </div>
             {{end}}
         </div>
         {{else}}
-        <p class="empty">No sub-tasks.</p>
+        <p class="empty">No sub-tasks{{if $.TagFilter.HasFilters}} matching filter{{end}}.</p>
         {{end}}
     </div>
 

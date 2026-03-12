@@ -57,7 +57,7 @@ func TestListTasks(t *testing.T) {
 	d.CreateTask("B", "", model.StatusBacklog, "", "/ws1", "")
 	d.CreateTask("C", "", model.StatusQueue, "", "/ws2", "")
 
-	tasks, err := d.ListTasks("/ws1", "", "", "")
+	tasks, err := d.ListTasks("/ws1", "", "", "", "")
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestListTasks(t *testing.T) {
 		t.Errorf("got %d tasks for /ws1, want 2", len(tasks))
 	}
 
-	tasks, err = d.ListTasks("", model.StatusQueue, "", "")
+	tasks, err = d.ListTasks("", model.StatusQueue, "", "", "")
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}

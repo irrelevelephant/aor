@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"html/template"
+	"log"
 	"sort"
 	"net/http"
 	"net/url"
@@ -89,11 +90,52 @@ func uniqueSortedTags(tagMap map[string][]string) []string {
 	return result
 }
 
-// tagHue returns a deterministic hue (0–359) for a tag name using FNV-1a.
+// tagPalette contains well-spaced hues that avoid 250–310 (purple, used by epics).
+var tagPalette = []uint32{0, 28, 55, 85, 125, 165, 195, 220, 320, 345}
+
+// tagHue returns a deterministic hue from the curated palette using FNV-1a.
 func tagHue(tag string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(strings.ToLower(tag)))
-	return h.Sum32() % 360
+	return tagPalette[h.Sum32()%uint32(len(tagPalette))]
+}
+
+// tagSet converts a tag slice to a map for O(1) template lookups.
+func tagSet(tags []string) map[string]bool {
+	m := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		m[t] = true
+	}
+	return m
+}
+
+// tagFilterData builds the data map for the tag_filter_bar partial.
+func tagFilterData(allTags []string, includeTags, excludeTags string) map[string]any {
+	inc := db.SplitComma(includeTags)
+	exc := db.SplitComma(excludeTags)
+	return map[string]any{
+		"AllTags":     allTags,
+		"IncludeSet":  tagSet(inc),
+		"ExcludeSet":  tagSet(exc),
+		"HasFilters":  len(inc) > 0 || len(exc) > 0,
+	}
+}
+
+// setTagQuery returns baseURL with the tag/xtag query params replaced.
+// If key is empty, both tag and xtag are cleared.
+func setTagQuery(baseURL, key, value string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return baseURL
+	}
+	q := u.Query()
+	q.Del("tag")
+	q.Del("xtag")
+	if key != "" {
+		q.Set(key, value)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func Serve(d *db.DB, addr string) error {
@@ -136,21 +178,14 @@ func Serve(d *db.DB, addr string) error {
 			}
 			return "/w?path=" + url.QueryEscape(path)
 		},
-		"tagColor": func(tag string) string {
-			return fmt.Sprintf("hsl(%d, 55%%, 45%%)", tagHue(tag))
+		"tagColor": func(tag string) template.CSS {
+			return template.CSS(fmt.Sprintf("hsl(%d, 70%%, 75%%)", tagHue(tag)))
 		},
-		"tagBgColor": func(tag string) string {
-			return fmt.Sprintf("hsla(%d, 60%%, 40%%, 0.15)", tagHue(tag))
+		"tagBgColor": func(tag string) template.CSS {
+			return template.CSS(fmt.Sprintf("hsl(%d, 50%%, 18%%)", tagHue(tag)))
 		},
-		"tagFilterURL": func(wsURL, tag string) string {
-			u, err := url.Parse(wsURL)
-			if err != nil {
-				return wsURL
-			}
-			q := u.Query()
-			q.Set("tag", tag)
-			u.RawQuery = q.Encode()
-			return u.String()
+		"tagFilterURL": func(baseURL, tag string) string {
+			return setTagQuery(baseURL, "tag", tag)
 		},
 	}
 
@@ -158,7 +193,7 @@ func Serve(d *db.DB, addr string) error {
 	// Each page gets: layout + partials + its own page template.
 	pageFiles := []string{"index.html", "workspace.html", "task.html", "epic.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
-	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html"}
+	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html"}
 	for _, page := range pageFiles {
 		t, err := template.New("").Funcs(funcMap).ParseFS(content, append(sharedFiles, "templates/"+page)...)
 		if err != nil {
@@ -214,7 +249,18 @@ func Serve(d *db.DB, addr string) error {
 	// Static files.
 	mux.Handle("GET /static/", http.FileServerFS(content))
 
-	return http.ListenAndServe(addr, mux)
+	// Wrap with recovery middleware so panics don't kill the server.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("PANIC %s %s: %v", r.Method, r.URL, err)
+				http.Error(w, "internal server error", 500)
+			}
+		}()
+		mux.ServeHTTP(w, r)
+	})
+
+	return http.ListenAndServe(addr, handler)
 }
 
 // render executes a page template by name.
@@ -224,7 +270,9 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 		http.Error(w, "template not found: "+page, 500)
 		return
 	}
-	t.ExecuteTemplate(w, "layout", data)
+	if err := t.ExecuteTemplate(w, "layout", data); err != nil {
+		log.Printf("template %s: %v", page, err)
+	}
 }
 
 // --- Page handlers ---
@@ -251,6 +299,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	showClosed := r.URL.Query().Get("show_closed") == "1"
 	tag := r.URL.Query().Get("tag")
+	xtag := r.URL.Query().Get("xtag")
 
 	// Look up workspace name for display.
 	var wsName string
@@ -258,13 +307,13 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 
-	queue, _ := s.db.ListTasks(path, model.StatusQueue, "", tag)
-	inProgress, _ := s.db.ListTasks(path, model.StatusInProgress, "", tag)
-	backlog, _ := s.db.ListTasks(path, model.StatusBacklog, "", tag)
+	queue, _ := s.db.ListTasks(path, model.StatusQueue, "", tag, xtag)
+	inProgress, _ := s.db.ListTasks(path, model.StatusInProgress, "", tag, xtag)
+	backlog, _ := s.db.ListTasks(path, model.StatusBacklog, "", tag, xtag)
 
 	var closed []model.Task
 	if showClosed {
-		closed, _ = s.db.ListTasks(path, model.StatusClosed, "", tag)
+		closed, _ = s.db.ListTasks(path, model.StatusClosed, "", tag, xtag)
 	}
 
 	// Collect all visible task IDs for batch queries.
@@ -296,24 +345,47 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	// the filtered subset, so we need a DB query for the full list.
 	// When unfiltered, derive from tagMap to avoid a second query.
 	var allTags []string
-	if tag != "" {
+	if tag != "" || xtag != "" {
 		allTags, _ = s.db.ListAllTags(path)
 	} else {
 		allTags = uniqueSortedTags(tagMap)
 	}
 
 	wsURL := workspaceURL(path, wsName)
+
+	// Build URLs that preserve active tag/xtag filters.
+	addTagParams := func(base string) string {
+		if tag == "" && xtag == "" {
+			return base
+		}
+		u, err := url.Parse(base)
+		if err != nil {
+			return base
+		}
+		q := u.Query()
+		if tag != "" {
+			q.Set("tag", tag)
+		}
+		if xtag != "" {
+			q.Set("xtag", xtag)
+		}
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+
+	filteredWsURL := addTagParams(wsURL)
 	showClosedURL := wsURL
 	if u, err := url.Parse(wsURL); err == nil {
 		q := u.Query()
 		q.Set("show_closed", "1")
 		u.RawQuery = q.Encode()
-		showClosedURL = u.String()
+		showClosedURL = addTagParams(u.String())
 	}
 	s.render(w, "workspace.html", map[string]any{
 		"Path":           path,
 		"Name":           wsName,
 		"WorkspaceURL":   wsURL,
+		"FilteredURL":    filteredWsURL,
 		"ShowClosedURL":  showClosedURL,
 		"Queue":        queue,
 		"InProgress":   inProgress,
@@ -322,8 +394,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		"ShowClosed":   showClosed,
 		"BlockedIDs":   blockedIDs,
 		"TagMap":       tagMap,
-		"AllTags":      allTags,
-		"ActiveTag":    tag,
+		"TagFilter":    tagFilterData(allTags, tag, xtag),
 	})
 }
 
@@ -397,13 +468,16 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	tag := r.URL.Query().Get("tag")
+	xtag := r.URL.Query().Get("xtag")
+
 	task, err := s.db.GetTask(id)
 	if err != nil || !task.IsEpic {
 		http.Error(w, "epic not found", 404)
 		return
 	}
 
-	children, _ := s.db.ListTasks("", "", id, "")
+	children, _ := s.db.ListTasks("", "", id, tag, xtag)
 	progress, _ := s.db.EpicProgress(id)
 	comments, _ := s.db.ListComments(id)
 
@@ -417,11 +491,20 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		tagMap = make(map[string][]string)
 	}
 
+	// Build filter bar tags from all children (not just filtered subset).
+	var allTags []string
+	if tag != "" || xtag != "" {
+		allTags, _ = s.db.ListTagsForEpic(id)
+	} else {
+		allTags = uniqueSortedTags(tagMap)
+	}
+
 	var wsName string
 	if ws, err := s.db.GetWorkspace(task.Workspace); err == nil && ws != nil {
 		wsName = ws.Name
 	}
 
+	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
 		"Epic":          task,
 		"Children":      children,
@@ -430,6 +513,8 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		"WorkspaceName": wsName,
 		"WorkspaceURL":  workspaceURL(task.Workspace, wsName),
 		"TagMap":        tagMap,
+		"TagFilter":     tagFilterData(allTags, tag, xtag),
+		"EpicURL":       epicURL,
 	})
 }
 
@@ -462,13 +547,8 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add tags if provided.
-	if tagsStr := strings.TrimSpace(r.FormValue("tags")); tagsStr != "" {
-		for _, t := range strings.Split(tagsStr, ",") {
-			t = strings.TrimSpace(t)
-			if t != "" {
-				s.db.AddTag(task.ID, t)
-			}
-		}
+	for _, t := range db.SplitComma(r.FormValue("tags")) {
+		s.db.AddTag(task.ID, t)
 	}
 
 	s.hub.Broadcast("task_created", task.Workspace, task.ID)
@@ -778,6 +858,6 @@ func (s *Server) handlePartialTaskList(w http.ResponseWriter, r *http.Request) {
 	workspace := r.URL.Query().Get("workspace")
 	status := r.URL.Query().Get("status")
 
-	tasks, _ := s.db.ListTasks(workspace, status, "", "")
+	tasks, _ := s.db.ListTasks(workspace, status, "", "", "")
 	s.partials.ExecuteTemplate(w, "task_list.html", tasks)
 }

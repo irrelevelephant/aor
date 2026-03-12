@@ -48,13 +48,8 @@ func Create(d *db.DB, args []string) error {
 	}
 
 	// Add tags if provided.
-	if *tagStr != "" {
-		for _, t := range strings.Split(*tagStr, ",") {
-			t = strings.TrimSpace(t)
-			if t != "" {
-				d.AddTag(task.ID, t)
-			}
-		}
+	for _, t := range db.SplitComma(*tagStr) {
+		d.AddTag(task.ID, t)
 	}
 
 	if *jsonOut {

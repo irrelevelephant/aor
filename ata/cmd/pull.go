@@ -83,7 +83,7 @@ func Pull(d *db.DB, args []string) error {
 	case task.Status == model.StatusClosed:
 		fmt.Printf("\nTask %s resolved.\n", id)
 	case task.IsEpic:
-		children, _ := d.ListTasks("", "", id, "")
+		children, _ := d.ListTasks("", "", id, "", "")
 		fmt.Printf("\nTask %s promoted to epic with %d subtasks.\n", id, len(children))
 		fmt.Printf("Run `aor --epic %s` to orchestrate execution.\n", id)
 	default:

@@ -1,9 +1,23 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 )
+
+// scanStrings scans single-column string rows into a slice.
+func scanStrings(rows *sql.Rows) ([]string, error) {
+	var result []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}
 
 // AddTag adds a tag to a task. No-op if the tag already exists.
 func (d *DB) AddTag(taskID, tag string) error {
@@ -38,16 +52,7 @@ func (d *DB) GetTags(taskID string) ([]string, error) {
 		return nil, fmt.Errorf("get tags: %w", err)
 	}
 	defer rows.Close()
-
-	var tags []string
-	for rows.Next() {
-		var tag string
-		if err := rows.Scan(&tag); err != nil {
-			return nil, err
-		}
-		tags = append(tags, tag)
-	}
-	return tags, rows.Err()
+	return scanStrings(rows)
 }
 
 // GetTagsForTasks batch-loads tags for multiple tasks. Returns a map of taskID -> tags.
@@ -75,6 +80,16 @@ func (d *DB) GetTagsForTasks(taskIDs []string) (map[string][]string, error) {
 	return result, rows.Err()
 }
 
+// ListTagsForEpic returns all distinct tags used by an epic's children.
+func (d *DB) ListTagsForEpic(epicID string) ([]string, error) {
+	rows, err := d.Query(`SELECT DISTINCT tt.tag FROM task_tags tt JOIN tasks t ON t.id = tt.task_id WHERE t.epic_id = ? ORDER BY tt.tag`, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("list tags for epic: %w", err)
+	}
+	defer rows.Close()
+	return scanStrings(rows)
+}
+
 // ListAllTags returns all distinct tags in use, optionally filtered by workspace.
 func (d *DB) ListAllTags(workspace string) ([]string, error) {
 	query := `SELECT DISTINCT tt.tag FROM task_tags tt`
@@ -90,14 +105,5 @@ func (d *DB) ListAllTags(workspace string) ([]string, error) {
 		return nil, fmt.Errorf("list all tags: %w", err)
 	}
 	defer rows.Close()
-
-	var tags []string
-	for rows.Next() {
-		var tag string
-		if err := rows.Scan(&tag); err != nil {
-			return nil, err
-		}
-		tags = append(tags, tag)
-	}
-	return tags, rows.Err()
+	return scanStrings(rows)
 }

@@ -52,6 +52,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 reloadTimer = setTimeout(function() { window.location.reload(); }, 300);
             });
         });
+        // Close SSE before navigating away to free the HTTP connection slot.
+        // Browsers limit ~6 connections per origin; stale SSE connections
+        // from rapid navigation can exhaust this limit.
+        window.addEventListener('beforeunload', function() { es.close(); });
     }
 
     // Quick-add textarea: Enter to submit, Shift+Enter for newline.
@@ -90,4 +94,45 @@ document.addEventListener('DOMContentLoaded', function() {
 function cancelBodyEdit() {
     document.getElementById('body-display').style.display = '';
     document.getElementById('body-edit').style.display = 'none';
+}
+
+// Tag filter: click pill to toggle include, click "−" to toggle exclude.
+// Uses window.location so non-tag params (show_closed, path, etc.) are preserved.
+function toggleTagFilter(tag, primaryKey, oppositeKey) {
+    var u = new URL(window.location.href);
+    var primary = parseTagParam(u.searchParams.get(primaryKey) || '');
+    var opposite = parseTagParam(u.searchParams.get(oppositeKey) || '');
+
+    var oi = opposite.indexOf(tag);
+    if (oi >= 0) opposite.splice(oi, 1);
+
+    var pi = primary.indexOf(tag);
+    if (pi >= 0) { primary.splice(pi, 1); } else { primary.push(tag); }
+
+    setTagParam(u, primaryKey, primary);
+    setTagParam(u, oppositeKey, opposite);
+    window.location.href = u.toString();
+}
+
+function includeTagFilter(tag) { toggleTagFilter(tag, 'tag', 'xtag'); }
+function excludeTagFilter(tag) { toggleTagFilter(tag, 'xtag', 'tag'); }
+
+function clearTagFilters() {
+    var u = new URL(window.location.href);
+    u.searchParams.delete('tag');
+    u.searchParams.delete('xtag');
+    window.location.href = u.toString();
+}
+
+function parseTagParam(s) {
+    if (!s) return [];
+    return s.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+}
+
+function setTagParam(u, key, tags) {
+    if (tags.length > 0) {
+        u.searchParams.set(key, tags.join(','));
+    } else {
+        u.searchParams.delete(key);
+    }
 }

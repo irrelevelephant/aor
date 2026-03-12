@@ -138,7 +138,8 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .back-link:hover { color: var(--accent); }
 
 /* Columns */
-.workspace-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.workspace-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+.workspace-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 
 /* Quick-add textarea */
 .quick-add {
@@ -373,21 +374,65 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
-    margin-bottom: 1rem;
     align-items: center;
+}
+.tag-filter-group {
+    display: inline-flex;
+    align-items: stretch;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid transparent;
+    transition: border-color 0.15s;
+}
+.tag-filter-group.tag-filter-include {
+    border-color: var(--tag-color);
+    box-shadow: 0 0 0 1px var(--tag-color);
+}
+.tag-filter-group.tag-filter-exclude {
+    border-color: var(--red);
+}
+.tag-filter-group.tag-filter-exclude .tag-filter-pill {
+    opacity: 0.45;
+    text-decoration: line-through;
 }
 .tag-filter-pill {
     padding: 0.2rem 0.55rem;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: opacity 0.15s, outline-color 0.15s;
+    border: none;
+    color: var(--tag-color);
+    background: var(--tag-bg);
+    transition: opacity 0.15s;
 }
-.tag-filter-pill:hover { opacity: 0.85; text-decoration: none; }
-.tag-filter-active { opacity: 1; outline: 2px solid currentColor; outline-offset: 1px; }
-.tag-filter-clear {
-    background: var(--border);
+.tag-filter-pill:hover { opacity: 0.85; }
+.tag-filter-exc-btn {
+    padding: 0 0.35rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border: none;
+    border-left: 1px solid rgba(255,255,255,0.1);
+    background: var(--tag-bg);
     color: var(--text-dim);
+    transition: color 0.15s, background 0.15s;
+    line-height: 1;
 }
+.tag-filter-exc-btn:hover { color: var(--red); background: rgba(248,81,73,0.15); }
+.tag-filter-group.tag-filter-exclude .tag-filter-exc-btn {
+    color: var(--red);
+    background: rgba(248,81,73,0.15);
+}
+.tag-filter-clear-btn {
+    padding: 0.15rem 0.45rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    margin-left: 0.25rem;
+    transition: color 0.15s, border-color 0.15s;
+}
+.tag-filter-clear-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .task-blocked { opacity: 0.6; }
 .task-blocked:hover { opacity: 1; }
 

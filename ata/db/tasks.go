@@ -11,6 +11,19 @@ import (
 	"aor/ata/model"
 )
 
+// SplitComma splits a comma-separated string into trimmed, non-empty parts.
+func SplitComma(s string) []string {
+	parts := strings.Split(s, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
 // inPlaceholders builds SQL IN-clause placeholders and args from a string slice.
 func inPlaceholders(ids []string) (string, []any) {
 	ph := make([]string, len(ids))
@@ -85,8 +98,8 @@ func (d *DB) GetTaskWithComments(id string) (*model.TaskWithComments, error) {
 	return &model.TaskWithComments{Task: *task, Comments: comments}, nil
 }
 
-// ListTasks returns tasks filtered by optional workspace, status, epic_id, and tag.
-func (d *DB) ListTasks(workspace, status, epicID, tag string) ([]model.Task, error) {
+// ListTasks returns tasks filtered by optional workspace, status, epic_id, tag (include), and excludeTag (exclude).
+func (d *DB) ListTasks(workspace, status, epicID, tag, excludeTag string) ([]model.Task, error) {
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE 1=1`
 	var args []any
 
@@ -103,8 +116,16 @@ func (d *DB) ListTasks(workspace, status, epicID, tag string) ([]model.Task, err
 		args = append(args, epicID)
 	}
 	if tag != "" {
-		query += ` AND id IN (SELECT task_id FROM task_tags WHERE tag = ?)`
-		args = append(args, tag)
+		tags := SplitComma(tag)
+		ph, tagArgs := inPlaceholders(tags)
+		query += ` AND id IN (SELECT task_id FROM task_tags WHERE tag IN (` + ph + `))`
+		args = append(args, tagArgs...)
+	}
+	if excludeTag != "" {
+		tags := SplitComma(excludeTag)
+		ph, tagArgs := inPlaceholders(tags)
+		query += ` AND id NOT IN (SELECT task_id FROM task_tags WHERE tag IN (` + ph + `))`
+		args = append(args, tagArgs...)
 	}
 
 	query += ` ORDER BY sort_order ASC, created_at ASC`
@@ -226,7 +247,7 @@ func (d *DB) UnclaimTask(id string) (*model.Task, error) {
 // UnclaimByWorkspace unclaims all in_progress tasks for a workspace.
 func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
 	// Get tasks before update (for returning to caller).
-	tasks, err := d.ListTasks(workspace, model.StatusInProgress, "", "")
+	tasks, err := d.ListTasks(workspace, model.StatusInProgress, "", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +418,7 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 		_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id IN (`+ph+`) AND status != 'closed'`, args...)
 	} else if fromStatus != "" {
 		// Fetch matching tasks, then update with the same predicate directly.
-		tasks, err = d.ListTasks(workspace, fromStatus, "", "")
+		tasks, err = d.ListTasks(workspace, fromStatus, "", "", "")
 		if err != nil {
 			return nil, err
 		}

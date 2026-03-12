@@ -22,7 +22,7 @@ func List(d *db.DB, args []string) error {
 		return err
 	}
 
-	tasks, err := d.ListTasks(*workspace, *status, *epicID, *tag)
+	tasks, err := d.ListTasks(*workspace, *status, *epicID, *tag, "")
 	if err != nil {
 		return err
 	}

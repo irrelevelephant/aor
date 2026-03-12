@@ -3,22 +3,14 @@
 <div class="workspace-header">
     <h1>{{if .Name}}{{.Name}} <span class="workspace-path-subtitle">{{.Path}}</span>{{else}}{{.Path}}{{end}}</h1>
     <div class="workspace-controls">
+        {{template "tag_filter_bar.html" .TagFilter}}
         {{if .ShowClosed}}
-        <a href="{{.WorkspaceURL}}" class="btn btn-sm">Hide closed</a>
+        <a href="{{.FilteredURL}}" class="btn btn-sm">Hide closed</a>
         {{else}}
         <a href="{{.ShowClosedURL}}" class="btn btn-sm">Show closed</a>
         {{end}}
     </div>
 </div>
-
-{{if .AllTags}}
-<div class="tag-filter-bar">
-    {{if .ActiveTag}}<a href="{{.WorkspaceURL}}" class="badge tag-filter-pill tag-filter-clear">all</a>{{end}}
-    {{range .AllTags}}
-    <a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-filter-pill{{if eq . $.ActiveTag}} tag-filter-active{{end}}" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>
-    {{end}}
-</div>
-{{end}}
 
 <form class="quick-add" hx-post="/task" hx-swap="none">
     <input type="hidden" name="workspace" value="{{.Path}}">

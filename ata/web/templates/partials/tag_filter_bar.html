@@ -1,0 +1,21 @@
+{{define "tag_filter_bar.html"}}
+{{if .AllTags}}
+<div class="tag-filter-bar">
+    {{range .AllTags}}
+    <span class="tag-filter-group{{if index $.IncludeSet .}} tag-filter-include{{else if index $.ExcludeSet .}} tag-filter-exclude{{end}}"
+        style="--tag-color:{{tagColor .}};--tag-bg:{{tagBgColor .}}">
+        <button type="button"
+            class="badge tag-filter-pill"
+            data-tag="{{.}}"
+            onclick="includeTagFilter(this.dataset.tag)">{{.}}</button>
+        <button type="button"
+            class="tag-filter-exc-btn"
+            data-tag="{{.}}"
+            onclick="excludeTagFilter(this.dataset.tag)"
+            title="Exclude {{.}}">−</button>
+    </span>
+    {{end}}
+    {{if .HasFilters}}<button type="button" class="tag-filter-clear-btn" onclick="clearTagFilters()">&times; clear</button>{{end}}
+</div>
+{{end}}
+{{end}}
