@@ -70,6 +70,10 @@ func main() {
 		cmdErr = cmd.Recover(d, args)
 	case "epic-close-eligible":
 		cmdErr = cmd.EpicCloseEligible(d, args)
+	case "snapshot":
+		cmdErr = cmd.Snapshot(d, args)
+	case "restore":
+		cmdErr = cmd.Restore(d, args)
 	case "serve":
 		cmdErr = cmd.Serve(d, args)
 	case "help", "--help", "-h":
@@ -113,6 +117,8 @@ Commands:
   move      Batch move tasks between statuses
   recover   Recover stuck in_progress tasks
   epic-close-eligible  List epics eligible for auto-close
+  snapshot  Export workspace to a .tar.gz archive
+  restore   Import workspace from a snapshot archive
   serve     Start web UI server
 
 Flags:

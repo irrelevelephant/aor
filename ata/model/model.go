@@ -82,6 +82,28 @@ func (wi WorkspaceInfo) DisplayName() string {
 	return wi.Path
 }
 
+// SnapshotMeta holds metadata for a workspace snapshot archive.
+type SnapshotMeta struct {
+	SchemaVersion int    `json:"schema_version"`
+	CreatedAt     string `json:"created_at"`
+	SourcePath    string `json:"source_path"`
+	SourceName    string `json:"source_name,omitempty"`
+}
+
+// TaskDep represents a dependency edge for snapshot export/import.
+type TaskDep struct {
+	TaskID    string `json:"task_id"`
+	DependsOn string `json:"depends_on"`
+	CreatedAt string `json:"created_at"`
+}
+
+// TaskTag represents a tag association for snapshot export/import.
+type TaskTag struct {
+	TaskID    string `json:"task_id"`
+	Tag       string `json:"tag"`
+	CreatedAt string `json:"created_at"`
+}
+
 // EpicProgress holds progress info for an epic.
 type EpicProgress struct {
 	Total    int `json:"total"`

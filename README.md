@@ -162,6 +162,15 @@ ata clean --workspace myproject --force  # delete all tasks and unregister
 
 Workspaces resolve correctly across git worktrees — all worktrees of the same repo map to the registered workspace path.
 
+Back up or transfer a workspace with snapshot/restore:
+
+```sh
+ata snapshot --workspace myproject           # creates ata-snapshot-myproject-20260311.tar.gz
+ata restore ata-snapshot-myproject-20260311.tar.gz --workspace /other/path --force
+```
+
+The archive is a portable `.tar.gz` containing JSONL files — human-inspectable and decoupled from SQLite internals. Restoring replaces the target workspace entirely.
+
 ## ata CLI Reference
 
 ```
@@ -189,6 +198,8 @@ ata move --from STATUS --to STATUS [--workspace WS] [--json]
 ata move ID [ID...] --to STATUS [--json]
 ata recover [--workspace PATH] [--json]
 ata epic-close-eligible [--workspace PATH] [--json]
+ata snapshot [--workspace WS] [--output FILE] [--json]  Export workspace to .tar.gz
+ata restore FILE [--workspace WS] [--force] [--json]    Import workspace from snapshot
 ata serve [--port 4400] [--addr 0.0.0.0]
 ```
 
@@ -265,6 +276,7 @@ aor/
       tags.go          Tag CRUD, batch loading
       comments.go      Comment CRUD
       ordering.go      Sort order management
+      snapshot.go      Workspace export/import
     cmd/               CLI command implementations
     web/               HTTP server, templates, SSE, static assets
 ```
@@ -273,4 +285,4 @@ aor/
 
 All data lives in `~/.ata/ata.db` (SQLite, WAL mode). Session logs go to `~/.ata/runner-logs/`.
 
-No external services, no sync, no git-backed storage. The database is a single file you can back up, inspect with `sqlite3`, or delete to start fresh.
+No external services, no sync, no git-backed storage. The database is a single file you can back up, inspect with `sqlite3`, or delete to start fresh. Use `ata snapshot` / `ata restore` for portable workspace-level backups.

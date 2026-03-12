@@ -4,6 +4,9 @@ import "fmt"
 
 const schemaVersion = 5
 
+// SchemaVersion returns the current schema version for use in snapshot metadata.
+func SchemaVersion() int { return schemaVersion }
+
 func (d *DB) migrate() error {
 	// Create version table if not exists.
 	if _, err := d.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
