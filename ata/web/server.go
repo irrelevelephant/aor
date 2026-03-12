@@ -703,7 +703,7 @@ func (s *Server) handlePromoteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.hub.Broadcast("epic_promoted", task.Workspace, id)
-	http.Redirect(w, r, "/epic/"+id, http.StatusSeeOther)
+	s.hxRedirect(w, r, "/epic/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
@@ -747,7 +747,7 @@ func (s *Server) handleUpdateSpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/epic/"+id, http.StatusSeeOther)
+	s.hxRedirect(w, r, "/epic/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
