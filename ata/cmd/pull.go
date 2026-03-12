@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"aor/ata/db"
 	"aor/ata/model"
@@ -12,13 +14,14 @@ import (
 
 func Pull(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
+	worktree := fs.Bool("worktree", false, "create a git worktree for this task")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if fs.NArg() == 0 {
-		return exitUsage("usage: ata pull ID")
+		return exitUsage("usage: ata pull [--worktree] ID")
 	}
 
 	id := fs.Arg(0)
@@ -33,14 +36,27 @@ func Pull(d *db.DB, args []string) error {
 		return fmt.Errorf("task %s is already closed", id)
 	}
 
-	// Move to in_progress if needed.
-	if task.Status != model.StatusInProgress {
+	// Claim the task and set the working directory.
+	var worktreePath string
+	if *worktree {
+		var err error
+		worktreePath, err = ensureWorktree(id)
+		if err != nil {
+			return fmt.Errorf("worktree: %w", err)
+		}
+		task, err = d.ForceClaimTask(id, worktreePath)
+		if err != nil {
+			return fmt.Errorf("claim: %w", err)
+		}
+		fmt.Printf("Worktree: %s\n", worktreePath)
+	} else if task.Status != model.StatusInProgress {
 		ws := rawWorkingDir()
 		task, err = d.ForceClaimTask(id, ws)
 		if err != nil {
 			return fmt.Errorf("claim: %w", err)
 		}
 	}
+
 	fmt.Printf("Pulled %s: %s\n", task.ID, task.Title)
 	fmt.Printf("Status: %s\n", task.Status)
 	if task.Body != "" {
@@ -68,6 +84,9 @@ func Pull(d *db.DB, args []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if worktreePath != "" {
+		cmd.Dir = worktreePath
+	}
 	if err := cmd.Run(); err != nil {
 		// Claude exited non-zero (user quit, ctrl-c, etc.) — don't treat as fatal.
 		fmt.Printf("\nClaude session ended: %v\n", err)
@@ -91,6 +110,45 @@ func Pull(d *db.DB, args []string) error {
 	}
 
 	return nil
+}
+
+// ensureWorktree creates (or reuses) a git worktree for the given task ID.
+// Returns the absolute path to the worktree directory.
+func ensureWorktree(taskID string) (string, error) {
+	mainWT := gitMainWorktree()
+	if mainWT == "" {
+		return "", fmt.Errorf("could not determine main worktree (not in a git repo?)")
+	}
+
+	repoBase := filepath.Base(mainWT)
+	wtPath := filepath.Join(filepath.Dir(mainWT), repoBase+"-"+taskID)
+	branch := "task/" + taskID
+
+	// If the worktree directory already exists, reuse it.
+	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
+		return wtPath, nil
+	}
+
+	// Check if the branch already exists.
+	branchExists := false
+	out, err := exec.Command("git", "branch", "--list", branch).Output()
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		branchExists = true
+	}
+
+	var cmd *exec.Cmd
+	if branchExists {
+		cmd = exec.Command("git", "worktree", "add", wtPath, branch)
+	} else {
+		cmd = exec.Command("git", "worktree", "add", wtPath, "-b", branch)
+	}
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git worktree add: %w", err)
+	}
+
+	return wtPath, nil
 }
 
 func buildPullPrompt(task model.Task) string {
