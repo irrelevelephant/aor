@@ -157,7 +157,7 @@ func setTagQuery(baseURL, key, value string) string {
 	return u.String()
 }
 
-func Serve(d *db.DB, addr string) error {
+func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithRendererOptions(goldhtml.WithHardWraps()),
@@ -304,6 +304,9 @@ func Serve(d *db.DB, addr string) error {
 		mux.ServeHTTP(w, r)
 	})
 
+	if tlsCert != "" && tlsKey != "" {
+		return http.ListenAndServeTLS(addr, tlsCert, tlsKey, handler)
+	}
 	return http.ListenAndServe(addr, handler)
 }
 
