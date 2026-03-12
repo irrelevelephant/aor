@@ -570,8 +570,15 @@ func run(cfg *Config) error {
 			}
 
 			if s.RemainingReady == 0 {
-				log.Log("%sAgent reports no remaining ready tasks.%s", cGreen, cReset)
-				break
+				// When filtering by tag, don't trust the agent's count —
+				// it only sees tasks within the current scope (e.g. one epic),
+				// but other tagged tasks/epics may still be waiting.
+				if cfg.TagFilter != "" {
+					log.Log("Agent reports queue empty — re-checking for more tagged tasks...")
+				} else {
+					log.Log("%sAgent reports no remaining ready tasks.%s", cGreen, cReset)
+					break
+				}
 			}
 
 			// Adaptive batch sizing.
@@ -589,6 +596,16 @@ func run(cfg *Config) error {
 			}
 		}
 
+		// Auto-close any epics whose children are all complete.
+		if stats.TasksCompleted > 0 {
+			if closed, err := closeEligibleEpics(cfg.Workspace); err != nil {
+				log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
+			} else if len(closed) > 0 {
+				stats.EpicsClosed += len(closed)
+				log.Log("Auto-closed %d epic(s): %s", len(closed), strings.Join(closed, ", "))
+			}
+		}
+
 		if result.UserQuit {
 			log.Log("Quitting at user request.")
 			break
@@ -600,16 +617,6 @@ func run(cfg *Config) error {
 		fmt.Printf("\n%s─── Pausing 3s before next session ──────────────────────%s\n",
 			cGray, cReset)
 		time.Sleep(3 * time.Second)
-	}
-
-	// Auto-close any epics whose children are all complete.
-	if stats.TasksCompleted > 0 {
-		if closed, err := closeEligibleEpics(cfg.Workspace); err != nil {
-			log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
-		} else if len(closed) > 0 {
-			stats.EpicsClosed += len(closed)
-			log.Log("Auto-closed %d epic(s): %s", len(closed), strings.Join(closed, ", "))
-		}
 	}
 
 	printSummary(log, stats)
