@@ -23,36 +23,28 @@ func TestTriageHeuristic(t *testing.T) {
 			evidence: TriageEvidence{
 				CommitCount:    0,
 				HasUncommitted: false,
-				NumTurns:       5,
-				MaxTurns:       100,
 			},
 			want: TriageNoProgress,
 		},
 		{
-			name: "commits exist, high turn usage",
+			name: "commits exist, no error — needs agent",
 			evidence: TriageEvidence{
 				CommitCount: 3,
-				NumTurns:    80,
-				MaxTurns:    100,
 			},
-			want: TriagePartial,
+			want: TriageNeedsAgent,
 		},
 		{
-			name: "commits exist, low turns, session error",
+			name: "commits exist, session error — partial",
 			evidence: TriageEvidence{
 				CommitCount: 2,
-				NumTurns:    20,
-				MaxTurns:    100,
 				HadError:    true,
 			},
 			want: TriagePartial,
 		},
 		{
-			name: "commits exist, low turns, no error — ambiguous",
+			name: "commits exist, no error — ambiguous",
 			evidence: TriageEvidence{
 				CommitCount: 2,
-				NumTurns:    20,
-				MaxTurns:    100,
 				HadError:    false,
 			},
 			want: TriageNeedsAgent,
@@ -62,8 +54,6 @@ func TestTriageHeuristic(t *testing.T) {
 			evidence: TriageEvidence{
 				CommitCount:  0,
 				TasksCreated: []AtaTask{{ID: "TSK-1", Title: "subtask"}},
-				NumTurns:     30,
-				MaxTurns:     100,
 			},
 			want: TriagePartial,
 		},
@@ -72,37 +62,8 @@ func TestTriageHeuristic(t *testing.T) {
 			evidence: TriageEvidence{
 				CommitCount:    0,
 				HasUncommitted: true,
-				NumTurns:       10,
-				MaxTurns:       100,
 			},
 			want: TriagePartial,
-		},
-		{
-			name: "commits at exactly 50% boundary — partial",
-			evidence: TriageEvidence{
-				CommitCount: 1,
-				NumTurns:    51,
-				MaxTurns:    100,
-			},
-			want: TriagePartial,
-		},
-		{
-			name: "commits at exactly 50% turns — needs agent",
-			evidence: TriageEvidence{
-				CommitCount: 1,
-				NumTurns:    50,
-				MaxTurns:    100,
-			},
-			want: TriageNeedsAgent,
-		},
-		{
-			name: "zero max turns — no division by zero",
-			evidence: TriageEvidence{
-				CommitCount: 1,
-				NumTurns:    0,
-				MaxTurns:    0,
-			},
-			want: TriageNeedsAgent,
 		},
 	}
 
@@ -141,8 +102,6 @@ func TestBuildTriageComment(t *testing.T) {
 	ev := &TriageEvidence{
 		TaskID:      "TSK-42",
 		TaskTitle:   "Fix the widget",
-		NumTurns:    75,
-		MaxTurns:    100,
 		CommitCount: 3,
 		CommitSummary: "abc1234 first commit\ndef5678 second commit\nghi9012 third commit",
 		DiffStats:   " file1.go | 10 +++\n file2.go | 5 --",
@@ -152,7 +111,7 @@ func TestBuildTriageComment(t *testing.T) {
 	}
 	result := &TriageResult{
 		Outcome: TriagePartial,
-		Reason:  "commits exist (3), used 75% of turns",
+		Reason:  "commits exist (3) but session errored",
 	}
 
 	comment := buildTriageComment(ev, result)
@@ -161,7 +120,6 @@ func TestBuildTriageComment(t *testing.T) {
 	for _, want := range []string{
 		"## Post-Session Triage",
 		"**Outcome:** partial",
-		"Turns used: 75/100 (75%)",
 		"Commits: 3",
 		"abc1234 first commit",
 		"file1.go",
@@ -171,5 +129,10 @@ func TestBuildTriageComment(t *testing.T) {
 		if !strings.Contains(comment, want) {
 			t.Errorf("buildTriageComment() missing %q in output:\n%s", want, comment)
 		}
+	}
+
+	// Verify turns line is NOT present.
+	if strings.Contains(comment, "Turns used") {
+		t.Errorf("buildTriageComment() should not contain 'Turns used', got:\n%s", comment)
 	}
 }

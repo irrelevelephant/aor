@@ -14,8 +14,6 @@ func gatherTriageEvidence(taskID, taskTitle, preSHA string,
 		TaskID:    taskID,
 		TaskTitle: taskTitle,
 		PreSHA:    preSHA,
-		NumTurns:  result.NumTurns,
-		MaxTurns:  cfg.MaxTurns,
 		SessionID: result.SessionID,
 		HadError:  result.Error != nil,
 	}
@@ -67,10 +65,6 @@ func triageHeuristic(ev *TriageEvidence) *TriageResult {
 
 	hasCommits := ev.CommitCount > 0
 	hasTasks := len(ev.TasksCreated) > 0
-	turnRatio := float64(0)
-	if ev.MaxTurns > 0 {
-		turnRatio = float64(ev.NumTurns) / float64(ev.MaxTurns)
-	}
 
 	// No progress at all — nothing happened.
 	if !hasCommits && !hasTasks && !ev.HasUncommitted {
@@ -80,50 +74,34 @@ func triageHeuristic(ev *TriageEvidence) *TriageResult {
 		}
 	}
 
-	// Commits exist, >50% turns used — agent made progress but ran out of budget.
-	if hasCommits && turnRatio > 0.5 {
+	// Commits exist + error — crashed mid-work.
+	if hasCommits && ev.HadError {
 		return &TriageResult{
 			Outcome: TriagePartial,
-			Reason:  fmt.Sprintf("commits exist (%d), used %.0f%% of turns", ev.CommitCount, turnRatio*100),
+			Reason:  fmt.Sprintf("commits exist (%d) but session errored", ev.CommitCount),
 		}
 	}
 
-	// Commits exist, <50% turns, session had error — crashed mid-work.
-	if hasCommits && turnRatio <= 0.5 && ev.HadError {
+	// Commits exist, no error, task not closed — ambiguous, needs agent.
+	if hasCommits && !ev.HadError {
 		return &TriageResult{
-			Outcome: TriagePartial,
-			Reason:  fmt.Sprintf("commits exist (%d) but session errored at %.0f%% turns", ev.CommitCount, turnRatio*100),
+			Outcome: TriageNeedsAgent,
+			Reason:  fmt.Sprintf("commits exist (%d), no error, task not closed — ambiguous", ev.CommitCount),
 		}
 	}
 
 	// Tasks created during session but no commits — planning happened, no code.
-	if hasTasks && !hasCommits {
+	if hasTasks {
 		return &TriageResult{
 			Outcome: TriagePartial,
 			Reason:  fmt.Sprintf("%d tasks created but no commits", len(ev.TasksCreated)),
 		}
 	}
 
-	// Commits exist, low turn usage, no error — ambiguous. Needs agent to examine.
-	if hasCommits && turnRatio <= 0.5 && !ev.HadError {
-		return &TriageResult{
-			Outcome: TriageNeedsAgent,
-			Reason:  fmt.Sprintf("commits exist (%d), only %.0f%% turns used, no error — ambiguous", ev.CommitCount, turnRatio*100),
-		}
-	}
-
-	// Fallback: uncommitted changes only.
-	if ev.HasUncommitted && !hasCommits && !hasTasks {
-		return &TriageResult{
-			Outcome: TriagePartial,
-			Reason:  "uncommitted changes present but no commits or tasks",
-		}
-	}
-
-	// Catch-all.
+	// Fallback: uncommitted changes only (all other cases exhausted above).
 	return &TriageResult{
 		Outcome: TriagePartial,
-		Reason:  "unhandled evidence combination — treating as partial",
+		Reason:  "uncommitted changes present but no commits or tasks",
 	}
 }
 
@@ -136,11 +114,6 @@ func buildTriageComment(ev *TriageEvidence, outcome *TriageResult) string {
 	b.WriteString(fmt.Sprintf("**Reason:** %s\n\n", outcome.Reason))
 
 	b.WriteString("### Evidence\n\n")
-	b.WriteString(fmt.Sprintf("- Turns used: %d/%d", ev.NumTurns, ev.MaxTurns))
-	if ev.MaxTurns > 0 {
-		b.WriteString(fmt.Sprintf(" (%.0f%%)", float64(ev.NumTurns)/float64(ev.MaxTurns)*100))
-	}
-	b.WriteString("\n")
 
 	if ev.CommitCount > 0 {
 		b.WriteString(fmt.Sprintf("- Commits: %d\n", ev.CommitCount))
@@ -188,11 +161,6 @@ func buildTriagePrompt(ev *TriageEvidence) string {
 	b.WriteString(fmt.Sprintf("Task: %s — %s\n\n", ev.TaskID, ev.TaskTitle))
 
 	b.WriteString("## Evidence\n\n")
-	b.WriteString(fmt.Sprintf("- Turns used: %d/%d", ev.NumTurns, ev.MaxTurns))
-	if ev.MaxTurns > 0 {
-		b.WriteString(fmt.Sprintf(" (%.0f%%)", float64(ev.NumTurns)/float64(ev.MaxTurns)*100))
-	}
-	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("- Task status (ata show): %s\n", ev.TaskStatus))
 	b.WriteString(fmt.Sprintf("- Commits: %d\n", ev.CommitCount))
 
@@ -273,9 +241,9 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 
 	// Log triage session costs.
 	if triageResult.InputTokens > 0 || triageResult.OutputTokens > 0 {
-		log.Log("Triage usage: %s input + %s output tokens, $%.4f, %d turns",
+		log.Log("Triage usage: %s input + %s output tokens, $%.4f",
 			formatTokens(triageResult.InputTokens), formatTokens(triageResult.OutputTokens),
-			triageResult.TotalCostUSD, triageResult.NumTurns)
+			triageResult.TotalCostUSD)
 	}
 
 	// Helper to populate cost fields from the triage session.
@@ -283,7 +251,6 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 		r.TotalCostUSD = triageResult.TotalCostUSD
 		r.InputTokens = triageResult.InputTokens
 		r.OutputTokens = triageResult.OutputTokens
-		r.NumTurns = triageResult.NumTurns
 	}
 
 	// Parse TRIAGE_STATUS sentinel.

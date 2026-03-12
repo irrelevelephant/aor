@@ -89,9 +89,7 @@ type RunStats struct {
 	ReviewTasks         int
 	Decomposed          int
 	SessionsRun         int
-	WrapUpSessions      int
 	Errors              int
-	MaxTurnsHitCount    int
 	TriageSessions      int
 	TriageSkipped       int
 	RecoveredTasks      int
@@ -100,7 +98,6 @@ type RunStats struct {
 	TotalCostUSD        float64
 	TotalInput          int
 	TotalOutput         int
-	TotalTurns          int
 }
 
 // ReviewConfig holds configuration for the rev subcommand.
@@ -147,8 +144,6 @@ type TriageEvidence struct {
 	HasUncommitted bool
 	TasksCreated   []AtaTask // tasks created during session
 	TaskStatus     string    // from ata show
-	NumTurns       int
-	MaxTurns       int
 	SessionID      string
 	HadError       bool
 }
@@ -173,7 +168,6 @@ type TriageResult struct {
 	TotalCostUSD float64
 	InputTokens  int
 	OutputTokens int
-	NumTurns     int
 }
 
 // TriageStatus is the structured output from a triage agent session.

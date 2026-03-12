@@ -13,9 +13,7 @@ import (
 
 // buildPrompt constructs the system prompt for a Claude Code session.
 // claimedTask is the task already claimed by the runner before launching the session.
-// maxTurns must match the --max-turns value passed to the session so the agent's
-// turn-budget guidance is accurate.
-func buildPrompt(batchSize, maxTurns int, epicFilter, tagFilter, workspace string, claimedTask *AtaTask) string {
+func buildPrompt(batchSize int, epicFilter, tagFilter, workspace string, claimedTask *AtaTask) string {
 	filterInstruction := ""
 	if epicFilter != "" {
 		filterInstruction += fmt.Sprintf("Only work on tasks under epic %s. Ignore unrelated ready items.\n\n", epicFilter)
@@ -65,7 +63,6 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	}
 
 	// Build discovered task instruction.
-	discoveredInstruction := "5. File discovered issues for any new problems found outside current scope."
 	createCmd := `ata create "<issue>" --status queue`
 	if workspace != "" {
 		createCmd += fmt.Sprintf(` --workspace "%s"`, workspace)
@@ -76,7 +73,7 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	if tagFilter != "" {
 		createCmd += fmt.Sprintf(` --tag "%s"`, tagFilter)
 	}
-	discoveredInstruction = fmt.Sprintf(`5. File discovered issues for any new problems found outside current scope.
+	discoveredInstruction := fmt.Sprintf(`5. File discovered issues for any new problems found outside current scope.
    Use: %s --json`, createCmd)
 
 	decomposeCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic %s`, claimedTask.ID)
@@ -86,13 +83,6 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	if tagFilter != "" {
 		decomposeCmd += fmt.Sprintf(` --tag "%s"`, tagFilter)
 	}
-
-	earlyExitTurn := maxTurns * 80 / 100
-	additionalTasks += fmt.Sprintf(`
-
-Turn budget: You have %d turns for this session.
-- If you reach turn ~%d without finishing: commit your progress, output the ATA_RUNNER_STATUS sentinel with what you've completed, and stop.
-- The orchestrator will continue with a fresh session — do not try to rush or skip steps.`, maxTurns, earlyExitTurn)
 
 	return fmt.Sprintf(`You are working through tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
 
@@ -133,29 +123,6 @@ Task decomposition:
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
 Start now.`, specInstruction, filterInstruction, workspaceInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
-}
-
-// buildWrapUpPrompt constructs a focused prompt for resuming a session that
-// hit the max-turns limit.
-func buildWrapUpPrompt(taskID, taskTitle, workspace string) string {
-	createCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic %s`, taskID)
-	if workspace != "" {
-		createCmd += fmt.Sprintf(` --workspace "%s"`, workspace)
-	}
-
-	return fmt.Sprintf(`Your previous session ran out of turns while working on %s — %s.
-
-You MUST wrap up immediately. Do NOT continue working on the task. You have 5 turns.
-
-1. If you have uncommitted changes, commit them now with a descriptive message.
-2. Determine outcome:
-   a. If the task is COMPLETE: close it with ata close %s "<reason>" --json.
-   b. If more work remains and it's too complex: decompose it — create child tasks with %s --json.
-   c. If you made partial progress but it's a single remaining step: just note what's left.
-3. Output the ATA_RUNNER_STATUS sentinel as your final action:
-   ATA_RUNNER_STATUS:{"completed": ["<ids>"], "discovered": [], "review_tasks": [], "decomposed_into": ["<child-ids-if-any>"], "remaining_ready": -1, "error": null}
-
-This is mandatory. The orchestrator cannot continue without it.`, taskID, taskTitle, taskID, createCmd)
 }
 
 // claimTracker keeps track of the currently claimed task so we can
@@ -227,8 +194,8 @@ func run(cfg *Config) error {
 	effectiveBatchSize := cfg.BatchSize
 
 	log.Log("Agent orchestration runner started")
-	log.Log("Config: batch_size=%d max_tasks=%d max_turns=%d yolo=%v",
-		cfg.BatchSize, cfg.MaxTasks, cfg.MaxTurns, cfg.Yolo)
+	log.Log("Config: batch_size=%d max_tasks=%d yolo=%v",
+		cfg.BatchSize, cfg.MaxTasks, cfg.Yolo)
 	if cfg.EpicFilter != "" {
 		log.Log("Config: epic_filter=%s", cfg.EpicFilter)
 	}
@@ -241,12 +208,12 @@ func run(cfg *Config) error {
 	log.Log("Controls: i=interject, s=skip, q=quit, Ctrl+C=stop & exit")
 	fmt.Println()
 
-	for {
-		// Recover any tasks orphaned by a previous crashed runner.
-		if n := recoverStuckTasks(cfg.Workspace, log); n > 0 {
-			stats.RecoveredTasks += n
-		}
+	// Recover any tasks orphaned by a previous crashed runner (once at startup).
+	if n := recoverStuckTasks(cfg.Workspace, log); n > 0 {
+		stats.RecoveredTasks += n
+	}
 
+	for {
 		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.TagFilter, cfg.Workspace)
 		if err != nil {
 			log.Log("%sError checking ready tasks: %v%s", cRed, err, cReset)
@@ -333,7 +300,7 @@ func run(cfg *Config) error {
 			next.Body += "\n\n## Previous Attempt Notes\n" + comments
 		}
 
-		prompt := buildPrompt(effectiveBatchSize, cfg.MaxTurns, cfg.EpicFilter, cfg.TagFilter, cfg.Workspace, next)
+		prompt := buildPrompt(effectiveBatchSize, cfg.EpicFilter, cfg.TagFilter, cfg.Workspace, next)
 
 		// Capture pre-task HEAD for post-task review diffing.
 		preSHA, _ := headSHA()
@@ -346,23 +313,12 @@ func run(cfg *Config) error {
 
 		// Log session usage if available.
 		if result.InputTokens > 0 || result.OutputTokens > 0 {
-			turnPct := 0
-			if cfg.MaxTurns > 0 {
-				turnPct = result.NumTurns * 100 / cfg.MaxTurns
-			}
-			log.Log("Session usage: %s input + %s output tokens, $%.4f, %d/%d turns (%d%%)",
+			log.Log("Session usage: %s input + %s output tokens, $%.4f",
 				formatTokens(result.InputTokens), formatTokens(result.OutputTokens),
-				result.TotalCostUSD, result.NumTurns, cfg.MaxTurns, turnPct)
-			if turnPct >= 100 {
-				stats.MaxTurnsHitCount++
-			} else if turnPct >= 80 {
-				log.Log("%sNOTE: Session used %d%% of turn budget (%d/%d turns)%s",
-					cYellow, turnPct, result.NumTurns, cfg.MaxTurns, cReset)
-			}
+				result.TotalCostUSD)
 			stats.TotalCostUSD += result.TotalCostUSD
 			stats.TotalInput += result.InputTokens
 			stats.TotalOutput += result.OutputTokens
-			stats.TotalTurns += result.NumTurns
 		}
 
 		// Determine whether the claimed task was completed by the agent.
@@ -384,88 +340,6 @@ func run(cfg *Config) error {
 				result.Status = &RunnerStatus{
 					Completed: []string{next.ID},
 				}
-			} else if result.NumTurns > 0 && result.NumTurns >= cfg.MaxTurns && result.SessionID != "" {
-				log.Log("Session hit max turns (%d) — attempting wrap-up resumption...", cfg.MaxTurns)
-
-				wrapUpPrompt := buildWrapUpPrompt(next.ID, next.Title, cfg.Workspace)
-				wrapUpCfg := &Config{
-					MaxTurns:        5,
-					Yolo:            cfg.Yolo,
-					LogDir:          cfg.LogDir,
-					ResumeSessionID: result.SessionID,
-				}
-
-				fmt.Printf("\n%s─── Wrap-up: %s ──────────────────────────────────────%s\n\n",
-					cYellow, next.ID, cReset)
-
-				wrapResult := runSession(wrapUpCfg, log, wrapUpPrompt, stdinCh)
-				stats.WrapUpSessions++
-
-				// Accumulate wrap-up costs.
-				if wrapResult.InputTokens > 0 || wrapResult.OutputTokens > 0 {
-					log.Log("Wrap-up usage: %s input + %s output tokens, $%.4f, %d turns",
-						formatTokens(wrapResult.InputTokens), formatTokens(wrapResult.OutputTokens),
-						wrapResult.TotalCostUSD, wrapResult.NumTurns)
-					stats.TotalCostUSD += wrapResult.TotalCostUSD
-					stats.TotalInput += wrapResult.InputTokens
-					stats.TotalOutput += wrapResult.OutputTokens
-					stats.TotalTurns += wrapResult.NumTurns
-				}
-
-				// If wrap-up produced a sentinel, use it.
-				if wrapResult.Status != nil {
-					result.Status = wrapResult.Status
-					if len(result.Status.DecomposedInto) > 0 {
-						log.Log("Task %s decomposed during wrap-up into %d subtask(s): %s",
-							next.ID, len(result.Status.DecomposedInto),
-							strings.Join(result.Status.DecomposedInto, ", "))
-						stats.Decomposed++
-						shouldUnclaim = true
-						decomposed = true
-					} else {
-						found := false
-						for _, cid := range result.Status.Completed {
-							if cid == next.ID {
-								found = true
-								break
-							}
-						}
-						if !found {
-							shouldUnclaim = true
-						}
-					}
-				} else {
-					task, ferr := getTaskStatus(next.ID)
-					if ferr == nil && task.Status == "closed" {
-						log.Log("Task %s closed during wrap-up (no sentinel, detected via ata)", next.ID)
-						result.Status = &RunnerStatus{
-							Completed: []string{next.ID},
-						}
-					} else {
-						log.Log("Wrap-up produced no status — running triage for %s", next.ID)
-						ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg)
-						tr := runTriage(ev, cfg, log, stdinCh)
-						if tr.AgentSpawned {
-							stats.TriageSessions++
-							stats.TotalCostUSD += tr.TotalCostUSD
-							stats.TotalInput += tr.InputTokens
-							stats.TotalOutput += tr.OutputTokens
-							stats.TotalTurns += tr.NumTurns
-						}
-						lastTriageOutcome = &tr.Outcome
-						if tr.Outcome == TriageComplete {
-							log.Log("Triage: task %s confirmed complete after wrap-up", next.ID)
-							result.Status = &RunnerStatus{Completed: []string{next.ID}}
-						} else {
-							if tr.Outcome == TriagePartial && tr.Comment != "" {
-								if err := addComment(next.ID, tr.Comment, "system"); err != nil {
-									log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
-								}
-							}
-							shouldUnclaim = true
-						}
-					}
-				}
 			} else {
 				log.Log("No structured status — running post-session triage for %s", next.ID)
 				ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg)
@@ -475,7 +349,6 @@ func run(cfg *Config) error {
 					stats.TotalCostUSD += tr.TotalCostUSD
 					stats.TotalInput += tr.InputTokens
 					stats.TotalOutput += tr.OutputTokens
-					stats.TotalTurns += tr.NumTurns
 				}
 				lastTriageOutcome = &tr.Outcome
 				if tr.Outcome == TriageComplete {
@@ -520,6 +393,9 @@ func run(cfg *Config) error {
 			if ferr == nil && task.Status == "closed" {
 				log.Log("Task %s is closed (detected on re-check), skipping unclaim", next.ID)
 				shouldUnclaim = false
+				if result.Status == nil {
+					result.Status = &RunnerStatus{Completed: []string{next.ID}}
+				}
 				stats.TasksCompleted++
 			} else {
 				if !decomposed {
@@ -546,11 +422,13 @@ func run(cfg *Config) error {
 		}
 		tracker.clear()
 
+		iterCompleted := false
 		if result.Status != nil {
 			s := result.Status
 			completed := len(s.Completed)
 			discovered := len(s.Discovered)
 			review := len(s.ReviewTasks)
+			iterCompleted = completed > 0
 
 			stats.TasksCompleted += completed
 			stats.Discovered += discovered
@@ -597,7 +475,7 @@ func run(cfg *Config) error {
 		}
 
 		// Auto-close any epics whose children are all complete.
-		if stats.TasksCompleted > 0 {
+		if iterCompleted {
 			if closed, err := closeEligibleEpics(cfg.Workspace); err != nil {
 				log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
 			} else if len(closed) > 0 {
@@ -657,9 +535,6 @@ func printSummary(log *Logger, stats *RunStats) {
 	}
 	log.Log("  Sessions run:      %d", stats.SessionsRun)
 	log.Log("  Errors:            %d", stats.Errors)
-	if stats.WrapUpSessions > 0 {
-		log.Log("  Wrap-up sessions:  %d", stats.WrapUpSessions)
-	}
 	if stats.TriageSessions > 0 {
 		log.Log("  Triage sessions:   %d", stats.TriageSessions)
 	}
@@ -672,13 +547,6 @@ func printSummary(log *Logger, stats *RunStats) {
 	if stats.TotalInput > 0 || stats.TotalOutput > 0 {
 		log.Log("  Tokens (in/out):   %s / %s", formatTokens(stats.TotalInput), formatTokens(stats.TotalOutput))
 		log.Log("  Total cost:        $%.4f", stats.TotalCostUSD)
-		log.Log("  Total turns:       %d", stats.TotalTurns)
-		if stats.SessionsRun > 0 {
-			log.Log("  Avg turns/task:    %.1f", float64(stats.TotalTurns)/float64(stats.SessionsRun))
-		}
-		if stats.MaxTurnsHitCount > 0 {
-			log.Log("  %sTurn limit hits:  %d%s", cYellow, stats.MaxTurnsHitCount, cReset)
-		}
 	}
 	log.Log("  Elapsed:           %s", elapsed)
 	log.Log("  Run log:           %s", log.RunLogPath())

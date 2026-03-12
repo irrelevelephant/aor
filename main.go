@@ -36,7 +36,7 @@ type Config struct {
 	Unclaim         bool
 	LogDir          string
 	Workspace       string
-	ResumeSessionID string // set internally for wrap-up sessions
+	ResumeSessionID string // set internally when resuming an existing session
 }
 
 func main() {
