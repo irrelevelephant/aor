@@ -259,6 +259,7 @@ func Serve(d *db.DB, addr string) error {
 	mux.HandleFunc("POST /task/{id}/close", srv.handleCloseTask)
 	mux.HandleFunc("POST /task/{id}/reopen", srv.handleReopenTask)
 	mux.HandleFunc("POST /task/{id}/promote", srv.handlePromoteTask)
+	mux.HandleFunc("POST /task/{id}/demote", srv.handleDemoteEpic)
 	mux.HandleFunc("POST /task/{id}/comments", srv.handleAddComment)
 	mux.HandleFunc("POST /epic/{id}/spec", srv.handleUpdateSpec)
 	mux.HandleFunc("POST /task/{id}/deps", srv.handleAddDep)
@@ -698,7 +699,11 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		s.partials.ExecuteTemplate(w, "task_row.html", task)
 		return
 	}
-	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+	dest := "/task/" + id
+	if task.IsEpic {
+		dest = "/epic/" + id
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (s *Server) handleCloseTask(w http.ResponseWriter, r *http.Request) {
@@ -740,6 +745,18 @@ func (s *Server) handlePromoteTask(w http.ResponseWriter, r *http.Request) {
 
 	s.hub.Broadcast("epic_promoted", task.Workspace, id)
 	s.hxRedirect(w, r, "/epic/"+id, http.StatusSeeOther)
+}
+
+func (s *Server) handleDemoteEpic(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	task, err := s.db.DemoteToTask(id)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	s.hub.Broadcast("task_updated", task.Workspace, id)
+	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {

@@ -6,7 +6,9 @@
 
     <div class="task-header">
         <span class="id-badge">{{.ID}}</span>
-        <h1>{{.Title}}</h1>
+        <h1 class="task-title" contenteditable="true"
+            hx-post="/task/{{.ID}}" hx-trigger="blur" hx-vals='js:{"title": event.target.innerText}'
+            hx-swap="none">{{.Title}}</h1>
         <span class="badge epic-badge">epic</span>
         <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
     </div>
@@ -39,6 +41,28 @@
         {{end}}
     </div>
 
+    {{if ne .Status "closed"}}
+    <div class="task-actions">
+        <form action="/task/{{.ID}}/close" method="POST" style="display:inline">
+            <input type="text" name="reason" placeholder="Close reason..." class="input-sm">
+            <button type="submit" class="btn btn-sm btn-close">Close</button>
+        </form>
+        {{if not $.Children}}
+        <form action="/task/{{.ID}}/demote" method="POST" style="display:inline"
+              onsubmit="return confirm('Convert back to a regular task? This is only possible because the epic has no sub-tasks.')">
+            <button type="submit" class="btn btn-sm" title="Convert this epic back to a regular task">Demote to Task</button>
+        </form>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="task-actions">
+        {{if .CloseReason}}<p><strong>Reason:</strong> {{.CloseReason}}</p>{{end}}
+        <form action="/task/{{.ID}}/reopen" method="POST" style="display:inline">
+            <button type="submit" class="btn btn-sm">Reopen</button>
+        </form>
+    </div>
+    {{end}}
+
     {{if $.Progress}}
     <div class="progress-section">
         <div class="progress-bar">
@@ -54,6 +78,24 @@
         </script>
     </div>
     {{end}}
+
+    <div class="task-body" id="task-body">
+        <div class="body-display" id="body-display">
+            {{if .Body}}
+            <div class="markdown-body">{{renderMarkdown .Body}}</div>
+            {{else}}
+            <p class="empty body-placeholder">Click to add a description...</p>
+            {{end}}
+        </div>
+        <form class="body-edit" id="body-edit" style="display:none"
+              hx-post="/task/{{.ID}}" hx-swap="none">
+            <textarea name="body" rows="8" class="body-editor">{{.Body}}</textarea>
+            <div class="body-edit-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                <button type="button" class="btn btn-sm" onclick="cancelBodyEdit()">Cancel</button>
+            </div>
+        </form>
+    </div>
 
     <div class="spec-section">
         <h2>Spec</h2>

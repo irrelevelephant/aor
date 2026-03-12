@@ -329,6 +329,27 @@ func (d *DB) PromoteToEpic(id, spec string) (*model.Task, error) {
 	return d.GetTask(id)
 }
 
+// DemoteToTask converts an epic back to a regular task, if it has no children.
+func (d *DB) DemoteToTask(id string) (*model.Task, error) {
+	res, err := d.Exec(`UPDATE tasks SET is_epic = 0 WHERE id = ? AND is_epic = 1
+		AND NOT EXISTS (SELECT 1 FROM tasks WHERE epic_id = ?)`, id, id)
+	if err != nil {
+		return nil, fmt.Errorf("demote: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		task, err := d.GetTask(id)
+		if err != nil {
+			return nil, fmt.Errorf("task %s not found", id)
+		}
+		if !task.IsEpic {
+			return nil, fmt.Errorf("task %s is not an epic", id)
+		}
+		return nil, fmt.Errorf("cannot demote epic %s: it has sub-tasks", id)
+	}
+	return d.GetTask(id)
+}
+
 // UpdateSpec updates the spec for an epic.
 func (d *DB) UpdateSpec(id, spec string) (*model.Task, error) {
 	res, err := d.Exec(`UPDATE tasks SET spec = ? WHERE id = ? AND is_epic = 1`, spec, id)
