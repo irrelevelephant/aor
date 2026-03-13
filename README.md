@@ -141,13 +141,33 @@ ata create "Add OAuth2 provider" --epic <id>
 
 ### Pulling Tasks
 
-`ata pull <id>` claims a task and launches an interactive Claude Code session with a structured workflow:
+`aor pull [TASK_ID]` claims a task, creates a git worktree, and launches an interactive Claude Code session with a structured workflow:
+
+```sh
+aor pull           # interactive selector — fuzzy search through ready tasks
+aor pull f7q       # pull a specific task by ID
+aor pull --no-worktree f7q  # work in the current tree instead of a worktree
+```
+
+The session follows a phased workflow:
 
 1. **Research & Plan** — Claude explores the codebase and writes a concrete plan
 2. **Review** — Claude presents the plan and asks you to choose:
    - **Request changes** — refine the plan before acting
    - **Execute directly** — Claude implements the plan in the current session, then offers to resolve the task
    - **Decompose** — Claude creates subtasks (with `--epic`, dependencies, and ordering), then exits so you can run `aor --epic <id>` for autonomous execution
+
+### Merging Worktrees
+
+`aor merge` merges worktree branches back into the main branch using an interactive Claude Code session:
+
+```sh
+aor merge                          # merge all worktrees
+aor merge myproject-f7q            # merge specific worktree(s) by name
+aor merge --exclude myproject-x2k  # skip specific worktree(s)
+```
+
+Claude analyzes each branch, decides the optimal merge order, resolves conflicts automatically (asking for help only when genuinely ambiguous), and cleans up successfully merged worktrees.
 
 ### Workspaces
 
@@ -183,7 +203,6 @@ ata close ID [REASON] [--json]
 ata ready [--workspace PATH] [--epic ID] [--tag TAG] [--limit N] [--json]
 ata claim ID [--json]
 ata unclaim [ID] [--workspace PATH] [--json]
-ata pull ID [--worktree]                                   Plan, review, and execute/decompose with Claude
 ata promote ID [--spec-file PATH]                          Promote task to epic
 ata spec ID [--set-file PATH] [--json]
 ata comment ID BODY [--author human|agent|system] [--json]
@@ -208,8 +227,10 @@ All mutation commands support `--json` for structured output, making ata scripta
 ## aor CLI Reference
 
 ```
-aor [flags]              Run the task orchestration loop
-aor rev [flags] [<ref>]  Iterative code review
+aor [flags]                    Run the task orchestration loop
+aor pull [flags] [TASK_ID]     Interactive task planning and execution
+aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
+aor rev [flags] [<ref>]        Iterative code review
 ```
 
 ### Flags
@@ -257,11 +278,16 @@ aor/
   main.go              CLI entry, flag dispatch
   runner.go            Orchestration loop, prompt builder
   session.go           Claude Code process management, stream parsing
+  pull.go              Interactive task planning (aor pull)
+  pull_prompt.go       Pull session prompt builder
+  merge.go             Worktree merge orchestration (aor merge)
+  merge_prompt.go      Merge session prompt builder
+  selector.go          Interactive fuzzy task selector (bubbletea)
   review.go            Iterative code review (aor rev)
   triage.go            Post-session triage (heuristic + agent)
   ata.go               ata CLI wrapper functions
   types.go             Shared types
-  git.go               Git helpers (worktree detection, diff)
+  git.go               Git helpers (worktree management, diff)
   logger.go            Session logging
   highlight.go         Syntax-highlighted terminal output
 

@@ -577,7 +577,31 @@ func (d *DB) scanTasks(rows *sql.Rows) ([]model.Task, error) {
 		}
 		tasks = append(tasks, t)
 	}
-	return tasks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return d.populateTags(tasks)
+}
+
+// populateTags batch-loads tags for a slice of tasks.
+func (d *DB) populateTags(tasks []model.Task) ([]model.Task, error) {
+	if len(tasks) == 0 {
+		return tasks, nil
+	}
+	ids := make([]string, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.ID
+	}
+	tagMap, err := d.GetTagsForTasks(ids)
+	if err != nil {
+		return tasks, nil // non-fatal: return tasks without tags
+	}
+	for i := range tasks {
+		if tags, ok := tagMap[tasks[i].ID]; ok {
+			tasks[i].Tags = tags
+		}
+	}
+	return tasks, nil
 }
 
 func nullStr(s string) any {

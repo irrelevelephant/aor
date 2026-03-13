@@ -508,11 +508,16 @@ func runInteractive(sessionID string, yolo bool, workDir string) {
 	fmt.Printf("%s[runner] Launching: claude --resume %s%s\n", cCyan, sessionID, cReset)
 	fmt.Printf("%s[runner] Exit the interactive session (Ctrl+D or /exit) to return to the runner.%s\n", cGray, cReset)
 
-	args := []string{"--resume", sessionID}
+	runInteractiveClaude([]string{"--resume", sessionID}, yolo, workDir)
+}
+
+// runInteractiveClaude launches Claude Code with stdio piped directly to the
+// terminal. Used by pull, merge, and the interject flow.
+func runInteractiveClaude(claudeArgs []string, yolo bool, workDir string) {
 	if yolo {
-		args = append(args, "--dangerously-skip-permissions")
+		claudeArgs = append(claudeArgs, "--dangerously-skip-permissions")
 	}
-	cmd := exec.Command("claude", args...)
+	cmd := exec.Command("claude", claudeArgs...)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -520,7 +525,7 @@ func runInteractive(sessionID string, yolo bool, workDir string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("%s[runner] Interactive session exited: %v%s\n", cYellow, err, cReset)
+		fmt.Printf("\nClaude session ended: %v\n", err)
 	}
 }
 

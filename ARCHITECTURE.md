@@ -27,15 +27,19 @@ Key flags:
 
 ## Prompt Construction
 
-Three prompt builders, each for a different mode:
+Five prompt builders, each for a different mode:
 
 1. **Task execution** (`runner.go`, `buildPrompt`) — Tells Claude it has a pre-claimed task, instructs it to implement, commit, and close. Injects the epic spec when the task belongs to an epic. Includes workspace path and batch size for multi-task sessions.
 
-2. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Used by `aor rev`.
+2. **Interactive pull** (`pull_prompt.go`, `buildPullPrompt`) — Multi-phase workflow for interactive task work: research, plan, review with user (via AskUserQuestion), then execute directly or decompose into subtasks.
 
-3. **Post-task triage** (`triage.go`) — After each session, gathers evidence (commits, diff stats, task status) and either heuristically determines the outcome or spawns a triage agent to assess ambiguous results.
+3. **Worktree merge** (`merge_prompt.go`, `buildMergePrompt`) — Instructs Claude to analyze worktree branches, decide merge order, merge into the main branch, resolve conflicts, and clean up merged worktrees.
 
-All prompts end with a **sentinel instruction** — a required structured JSON line the agent must output as its final action.
+4. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Used by `aor rev`.
+
+5. **Post-task triage** (`triage.go`) — After each session, gathers evidence (commits, diff stats, task status) and either heuristically determines the outcome or spawns a triage agent to assess ambiguous results.
+
+Task execution, code review, and triage prompts end with a **sentinel instruction** — a required structured JSON line the agent must output as its final action. Pull and merge sessions are interactive (stdin/stdout piped directly) and don't use sentinels.
 
 ## Stream Processing
 
@@ -109,6 +113,23 @@ A goroutine reads stdin via a shared channel. While Claude is running:
 - **`q` + Enter** — Finish current session, then exit.
 - **Ctrl+C** — SIGINT to Claude. Double-press within 2s force-kills.
 
+## `aor pull` — Interactive Task Work
+
+`aor pull` claims a task, creates a git worktree (by default), and launches an interactive Claude Code session. The session uses AskUserQuestion for a multi-phase workflow:
+
+1. **Research & Plan** — Claude explores the codebase, writes a concrete plan
+2. **Review** — presents the plan and asks the user to choose: execute, decompose, or revise
+3. **Execute** — implements, tests, commits, runs /simplify, closes the task
+4. **Decompose** — creates subtasks with dependencies under the epic, exits for autonomous execution
+
+If no task ID is given, a bubbletea-based fuzzy selector shows ready tasks.
+
+## `aor merge` — Worktree Merge
+
+`aor merge` discovers all git worktrees, gathers their commit histories, and launches a single interactive Claude Code session to merge them into the main branch. Claude decides merge order, resolves conflicts autonomously (asking the user only for genuinely ambiguous cases), and cleans up merged worktrees.
+
+Supports `--exclude` to skip specific worktrees and positional args to include only specific ones.
+
 ## `aor rev` — Iterative Code Review
 
 A separate loop in `review.go`:
@@ -125,7 +146,7 @@ A separate loop in `review.go`:
 ata is a separate Go module (`aor/ata`) linked via `go.work`. It provides:
 
 - **SQLite storage** (`~/.ata/ata.db`, WAL mode) — no external services or sync
-- **CLI** — CRUD, claim/unclaim, epic management, dependencies, tags, workspace management, recovery, all with `--json` support
+- **CLI** — CRUD, claim/unclaim, epic management, dependencies, tags, workspace management, recovery, all with `--json` support (orchestration commands like pull and merge live in aor)
 - **Web UI** — htmx + SSE on `:4400` with drag-to-reorder, cross-list drag, inline editing, tag filter bar, dependency management, live updates
 - **Workspace scoping** — tasks are scoped by registered workspace path, with git worktree resolution
 

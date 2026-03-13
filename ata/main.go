@@ -50,8 +50,6 @@ func main() {
 		cmdErr = cmd.Claim(d, args)
 	case "unclaim":
 		cmdErr = cmd.Unclaim(d, args)
-	case "pull":
-		cmdErr = cmd.Pull(d, args)
 	case "promote":
 		cmdErr = cmd.Promote(d, args)
 	case "spec":
@@ -107,7 +105,6 @@ Commands:
   ready     List queue tasks (ready to work)
   claim     Claim a task (set in_progress)
   unclaim   Unclaim a task (reset to queue)
-  pull      Pull a task into the current workspace
   promote   Promote a task to an epic
   spec      View or set epic spec
   comment   Add a comment to a task

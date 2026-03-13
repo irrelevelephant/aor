@@ -7,16 +7,25 @@ import (
 
 // AtaTask represents a task from ata CLI JSON output.
 type AtaTask struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Body      string `json:"body,omitempty"`
-	Status    string `json:"status"`
-	SortOrder int    `json:"sort_order"`
-	EpicID    string `json:"epic_id,omitempty"`
-	Workspace string `json:"workspace"`
-	IsEpic    bool   `json:"is_epic"`
-	Spec      string `json:"spec,omitempty"`
-	CreatedAt string `json:"created_at"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Body      string   `json:"body,omitempty"`
+	Status    string   `json:"status"`
+	SortOrder int      `json:"sort_order"`
+	EpicID    string   `json:"epic_id,omitempty"`
+	Workspace string   `json:"workspace"`
+	IsEpic    bool     `json:"is_epic"`
+	Spec      string   `json:"spec,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	CreatedAt string   `json:"created_at"`
+}
+
+// GitWorktree represents a git worktree entry from `git worktree list --porcelain`.
+type GitWorktree struct {
+	Path   string
+	Branch string
+	HEAD   string
+	IsMain bool
 }
 
 // RunnerStatus is the structured output expected from Claude Code at the end of a session.

@@ -137,6 +137,107 @@ func gitMainWorktree() string {
 	return ""
 }
 
+// listWorktrees returns all git worktrees by parsing `git worktree list --porcelain`.
+// The first entry is always the main worktree.
+func listWorktrees() ([]GitWorktree, error) {
+	out, err := exec.Command("git", "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git worktree list: %w", err)
+	}
+
+	var worktrees []GitWorktree
+	var current GitWorktree
+	first := true
+
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			if current.Path != "" {
+				worktrees = append(worktrees, current)
+			}
+			current = GitWorktree{Path: strings.TrimPrefix(line, "worktree ")}
+			if first {
+				current.IsMain = true
+				first = false
+			}
+		case strings.HasPrefix(line, "HEAD "):
+			current.HEAD = strings.TrimPrefix(line, "HEAD ")
+		case strings.HasPrefix(line, "branch "):
+			current.Branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
+		}
+	}
+	if current.Path != "" {
+		worktrees = append(worktrees, current)
+	}
+
+	return worktrees, nil
+}
+
+// createWorktree creates (or reuses) a git worktree for the given task ID.
+// Returns the absolute path to the worktree directory.
+func createWorktree(taskID string) (string, error) {
+	mainWT := gitMainWorktree()
+	if mainWT == "" {
+		return "", fmt.Errorf("could not determine main worktree (not in a git repo?)")
+	}
+
+	repoBase := filepath.Base(mainWT)
+	wtPath := filepath.Join(filepath.Dir(mainWT), repoBase+"-"+taskID)
+	branch := "task/" + taskID
+
+	// If the worktree directory already exists, reuse it.
+	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
+		return wtPath, nil
+	}
+
+	// Check if the branch already exists.
+	branchExists := false
+	bout, err := exec.Command("git", "branch", "--list", branch).Output()
+	if err == nil && strings.TrimSpace(string(bout)) != "" {
+		branchExists = true
+	}
+
+	var cmd *exec.Cmd
+	if branchExists {
+		cmd = exec.Command("git", "worktree", "add", wtPath, branch)
+	} else {
+		cmd = exec.Command("git", "worktree", "add", wtPath, "-b", branch)
+	}
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git worktree add: %w", err)
+	}
+
+	return wtPath, nil
+}
+
+// removeWorktree removes a git worktree and optionally deletes its branch.
+func removeWorktree(wtPath string, deleteBranch bool) error {
+	// Get branch name before removing.
+	var branch string
+	if deleteBranch {
+		cmd := exec.Command("git", "-C", wtPath, "rev-parse", "--abbrev-ref", "HEAD")
+		if out, err := cmd.Output(); err == nil {
+			branch = strings.TrimSpace(string(out))
+		}
+	}
+
+	cmd := exec.Command("git", "worktree", "remove", wtPath)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git worktree remove %s: %w", wtPath, err)
+	}
+
+	if branch != "" && branch != "HEAD" {
+		exec.Command("git", "branch", "-d", branch).Run()
+	}
+	return nil
+}
+
 // hasUncommittedChanges returns true if the working tree has uncommitted changes.
 func hasUncommittedChanges() bool {
 	out, err := exec.Command("git", "status", "--porcelain").Output()

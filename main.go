@@ -47,6 +47,18 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "pull":
+			if err := runPull(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
+				os.Exit(1)
+			}
+			return
+		case "merge":
+			if err := runMerge(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
+				os.Exit(1)
+			}
+			return
 		}
 	}
 
@@ -71,8 +83,10 @@ Each task runs in a fresh Claude Code context window. Output streams in real tim
 Tasks are managed by ata (SQLite-backed, workspace-scoped).
 
 Usage:
-  aor [flags]              Run task orchestration loop
-  aor rev [flags] [<ref>]  Iterative code review (see: aor rev --help)
+  aor [flags]                    Run task orchestration loop
+  aor pull [flags] [TASK_ID]     Interactive task planning and execution
+  aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
+  aor rev [flags] [<ref>]        Iterative code review (see: aor rev --help)
 
 Controls while running:
   Ctrl+C       Stop agent and exit runner
