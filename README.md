@@ -61,6 +61,51 @@ ata serve
 
 The web UI lets you drag-to-reorder (including across queue/backlog), filter by tag, create/edit tasks, manage dependencies and tags, view epics, and watch agent progress via live SSE updates.
 
+### Standard Workflow
+
+The typical workflow for working on a task interactively:
+
+```
+ata create  →  aor pull  →  (work)  →  aor rev  →  aor merge
+```
+
+**1. Create a task:**
+
+```sh
+ata create "Add rate limiting to API endpoints" --tag backend
+```
+
+**2. Pull the task to start working:**
+
+```sh
+aor pull
+```
+
+This opens an interactive selector showing all ready tasks. Pick one, and aor will:
+- Create a git worktree at `../<repo>-<task-id>` on branch `task/<task-id>`
+- Claim the task (status becomes `in_progress`)
+- Launch an interactive Claude Code session with a structured planning workflow
+
+Claude researches the codebase, presents a plan, and asks how to proceed. You can execute the plan directly, request changes, or decompose it into subtasks for autonomous execution.
+
+**3. Review the changes:**
+
+```sh
+aor rev
+```
+
+After the pull session completes, run `aor rev` from the worktree to get an automated code review. Claude iterates over your diff, finds issues, and applies fixes directly — repeating until the code is clean or the round limit is reached.
+
+**4. Merge back to main:**
+
+```sh
+aor merge
+```
+
+This discovers all worktrees, analyzes their branches, merges them into main (resolving conflicts automatically), and cleans up the worktrees.
+
+For larger projects, you can also skip the interactive workflow and run `aor` to process the entire queue autonomously.
+
 ### Interactive Controls
 
 While aor is running:
@@ -141,25 +186,41 @@ ata create "Add OAuth2 provider" --epic <id>
 
 ### Pulling Tasks
 
-`aor pull [TASK_ID]` claims a task, creates a git worktree, and launches an interactive Claude Code session with a structured workflow:
+`aor pull` is the primary way to work on a task interactively. It claims a task, creates an isolated git worktree, and launches a Claude Code session with a structured planning workflow.
 
 ```sh
 aor pull           # interactive selector — fuzzy search through ready tasks
 aor pull f7q       # pull a specific task by ID
 aor pull --no-worktree f7q  # work in the current tree instead of a worktree
+aor pull --no-yolo f7q      # require permission prompts for each tool call
 ```
 
-The session follows a phased workflow:
+**What happens when you pull:**
 
-1. **Research & Plan** — Claude explores the codebase and writes a concrete plan
-2. **Review** — Claude presents the plan and asks you to choose:
-   - **Request changes** — refine the plan before acting
-   - **Execute directly** — Claude implements the plan in the current session, then offers to resolve the task
-   - **Decompose** — Claude creates subtasks (with `--epic`, dependencies, and ordering), then exits so you can run `aor --epic <id>` for autonomous execution
+1. A git worktree is created at `../<repo-name>-<task-id>` on branch `task/<task-id>` (skip with `--no-worktree`)
+2. The task is claimed — its status moves to `in_progress`
+3. If the task belongs to an epic, the epic spec is fetched and injected into the prompt
+4. An interactive Claude Code session starts in the worktree directory
+
+**The session follows a phased workflow:**
+
+1. **Research & Plan** — Claude explores the codebase and writes a concrete plan with specific files and changes
+2. **Review with you** — Claude presents the plan and prompts you to choose:
+   - **Execute** — go to phase 3a
+   - **Decompose** — go to phase 3b
+   - **Anything else** — treated as feedback; Claude revises the plan and asks again
+3. **Execute (3a)** — Claude implements the plan, runs tests, commits changes, and runs `/simplify` for a code quality check. Then asks if you want to resolve the task. If yes, it runs `ata close <id> "done"`.
+4. **Decompose (3b)** — Claude breaks the work into subtasks, creating each with `ata create --epic <id>`, adding dependencies between them, and ordering by priority. After you confirm the breakdown, exit and run `aor --epic <id>` to execute the subtasks autonomously.
+
+**After the session exits**, aor checks the task status and tells you what to do next:
+
+- If the task was closed: done. Run `aor rev` to review, then `aor merge` to merge the worktree.
+- If the task was promoted to an epic: run `aor --epic <id>` to orchestrate the subtasks.
+- If the task is still in progress: the session ended early — resume with `claude --resume` or run `aor pull <id>` again.
 
 ### Merging Worktrees
 
-`aor merge` merges worktree branches back into the main branch using an interactive Claude Code session:
+After completing work in a worktree (via `aor pull` or the autonomous loop), use `aor merge` to bring the changes back to the main branch:
 
 ```sh
 aor merge                          # merge all worktrees
@@ -167,7 +228,7 @@ aor merge myproject-f7q            # merge specific worktree(s) by name
 aor merge --exclude myproject-x2k  # skip specific worktree(s)
 ```
 
-Claude analyzes each branch, decides the optimal merge order, resolves conflicts automatically (asking for help only when genuinely ambiguous), and cleans up successfully merged worktrees.
+Claude analyzes each branch, decides the optimal merge order, resolves conflicts automatically (asking for help only when genuinely ambiguous), and cleans up successfully merged worktrees. This is the final step in the `pull → rev → merge` cycle.
 
 ### Workspaces
 
@@ -250,7 +311,7 @@ aor rev [flags] [<ref>]        Iterative code review
 
 ### `aor rev` — Iterative Code Review
 
-Runs Claude Code in a review loop against your recent changes:
+Runs Claude Code in an automated review loop against your recent changes. Best used from a worktree after `aor pull` completes, before merging back to main.
 
 ```sh
 aor rev              # review changes since merge-base with main
@@ -258,7 +319,9 @@ aor rev HEAD~3       # review last 3 commits
 aor rev --max-rounds 5
 ```
 
-Each round files tasks for issues found and applies fixes directly. Stops when no issues remain or the round limit is reached.
+Each round, Claude examines the diff, files tasks for issues found, and applies fixes directly — committing as it goes. The loop stops when no issues remain, all issues are minor, or the round limit is reached (default: 2 rounds). If uncommitted fixes remain after the final round, a commit sweep session runs automatically.
+
+This is the middle step of the standard `pull → rev → merge` workflow.
 
 ## Web UI
 
