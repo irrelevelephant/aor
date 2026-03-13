@@ -254,18 +254,33 @@ func (d *DB) UnclaimTask(id string) (*model.Task, error) {
 
 // UnclaimByWorkspace unclaims all in_progress tasks for a workspace.
 func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
-	// Get tasks before update (for returning to caller).
-	tasks, err := d.ListTasks(workspace, model.StatusInProgress, "", "", "")
+	tx, err := d.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("unclaim by workspace: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Read within the transaction for consistency.
+	rows, err := tx.Query(`SELECT `+taskCols+` FROM tasks WHERE status = 'in_progress' AND workspace = ? ORDER BY sort_order ASC, created_at ASC`, workspace)
+	if err != nil {
+		return nil, fmt.Errorf("unclaim by workspace: %w", err)
+	}
+	defer rows.Close()
+	tasks, err := d.scanTasks(rows)
 	if err != nil {
 		return nil, err
 	}
 	if len(tasks) == 0 {
 		return nil, nil
 	}
-	// Single batch update.
-	_, err = d.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE status = 'in_progress' AND workspace = ?`, workspace)
+
+	_, err = tx.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE status = 'in_progress' AND workspace = ?`, workspace)
 	if err != nil {
 		return nil, fmt.Errorf("unclaim by workspace: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("unclaim by workspace commit: %w", err)
 	}
 	return tasks, nil
 }
@@ -458,8 +473,14 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 		args = append(args, phArgs...)
 		_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id IN (`+ph+`) AND status != 'closed'`, args...)
 	} else if fromStatus != "" {
-		// Fetch matching tasks, then update with the same predicate directly.
-		tasks, err = d.ListTasks(workspace, fromStatus, "", "", "")
+		// Read and update within the same transaction.
+		query := `SELECT ` + taskCols + ` FROM tasks WHERE status = ? AND workspace = ? ORDER BY sort_order ASC, created_at ASC`
+		fromRows, qErr := tx.Query(query, fromStatus, workspace)
+		if qErr != nil {
+			return nil, fmt.Errorf("move tasks: %w", qErr)
+		}
+		defer fromRows.Close()
+		tasks, err = d.scanTasks(fromRows)
 		if err != nil {
 			return nil, err
 		}
@@ -501,14 +522,25 @@ func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 		return nil, err
 	}
 
+	// Collect IDs of tasks whose claiming process is dead.
+	var deadIDs []string
 	var recovered []model.Task
 	for _, t := range tasks {
 		if t.ClaimedPID > 0 && !isProcessAlive(t.ClaimedPID) {
-			d.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL WHERE id = ?`, t.ID)
+			deadIDs = append(deadIDs, t.ID)
 			t.Status = model.StatusQueue
 			t.ClaimedPID = 0
 			t.ClaimedAt = ""
 			recovered = append(recovered, t)
+		}
+	}
+
+	// Batch update all dead-PID tasks in one statement.
+	if len(deadIDs) > 0 {
+		ph, phArgs := inPlaceholders(deadIDs)
+		_, err = d.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL WHERE id IN (`+ph+`)`, phArgs...)
+		if err != nil {
+			return nil, fmt.Errorf("recover stuck tasks: %w", err)
 		}
 	}
 
@@ -517,6 +549,7 @@ func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 
 // generateUniqueID creates a unique ID, retrying on collision.
 func (d *DB) generateUniqueID(length int) (string, error) {
+	const maxLength = 8
 	for i := 0; i < 10; i++ {
 		id, err := model.GenerateID(length)
 		if err != nil {
@@ -527,6 +560,9 @@ func (d *DB) generateUniqueID(length int) (string, error) {
 		if exists == 0 {
 			return id, nil
 		}
+	}
+	if length >= maxLength {
+		return "", fmt.Errorf("failed to generate unique ID after exhausting lengths up to %d", maxLength)
 	}
 	// Escalate to longer ID.
 	return d.generateUniqueID(length + 1)
