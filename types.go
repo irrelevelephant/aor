@@ -115,6 +115,7 @@ type ReviewConfig struct {
 	MaxRounds int
 	Yolo      bool
 	LogDir    string
+	Workspace string
 }
 
 // ReviewStatus is the structured output from a review session.
@@ -134,10 +135,9 @@ type ReviewTask struct {
 
 // ReviewRound records the outcome of a single review iteration.
 type ReviewRound struct {
-	Number     int
-	Status     *ReviewStatus
-	TasksFiled []ReviewTask
-	HeadSHA    string
+	Number  int
+	Status  *ReviewStatus
+	HeadSHA string
 }
 
 // TriageEvidence holds signals collected after a session for post-session triage.
@@ -187,10 +187,11 @@ type TriageStatus struct {
 
 // ReviewStats tracks cumulative stats for the review run.
 type ReviewStats struct {
-	RoundsRun  int
-	TotalTasks int
-	TotalFixes int
-	StopReason string
+	RoundsRun   int
+	TotalTasks  int
+	TotalFixes  int
+	GrindCycles int
+	StopReason  string
 	CommitSweep bool
-	StartedAt  time.Time
+	StartedAt   time.Time
 }

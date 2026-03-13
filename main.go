@@ -35,6 +35,12 @@ type Config struct {
 	Workspace       string
 	WorkDir         string // actual working directory (worktree path when in a linked worktree)
 	ResumeSessionID string // set internally when resuming an existing session
+
+	// Shared resources — set when run() is called as a sub-process (e.g. grind mode).
+	StdinCh         <-chan string // shared stdin reader (nil = create own)
+	Log             *Logger      // shared logger (nil = create own)
+	SuppressSummary bool         // skip printSummary
+	SkipRecovery    bool         // skip recoverStuckTasks (caller already ran it)
 }
 
 func main() {

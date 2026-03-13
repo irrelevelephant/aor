@@ -240,6 +240,15 @@ func runUnclaim(cfg *Config) error {
 	return nil
 }
 
+// addTagToTask adds a tag to a task (safety net for prompt-based tagging).
+func addTagToTask(taskID, tag string) error {
+	out, err := exec.Command("ata", "tag", "add", taskID, tag).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ata tag add failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // getEpicSpec retrieves the spec for an epic.
 func getEpicSpec(epicID string) string {
 	out, err := exec.Command("ata", "spec", epicID, "--json").Output()

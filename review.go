@@ -4,9 +4,120 @@ import (
 	"flag"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
+
+// revContext holds the stable context shared across grind cycles.
+type revContext struct {
+	cfg        *ReviewConfig
+	sessionCfg *Config
+	base       string
+	revTag     string
+	workDir    string
+	log        *Logger
+	stdinCh    <-chan string
+}
+
+// reviewCycleResult holds the outcome of one review cycle (inner loop).
+type reviewCycleResult struct {
+	tasksFiled []ReviewTask
+	stopReason string
+	userQuit   bool
+	rounds     []ReviewRound
+}
+
+// runReviewCycle runs the inner review round loop and returns the result.
+func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []ReviewTask) *reviewCycleResult {
+	result := &reviewCycleResult{}
+	allTasks := append([]ReviewTask{}, priorTasks...)
+
+	for round := 1; round <= rc.cfg.MaxRounds; round++ {
+		diff, err := diffRange(rc.base)
+		if err != nil {
+			rc.log.Log("%sError getting diff: %v%s", cRed, err, cReset)
+			result.stopReason = "diff error"
+			break
+		}
+
+		if strings.TrimSpace(diff) == "" {
+			rc.log.Log("%sNo diff from %s — nothing to review.%s", cGreen, rc.base, cReset)
+			result.stopReason = "no diff"
+			break
+		}
+
+		prompt := buildReviewPrompt(diff, rc.base, round, allTasks, rc.revTag)
+
+		fmt.Printf("\n%s─── Review round %d/%d ──────────────────────────────────%s\n\n",
+			cBlue, round, rc.cfg.MaxRounds, cReset)
+
+		sr := runSession(rc.sessionCfg, rc.log, prompt, rc.stdinCh)
+		stats.RoundsRun++
+
+		if sr.Error != nil {
+			rc.log.Log("%sSession error: %v%s", cRed, sr.Error, cReset)
+			result.stopReason = "session error"
+			break
+		}
+
+		if sr.UserQuit {
+			result.stopReason = "user quit"
+			result.userQuit = true
+			break
+		}
+		if sr.UserSkipped {
+			result.stopReason = "user skipped"
+			break
+		}
+
+		status := parseSentinelJSON[ReviewStatus](sr.RawOutput, "REVIEW_STATUS:")
+		sha, _ := headSHA()
+
+		rr := ReviewRound{
+			Number:  round,
+			Status:  status,
+			HeadSHA: sha,
+		}
+
+		if status != nil {
+			allTasks = append(allTasks, status.TasksFiled...)
+			result.tasksFiled = append(result.tasksFiled, status.TasksFiled...)
+			stats.TotalTasks += len(status.TasksFiled)
+			stats.TotalFixes += len(status.FixesApplied)
+
+			// Safety net: ensure all filed tasks have the rev tag.
+			for _, t := range status.TasksFiled {
+				if rc.revTag != "" && t.ID != "" {
+					_ = addTagToTask(t.ID, rc.revTag)
+				}
+			}
+
+			if status.Error != nil {
+				rc.log.Log("%sAgent reported error: %s%s", cRed, *status.Error, cReset)
+			}
+
+			rc.log.Log("Round %d: %d tasks filed, %d fixes applied, severity=%s",
+				round, len(status.TasksFiled), len(status.FixesApplied), status.Severity)
+		} else {
+			rc.log.Log("%sWARNING: No structured status from review agent. Check session log.%s", cYellow, cReset)
+		}
+
+		result.rounds = append(result.rounds, rr)
+
+		if reason := shouldStop(result.rounds); reason != "" {
+			result.stopReason = reason
+			rc.log.Log("Converged: %s", reason)
+			break
+		}
+
+		if round == rc.cfg.MaxRounds {
+			result.stopReason = "max rounds reached"
+		}
+	}
+
+	return result
+}
 
 // runRev is the entry point for the "rev" / "review" subcommand.
 func runRev(args []string) error {
@@ -34,6 +145,11 @@ func runRev(args []string) error {
 		cfg.LogDir = resolveLogDir()
 	}
 
+	workDir := detectWorkDir()
+	if cfg.Workspace == "" {
+		cfg.Workspace = detectWorkspaceFromGit()
+	}
+
 	log, err := NewLogger(cfg.LogDir)
 	if err != nil {
 		return err
@@ -43,118 +159,105 @@ func runRev(args []string) error {
 	stdinCh := startStdinReader()
 	stats := &ReviewStats{StartedAt: time.Now()}
 
-	log.Log("Code review starting (base: %s, max_rounds: %d, yolo: %v)",
-		base, cfg.MaxRounds, cfg.Yolo)
+	// Generate rev tag from worktree/directory basename.
+	revTag := "rev-" + filepath.Base(workDir)
+
+	log.Log("Code review starting (base: %s, max_rounds: %d, yolo: %v, tag: %s)",
+		base, cfg.MaxRounds, cfg.Yolo, revTag)
 	fmt.Println()
 
-	// Build a Config for runSession compatibility.
-	sessionCfg := &Config{
-		Yolo:    cfg.Yolo,
-		LogDir:  cfg.LogDir,
-		WorkDir: detectWorkDir(),
+	rc := &revContext{
+		cfg:     cfg,
+		base:    base,
+		revTag:  revTag,
+		workDir: workDir,
+		log:     log,
+		stdinCh: stdinCh,
+		sessionCfg: &Config{
+			Yolo:    cfg.Yolo,
+			LogDir:  cfg.LogDir,
+			WorkDir: workDir,
+		},
 	}
 
-	var allTasks []ReviewTask
-	var rounds []ReviewRound
+	var allTasksFiled []ReviewTask
 
-	for round := 1; round <= cfg.MaxRounds; round++ {
-		diff, err := diffRange(base)
-		if err != nil {
-			log.Log("%sError getting diff: %v%s", cRed, err, cReset)
-			stats.StopReason = "diff error"
-			break
+	// Outer grind loop: review → fix tasks → review again.
+	// Convergence checks (no issues, minor severity, repeating issues, HEAD
+	// cycling) provide the safety net — no hard cycle cap.
+	for cycle := 1; ; cycle++ {
+		stats.GrindCycles = cycle
+
+		if cycle > 1 {
+			fmt.Printf("\n%s═══ Grind cycle %d ═══════════════════════════════════════%s\n",
+				cCyan, cycle, cReset)
 		}
 
-		if strings.TrimSpace(diff) == "" {
-			log.Log("%sNo diff from %s — nothing to review.%s", cGreen, base, cReset)
-			stats.StopReason = "no diff"
-			break
-		}
+		// 1. Run review cycle (inner loop).
+		cr := rc.runReviewCycle(stats, allTasksFiled)
+		allTasksFiled = append(allTasksFiled, cr.tasksFiled...)
 
-		prompt := buildReviewPrompt(diff, base, round, allTasks)
-
-		fmt.Printf("\n%s─── Review round %d/%d ──────────────────────────────────%s\n\n",
-			cBlue, round, cfg.MaxRounds, cReset)
-
-		result := runSession(sessionCfg, log, prompt, stdinCh)
-		stats.RoundsRun = round
-
-		if result.Error != nil {
-			log.Log("%sSession error: %v%s", cRed, result.Error, cReset)
-			stats.StopReason = "session error"
-			break
-		}
-
-		if result.UserQuit {
+		if cr.userQuit {
 			stats.StopReason = "user quit"
 			break
 		}
-		if result.UserSkipped {
-			stats.StopReason = "user skipped"
-			break
-		}
 
-		status := parseSentinelJSON[ReviewStatus](result.RawOutput, "REVIEW_STATUS:")
-		sha, _ := headSHA()
-
-		rr := ReviewRound{
-			Number:  round,
-			Status:  status,
-			HeadSHA: sha,
-		}
-
-		if status != nil {
-			rr.TasksFiled = status.TasksFiled
-			allTasks = append(allTasks, status.TasksFiled...)
-			stats.TotalTasks += len(status.TasksFiled)
-			stats.TotalFixes += len(status.FixesApplied)
-
-			if status.Error != nil {
-				log.Log("%sAgent reported error: %s%s", cRed, *status.Error, cReset)
+		// 2. Commit sweep.
+		if hasUncommittedChanges() {
+			rc.log.Log("Uncommitted review fixes detected — running commit sweep")
+			commitPrompt := "There are uncommitted changes from a code review. " +
+				"Run `git diff` to see what changed, then stage and commit the changes " +
+				"with a message summarizing the review fixes. Do not push."
+			sweepResult := runSession(rc.sessionCfg, rc.log, commitPrompt, rc.stdinCh)
+			if sweepResult.Error != nil {
+				rc.log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
+			} else {
+				stats.CommitSweep = true
+				rc.log.Log("Commit sweep completed")
 			}
-
-			log.Log("Round %d: %d tasks filed, %d fixes applied, severity=%s",
-				round, len(status.TasksFiled), len(status.FixesApplied), status.Severity)
 		} else {
-			log.Log("%sWARNING: No structured status from review agent. Check session log.%s", cYellow, cReset)
+			rc.log.Log("No uncommitted changes — commit sweep skipped")
 		}
 
-		rounds = append(rounds, rr)
-
-		if reason := shouldStop(rounds, allTasks); reason != "" {
-			stats.StopReason = reason
-			log.Log("Converged: %s", reason)
+		// 3. Check for open tagged tasks.
+		openTasks, err := getReadyTasks("", rc.revTag, rc.cfg.Workspace)
+		if err != nil {
+			rc.log.Log("%sError checking tagged tasks: %v%s", cRed, err, cReset)
+			stats.StopReason = "task check error"
 			break
 		}
 
-		if round == cfg.MaxRounds {
-			stats.StopReason = "max rounds reached"
+		if len(openTasks) == 0 {
+			rc.log.Log("%sNo open tagged tasks — review clean.%s", cGreen, cReset)
+			stats.StopReason = "clean pass"
+			break
 		}
+
+		rc.log.Log("%d open tagged task(s) — running orchestration to fix them", len(openTasks))
+
+		// 4. Run orchestration loop filtered to the rev tag.
+		runCfg := &Config{
+			TagFilter:       rc.revTag,
+			Workspace:       rc.cfg.Workspace,
+			WorkDir:         rc.workDir,
+			Yolo:            rc.cfg.Yolo,
+			LogDir:          rc.cfg.LogDir,
+			BatchSize:       1,
+			StdinCh:         rc.stdinCh,
+			Log:             rc.log,
+			SuppressSummary: true,
+			SkipRecovery:    true,
+		}
+		if err := run(runCfg); err != nil {
+			rc.log.Log("%sOrchestration error: %v%s", cRed, err, cReset)
+			stats.StopReason = "orchestration error"
+			break
+		}
+
+		// Loop back — next review cycle will check if issues remain.
 	}
 
-	// Post-review commit sweep: catch any uncommitted review fixes.
-	if hasUncommittedChanges() {
-		log.Log("Uncommitted review fixes detected — running commit sweep")
-		commitPrompt := "There are uncommitted changes from a code review. " +
-			"Run `git diff` to see what changed, then stage and commit the changes " +
-			"with a message summarizing the review fixes. Do not push."
-		sweepCfg := &Config{
-			Yolo:    sessionCfg.Yolo,
-			LogDir:  sessionCfg.LogDir,
-			WorkDir: sessionCfg.WorkDir,
-		}
-		sweepResult := runSession(sweepCfg, log, commitPrompt, stdinCh)
-		if sweepResult.Error != nil {
-			log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
-		} else {
-			stats.CommitSweep = true
-			log.Log("Commit sweep completed")
-		}
-	} else {
-		log.Log("No uncommitted changes — commit sweep skipped")
-	}
-
-	printReviewSummary(log, stats)
+	printReviewSummary(rc.log, stats)
 	return nil
 }
 
@@ -163,15 +266,17 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	fs := flag.NewFlagSet("rev", flag.ContinueOnError)
 	cfg := &ReviewConfig{}
 
-	fs.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Maximum review rounds")
+	fs.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Maximum review rounds per cycle")
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts")
 	fs.StringVar(&cfg.LogDir, "log-dir", "", "Log directory")
+	fs.StringVar(&cfg.Workspace, "workspace", "", "Workspace path (default: auto-detect from git)")
 
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `aor rev — Iterative code review
+		fmt.Fprintf(fs.Output(), `aor rev — Iterative code review with grind mode
 
 Reviews the diff from a base ref to HEAD + working tree. Files tasks for issues,
-fixes small/medium problems inline, and iterates until convergence.
+fixes small/medium problems inline, and iterates until convergence. When tasks
+remain after review, runs the orchestration loop to fix them, then reviews again.
 
 Usage:
   aor rev [flags] [<commit|branch>]
@@ -199,7 +304,7 @@ Flags:
 
 // shouldStop checks convergence conditions and returns a stop reason,
 // or empty string to continue.
-func shouldStop(rounds []ReviewRound, allTasks []ReviewTask) string {
+func shouldStop(rounds []ReviewRound) string {
 	if len(rounds) == 0 {
 		return ""
 	}
@@ -291,6 +396,9 @@ func printReviewSummary(log *Logger, stats *ReviewStats) {
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 	log.Log("%s  Code Review Summary%s", cBold, cReset)
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
+	if stats.GrindCycles > 1 {
+		log.Log("  Grind cycles:      %d", stats.GrindCycles)
+	}
 	log.Log("  Rounds run:        %d", stats.RoundsRun)
 	log.Log("  Tasks filed:       %s%d%s", colorForTaskCount(stats.TotalTasks), stats.TotalTasks, cReset)
 	log.Log("  Fixes applied:     %s%d%s", cGreen, stats.TotalFixes, cReset)

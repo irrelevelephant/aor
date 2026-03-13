@@ -170,11 +170,16 @@ func run(cfg *Config) error {
 		return err
 	}
 
-	log, err := NewLogger(cfg.LogDir)
-	if err != nil {
-		return err
+	// Use shared logger if provided (grind mode), otherwise create our own.
+	log := cfg.Log
+	if log == nil {
+		var err error
+		log, err = NewLogger(cfg.LogDir)
+		if err != nil {
+			return err
+		}
+		defer log.Close()
 	}
-	defer log.Close()
 
 	// Track current claim for cleanup on unexpected exit.
 	tracker := &claimTracker{}
@@ -185,16 +190,26 @@ func run(cfg *Config) error {
 	signal.Notify(exitSigCh, syscall.SIGTERM, syscall.SIGHUP)
 
 	go func() {
-		sig := <-exitSigCh
+		sig, ok := <-exitSigCh
+		if !ok {
+			return // channel closed, clean shutdown
+		}
 		if id := tracker.get(); id != "" {
 			fmt.Fprintf(os.Stderr, "\n%s[aor] Caught %s — unclaiming %s before exit%s\n", cYellow, sig, id, cReset)
 			_ = unclaimTask(id)
 		}
 		os.Exit(1)
 	}()
-	defer signal.Stop(exitSigCh)
+	defer func() {
+		signal.Stop(exitSigCh)
+		close(exitSigCh)
+	}()
 
-	stdinCh := startStdinReader()
+	// Use shared stdin reader if provided (grind mode), otherwise create our own.
+	stdinCh := cfg.StdinCh
+	if stdinCh == nil {
+		stdinCh = startStdinReader()
+	}
 	stats := &RunStats{StartedAt: time.Now()}
 	type taskHistory struct {
 		NoProgressCount int
@@ -222,8 +237,10 @@ func run(cfg *Config) error {
 	fmt.Println()
 
 	// Recover any tasks orphaned by a previous crashed runner (once at startup).
-	if n := recoverStuckTasks(cfg.Workspace, log); n > 0 {
-		stats.RecoveredTasks += n
+	if !cfg.SkipRecovery {
+		if n := recoverStuckTasks(cfg.Workspace, log); n > 0 {
+			stats.RecoveredTasks += n
+		}
 	}
 
 	for {
@@ -510,7 +527,9 @@ func run(cfg *Config) error {
 		time.Sleep(3 * time.Second)
 	}
 
-	printSummary(log, stats)
+	if !cfg.SuppressSummary {
+		printSummary(log, stats)
+	}
 	return nil
 }
 
