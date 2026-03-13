@@ -197,6 +197,8 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
         padding-bottom: 0.35rem;
         margin-left: 0;
     }
+    .quick-add-footer .quick-add-hint { flex: 1; }
+    .quick-add-footer > .btn { margin-left: auto; }
 }
 .quick-add-hint {
     font-size: 0.75rem;
