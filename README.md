@@ -94,7 +94,7 @@ Claude researches the codebase, presents a plan, and asks how to proceed. You ca
 aor rev
 ```
 
-After the pull session completes, run `aor rev` from the worktree to get an automated code review. Claude iterates over your diff, finds issues, and applies fixes directly — repeating until the code is clean or the round limit is reached.
+After the pull session completes, run `aor rev` from the worktree to get an automated code review. Claude iterates over your diff, finds issues, and applies fixes directly. Issues too large to fix inline are filed as tasks and worked through automatically via the orchestration loop, then reviewed again — repeating until the code is clean.
 
 **4. Merge back to main:**
 
@@ -291,7 +291,7 @@ All mutation commands support `--json` for structured output, making ata scripta
 aor [flags]                    Run the task orchestration loop
 aor pull [flags] [TASK_ID]     Interactive task planning and execution
 aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
-aor rev [flags] [<ref>]        Iterative code review
+aor rev [flags] [<ref>]        Iterative code review with grind mode
 ```
 
 ### Flags
@@ -309,7 +309,7 @@ aor rev [flags] [<ref>]        Iterative code review
 | `--workspace PATH` | auto-detect | Workspace path |
 | `--log-dir PATH` | `~/.ata/runner-logs` | Session log directory |
 
-### `aor rev` — Iterative Code Review
+### `aor rev` — Iterative Code Review with Grind Mode
 
 Runs Claude Code in an automated review loop against your recent changes. Best used from a worktree after `aor pull` completes, before merging back to main.
 
@@ -317,9 +317,19 @@ Runs Claude Code in an automated review loop against your recent changes. Best u
 aor rev              # review changes since merge-base with main
 aor rev HEAD~3       # review last 3 commits
 aor rev --max-rounds 5
+aor rev --workspace /path/to/project
 ```
 
-Each round, Claude examines the diff, files tasks for issues found, and applies fixes directly — committing as it goes. The loop stops when no issues remain, all issues are minor, or the round limit is reached (default: 2 rounds). If uncommitted fixes remain after the final round, a commit sweep session runs automatically.
+Each round, Claude examines the diff, files tasks for issues found, and applies fixes directly — committing as it goes. The inner review loop stops when no issues remain, all issues are minor, the round limit is reached (default: 3 rounds), or issues start repeating.
+
+**Grind mode** (always on): after the review loop converges, if tasks were filed that are too large to fix inline, aor automatically runs the orchestration loop to work through them — then reviews again. This outer loop repeats until a review pass comes back clean. Tasks filed during review are tagged `rev-<worktree-basename>` to scope the orchestration to just this session's work. Convergence checks (no issues, minor severity, repeating issues, HEAD cycling) provide the safety net.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--max-rounds N` | 3 | Maximum review rounds per grind cycle |
+| `--no-yolo` | false | Require permission prompts |
+| `--workspace PATH` | auto-detect | Workspace path |
+| `--log-dir PATH` | `~/.ata/runner-logs` | Session log directory |
 
 This is the middle step of the standard `pull → rev → merge` workflow.
 
@@ -346,7 +356,7 @@ aor/
   merge.go             Worktree merge orchestration (aor merge)
   merge_prompt.go      Merge session prompt builder
   selector.go          Interactive fuzzy task selector (bubbletea)
-  review.go            Iterative code review (aor rev)
+  review.go            Iterative code review with grind mode (aor rev)
   triage.go            Post-session triage (heuristic + agent)
   ata.go               ata CLI wrapper functions
   types.go             Shared types

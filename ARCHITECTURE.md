@@ -35,7 +35,7 @@ Five prompt builders, each for a different mode:
 
 3. **Worktree merge** (`merge_prompt.go`, `buildMergePrompt`) — Instructs Claude to analyze worktree branches, decide merge order, merge into the main branch, resolve conflicts, and clean up merged worktrees.
 
-4. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Used by `aor rev`.
+4. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Tasks are created with a `--tag` flag so grind mode can scope orchestration to just this session's work. Used by `aor rev`.
 
 5. **Post-task triage** (`triage.go`) — After each session, gathers evidence (commits, diff stats, task status) and either heuristically determines the outcome or spawns a triage agent to assess ambiguous results.
 
@@ -130,16 +130,29 @@ If no task ID is given, a bubbletea-based fuzzy selector shows ready tasks.
 
 Supports `--exclude` to skip specific worktrees and positional args to include only specific ones.
 
-## `aor rev` — Iterative Code Review
+## `aor rev` — Iterative Code Review with Grind Mode
 
-A separate loop in `review.go`:
+Two nested loops in `review.go`:
+
+**Inner loop** (review rounds, managed by `revContext.runReviewCycle`):
 
 1. Compute `git diff <base>...HEAD` + working tree changes
-2. Spawn Claude session with review prompt
+2. Spawn Claude session with review prompt (tasks tagged `rev-<worktree-basename>`)
 3. Parse `REVIEW_STATUS:` sentinel
-4. Check convergence (no issues, all minor, repeating issues, HEAD cycling)
-5. Repeat up to `--max-rounds` (default 3)
-6. If uncommitted fixes remain, run a final commit sweep session
+4. Safety-net: ensure all filed tasks have the rev tag via `ata tag add`
+5. Check convergence (no issues, all minor, repeating issues, HEAD cycling)
+6. Repeat up to `--max-rounds` (default 3)
+
+**Outer loop** (grind cycles, in `runRev`):
+
+1. Run inner review loop
+2. Commit sweep — catch uncommitted review fixes
+3. Check for open tagged tasks via `ata ready --tag rev-<name>`
+4. If none remain → done (clean pass)
+5. Run orchestration loop (`run()`) filtered to the rev tag — fixes the filed tasks
+6. Loop back for another review pass
+
+The outer loop has no hard cycle cap — convergence checks in the inner loop and the "no open tasks" check provide the safety net. The `revContext` struct holds stable state (config, base ref, tag, logger, stdin channel) shared across grind cycles.
 
 ## ata — Task Management
 
