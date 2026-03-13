@@ -219,7 +219,6 @@ aor rev [flags] [<ref>]  Iterative code review
 | `--epic ID` | | Only work on tasks under this epic |
 | `--max-tasks N` | 0 (unlimited) | Stop after N tasks |
 | `--batch-size N` | 1 | Tasks per Claude session before fresh context |
-| `--max-turns N` | 150 | Max agent turns per session |
 | `--dry-run` | false | Show what would happen without running |
 | `--supervised` | false | Approve each task before running |
 | `--unclaim` | false | Reset all in-progress tasks to queue and exit |

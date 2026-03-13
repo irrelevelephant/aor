@@ -34,14 +34,12 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 			"--append-system-prompt", prompt,
 			"--verbose",
 			"--output-format", "stream-json",
-			"--max-turns", fmt.Sprintf("%d", cfg.MaxTurns),
 		}
 	} else {
 		args = []string{
 			"-p", prompt,
 			"--verbose",
 			"--output-format", "stream-json",
-			"--max-turns", fmt.Sprintf("%d", cfg.MaxTurns),
 		}
 	}
 	if cfg.Yolo {

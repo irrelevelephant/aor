@@ -13,7 +13,6 @@ args := []string{
     "-p", prompt,                          // non-interactive, prompt passed as arg
     "--verbose",
     "--output-format", "stream-json",      // structured JSON on stdout
-    "--max-turns", fmt.Sprintf("%d", cfg.MaxTurns),
 }
 if cfg.Yolo {
     args = append(args, "--dangerously-skip-permissions")

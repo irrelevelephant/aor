@@ -43,16 +43,15 @@ func runRev(args []string) error {
 	stdinCh := startStdinReader()
 	stats := &ReviewStats{StartedAt: time.Now()}
 
-	log.Log("Code review starting (base: %s, max_rounds: %d, max_turns: %d, yolo: %v)",
-		base, cfg.MaxRounds, cfg.MaxTurns, cfg.Yolo)
+	log.Log("Code review starting (base: %s, max_rounds: %d, yolo: %v)",
+		base, cfg.MaxRounds, cfg.Yolo)
 	fmt.Println()
 
 	// Build a Config for runSession compatibility.
 	sessionCfg := &Config{
-		MaxTurns: cfg.MaxTurns,
-		Yolo:     cfg.Yolo,
-		LogDir:   cfg.LogDir,
-		WorkDir:  detectWorkDir(),
+		Yolo:    cfg.Yolo,
+		LogDir:  cfg.LogDir,
+		WorkDir: detectWorkDir(),
 	}
 
 	var allTasks []ReviewTask
@@ -140,10 +139,9 @@ func runRev(args []string) error {
 			"Run `git diff` to see what changed, then stage and commit the changes " +
 			"with a message summarizing the review fixes. Do not push."
 		sweepCfg := &Config{
-			MaxTurns: 5,
-			Yolo:     sessionCfg.Yolo,
-			LogDir:   sessionCfg.LogDir,
-			WorkDir:  sessionCfg.WorkDir,
+			Yolo:    sessionCfg.Yolo,
+			LogDir:  sessionCfg.LogDir,
+			WorkDir: sessionCfg.WorkDir,
 		}
 		sweepResult := runSession(sweepCfg, log, commitPrompt, stdinCh)
 		if sweepResult.Error != nil {
@@ -166,7 +164,6 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	cfg := &ReviewConfig{}
 
 	fs.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Maximum review rounds")
-	fs.IntVar(&cfg.MaxTurns, "max-turns", 50, "Max agent turns per session")
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts")
 	fs.StringVar(&cfg.LogDir, "log-dir", "", "Log directory")
 

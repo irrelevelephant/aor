@@ -104,7 +104,6 @@ type RunStats struct {
 type ReviewConfig struct {
 	Base      string
 	MaxRounds int
-	MaxTurns  int
 	Yolo      bool
 	LogDir    string
 }

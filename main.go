@@ -27,7 +27,6 @@ type Config struct {
 	TagFilter       string
 	MaxTasks        int
 	BatchSize       int
-	MaxTurns        int
 	DryRun          bool
 	Supervised      bool
 	Yolo            bool
@@ -57,7 +56,6 @@ func main() {
 	flag.StringVar(&cfg.TagFilter, "tag", "", "Only work on tasks with this tag")
 	flag.IntVar(&cfg.MaxTasks, "max-tasks", 0, "Stop after N tasks (0 = unlimited)")
 	flag.IntVar(&cfg.BatchSize, "batch-size", 1, "Tasks per Claude session before fresh context")
-	flag.IntVar(&cfg.MaxTurns, "max-turns", 150, "Max agent turns per session")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
 	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to queue and exit")
