@@ -266,7 +266,7 @@ func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
 		return nil, fmt.Errorf("unclaim by workspace: %w", err)
 	}
 	defer rows.Close()
-	tasks, err := d.scanTasks(rows)
+	tasks, err := scanTaskRows(rows)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +461,7 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 			return nil, fmt.Errorf("move tasks: %w", qErr)
 		}
 		defer rows.Close()
-		tasks, err = d.scanTasks(rows)
+		tasks, err = scanTaskRows(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -480,7 +480,7 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 			return nil, fmt.Errorf("move tasks: %w", qErr)
 		}
 		defer fromRows.Close()
-		tasks, err = d.scanTasks(fromRows)
+		tasks, err = scanTaskRows(fromRows)
 		if err != nil {
 			return nil, err
 		}
@@ -504,6 +504,12 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 
 // RecoverStuckTasks finds in_progress tasks with dead PIDs and unclaims them.
 func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
+	tx, err := d.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("recover stuck tasks: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'in_progress' AND claimed_pid IS NOT NULL`
 	var args []any
 	if workspace != "" {
@@ -511,13 +517,13 @@ func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 		args = append(args, workspace)
 	}
 
-	rows, err := d.Query(query, args...)
+	rows, err := tx.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	tasks, err := d.scanTasks(rows)
+	tasks, err := scanTaskRows(rows)
 	if err != nil {
 		return nil, err
 	}
@@ -531,6 +537,7 @@ func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 			t.Status = model.StatusQueue
 			t.ClaimedPID = 0
 			t.ClaimedAt = ""
+			t.Worktree = ""
 			recovered = append(recovered, t)
 		}
 	}
@@ -538,34 +545,36 @@ func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 	// Batch update all dead-PID tasks in one statement.
 	if len(deadIDs) > 0 {
 		ph, phArgs := inPlaceholders(deadIDs)
-		_, err = d.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL WHERE id IN (`+ph+`)`, phArgs...)
+		_, err = tx.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id IN (`+ph+`)`, phArgs...)
 		if err != nil {
 			return nil, fmt.Errorf("recover stuck tasks: %w", err)
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("recover stuck tasks commit: %w", err)
+	}
 	return recovered, nil
 }
 
-// generateUniqueID creates a unique ID, retrying on collision.
-func (d *DB) generateUniqueID(length int) (string, error) {
+// generateUniqueID creates a unique ID, retrying on collision and escalating
+// to longer IDs if needed.
+func (d *DB) generateUniqueID(startLength int) (string, error) {
 	const maxLength = 8
-	for i := 0; i < 10; i++ {
-		id, err := model.GenerateID(length)
-		if err != nil {
-			return "", err
-		}
-		var exists int
-		d.QueryRow(`SELECT 1 FROM tasks WHERE id = ?`, id).Scan(&exists)
-		if exists == 0 {
-			return id, nil
+	for length := startLength; length <= maxLength; length++ {
+		for i := 0; i < 10; i++ {
+			id, err := model.GenerateID(length)
+			if err != nil {
+				return "", err
+			}
+			var exists int
+			d.QueryRow(`SELECT 1 FROM tasks WHERE id = ?`, id).Scan(&exists)
+			if exists == 0 {
+				return id, nil
+			}
 		}
 	}
-	if length >= maxLength {
-		return "", fmt.Errorf("failed to generate unique ID after exhausting lengths up to %d", maxLength)
-	}
-	// Escalate to longer ID.
-	return d.generateUniqueID(length + 1)
+	return "", fmt.Errorf("failed to generate unique ID after exhausting lengths up to %d", maxLength)
 }
 
 // scanner is satisfied by both *sql.Row and *sql.Rows.
@@ -604,7 +613,9 @@ func (d *DB) scanTask(row *sql.Row) (*model.Task, error) {
 	return &t, nil
 }
 
-func (d *DB) scanTasks(rows *sql.Rows) ([]model.Task, error) {
+// scanTaskRows scans rows into tasks without loading tags.
+// Use this for bulk mutation responses where tags aren't needed.
+func scanTaskRows(rows *sql.Rows) ([]model.Task, error) {
 	var tasks []model.Task
 	for rows.Next() {
 		t, err := scanTaskRow(rows)
@@ -613,7 +624,12 @@ func (d *DB) scanTasks(rows *sql.Rows) ([]model.Task, error) {
 		}
 		tasks = append(tasks, t)
 	}
-	if err := rows.Err(); err != nil {
+	return tasks, rows.Err()
+}
+
+func (d *DB) scanTasks(rows *sql.Rows) ([]model.Task, error) {
+	tasks, err := scanTaskRows(rows)
+	if err != nil {
 		return nil, err
 	}
 	return d.populateTags(tasks)
