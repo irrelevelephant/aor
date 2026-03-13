@@ -163,7 +163,7 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	fs := flag.NewFlagSet("rev", flag.ContinueOnError)
 	cfg := &ReviewConfig{}
 
-	fs.IntVar(&cfg.MaxRounds, "max-rounds", 2, "Maximum review rounds")
+	fs.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Maximum review rounds")
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts")
 	fs.StringVar(&cfg.LogDir, "log-dir", "", "Log directory")
 

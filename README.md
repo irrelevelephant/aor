@@ -183,7 +183,7 @@ ata close ID [REASON] [--json]
 ata ready [--workspace PATH] [--epic ID] [--tag TAG] [--limit N] [--json]
 ata claim ID [--json]
 ata unclaim [ID] [--workspace PATH] [--json]
-ata pull ID                                                Plan, review, and execute/decompose with Claude
+ata pull ID [--worktree]                                   Plan, review, and execute/decompose with Claude
 ata promote ID [--spec-file PATH]                          Promote task to epic
 ata spec ID [--set-file PATH] [--json]
 ata comment ID BODY [--author human|agent|system] [--json]
@@ -200,7 +200,7 @@ ata recover [--workspace PATH] [--json]
 ata epic-close-eligible [--workspace PATH] [--json]
 ata snapshot [--workspace WS] [--output FILE] [--json]  Export workspace to .tar.gz
 ata restore FILE [--workspace WS] [--force] [--json]    Import workspace from snapshot
-ata serve [--port 4400] [--addr 0.0.0.0]
+ata serve [--port 4400] [--addr 0.0.0.0] [--tls-cert FILE] [--tls-key FILE]
 ```
 
 All mutation commands support `--json` for structured output, making ata scriptable.
@@ -217,6 +217,7 @@ aor rev [flags] [<ref>]  Iterative code review
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--epic ID` | | Only work on tasks under this epic |
+| `--tag TAG` | | Only work on tasks with this tag |
 | `--max-tasks N` | 0 (unlimited) | Stop after N tasks |
 | `--batch-size N` | 1 | Tasks per Claude session before fresh context |
 | `--dry-run` | false | Show what would happen without running |
