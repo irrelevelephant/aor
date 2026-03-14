@@ -55,9 +55,7 @@ Implement the plan:
 - Run /simplify to review your changes for code quality, reuse, and efficiency
 `)
 
-	b.WriteString(fmt.Sprintf("- When done, use AskUserQuestion to ask: \"Work complete. Resolve task %s and exit? (yes/no)\"\n", task.ID))
-	b.WriteString(fmt.Sprintf("  - If yes: run %sata close %s \"done\"%s and you're finished\n", bt, task.ID, bt))
-	b.WriteString("  - If no: use AskUserQuestion to ask what else they'd like to do\n\n")
+	b.WriteString("- When done, exit the session (/exit or Ctrl+D). The orchestrator will commit any remaining changes, close the task, and clean up.\n\n")
 
 	b.WriteString("## Phase 3b: Decompose into Subtasks\n\n")
 	b.WriteString("Break the work into subtasks:\n")

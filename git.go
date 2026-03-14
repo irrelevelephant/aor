@@ -240,7 +240,17 @@ func removeWorktree(wtPath string, deleteBranch bool) error {
 
 // hasUncommittedChanges returns true if the working tree has uncommitted changes.
 func hasUncommittedChanges() bool {
-	out, err := exec.Command("git", "status", "--porcelain").Output()
+	return hasUncommittedChangesIn("")
+}
+
+// hasUncommittedChangesIn checks for uncommitted changes in a specific directory.
+// If dir is empty, uses the current working directory.
+func hasUncommittedChangesIn(dir string) bool {
+	cmd := exec.Command("git", "status", "--porcelain")
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return false
 	}
