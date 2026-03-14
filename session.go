@@ -83,7 +83,7 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 	signal.Notify(sigCh, syscall.SIGINT)
 	defer signal.Stop(sigCh)
 
-	var ctrlC atomic.Bool
+	var ctrlCKill atomic.Bool
 
 	go func() {
 		var (
@@ -97,7 +97,6 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 			case <-sigCh:
 			}
 
-			ctrlC.Store(true)
 			now := time.Now()
 			if now.Sub(lastSigTime) < 2*time.Second {
 				sigCount++
@@ -107,12 +106,13 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 			lastSigTime = now
 
 			if sigCount == 1 {
-				fmt.Printf("\n%s[Ctrl+C] Stopping agent and runner...%s\n", cYellow, cReset)
+				fmt.Printf("\n%s[Ctrl+C] Stopping current session (press again to quit runner)...%s\n", cYellow, cReset)
 				if cmd.Process != nil {
 					cmd.Process.Signal(syscall.SIGINT)
 				}
 			} else {
-				fmt.Printf("\n%s[Ctrl+C x2] Killing agent session.%s\n", cRed, cReset)
+				fmt.Printf("\n%s[Ctrl+C x2] Killing session and quitting runner.%s\n", cRed, cReset)
+				ctrlCKill.Store(true)
 				if cmd.Process != nil {
 					cmd.Process.Kill()
 				}
@@ -274,8 +274,8 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 
 	result.Status = parseSentinelJSON[RunnerStatus](result.RawOutput, "ATA_RUNNER_STATUS:")
 
-	// Ctrl+C should stop the entire runner, not just the current session.
-	if ctrlC.Load() {
+	// Double Ctrl+C (kill) should stop the entire runner.
+	if ctrlCKill.Load() {
 		result.UserQuit = true
 	}
 
@@ -525,14 +525,15 @@ func runInteractiveClaude(claudeArgs []string, yolo bool, workDir string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Ignore SIGINT and SIGTSTP while the interactive child is running.
+	// Ignore SIGINT while the interactive child is running.
 	// The terminal delivers these to the entire foreground process group;
-	// Claude Code handles them internally. If we don't ignore them here,
+	// Claude Code handles Ctrl+C internally. If we don't ignore it here,
 	// Go's default handler kills aor while claude keeps running, leaving
 	// the terminal in a broken state.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTSTP)
-	defer signal.Stop(sigCh)
+	// SIGTSTP is left at its default (system stop) so Ctrl+Z works
+	// normally — both aor and claude suspend, and `fg` resumes them.
+	signal.Ignore(syscall.SIGINT)
+	defer signal.Reset(syscall.SIGINT)
 
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("\nClaude session ended: %v\n", err)
