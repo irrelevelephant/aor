@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
-const statusClosed = "closed"
+const (
+	statusClosed     = "closed"
+	statusInProgress = "in_progress"
+)
 
 // runPull is the entry point for the "pull" subcommand.
 // It claims a task, optionally creates a worktree, and launches an interactive
@@ -117,7 +122,7 @@ Flags:
 	fmt.Println("\nLaunching interactive planning session...")
 	runInteractiveClaude([]string{prompt}, !*noYolo, worktreePath)
 
-	// Check what happened to the task.
+	// Check what happened to the task and close it if work was done.
 	task, err := getTaskStatus(task.ID)
 	if err != nil {
 		return err
@@ -129,6 +134,18 @@ Flags:
 	case task.IsEpic:
 		fmt.Printf("\nTask %s promoted to epic.\n", task.ID)
 		fmt.Printf("Run `aor --epic %s` to orchestrate execution.\n", task.ID)
+	case task.Status == statusInProgress:
+		fmt.Printf("\n%sClose task %s — %s? [Y/n] %s", cYellow, task.ID, task.Title, cReset)
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		answer := strings.TrimSpace(strings.ToLower(line))
+		if answer == "n" || answer == "no" {
+			fmt.Printf("Task %s left as in_progress.\n", task.ID)
+		} else {
+			if err := closeTask(task.ID, "done"); err != nil {
+				return fmt.Errorf("close task: %w", err)
+			}
+			fmt.Printf("Task %s closed.\n", task.ID)
+		}
 	default:
 		fmt.Printf("\nTask %s is still %s.\n", task.ID, task.Status)
 	}
