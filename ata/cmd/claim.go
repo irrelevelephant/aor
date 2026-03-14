@@ -13,7 +13,7 @@ func Claim(d *db.DB, args []string) error {
 	jsonOut := fs.Bool("json", false, "Output JSON")
 	pid := fs.Int("pid", 0, "PID of the calling process (default: ata's own PID)")
 
-	flagArgs, positional := splitFlagsAndPositional(args, nil)
+	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{"pid": true})
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return err

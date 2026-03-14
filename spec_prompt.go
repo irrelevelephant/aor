@@ -141,7 +141,7 @@ Once the plan is approved:
 6. For cross-epic dependencies:
    %sata dep add <task-in-epic-B> <task-in-epic-A>%s
 
-`, bt, workspace, bt, bt, bt, bt, bt, bt, workspace, bt, bt, bt, bt, bt, bt))
+`, bt, workspace, bt, bt, bt, bt, bt, bt, workspace, bt, bt, bt, bt, bt, bt, bt))
 	} else {
 		b.WriteString(fmt.Sprintf(`1. Create the epic:
    %sata create "Epic title" --status queue --workspace "%s" --json%s
