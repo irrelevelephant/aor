@@ -1,12 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const statusClosed = "closed"
@@ -128,7 +130,11 @@ Flags:
 		depth = depthSkip
 	default:
 		recommended, reason := assessInterviewDepth(task, epicSpec)
-		depth = promptInterviewDepth(task, recommended, reason)
+		var cancelled bool
+		depth, cancelled = promptInterviewDepth(task, recommended, reason)
+		if cancelled {
+			return nil
+		}
 	}
 
 	// Build prompt and launch interactive Claude session.
@@ -206,55 +212,121 @@ func assessInterviewDepth(task *AtaTask, epicSpec string) (interviewDepth, strin
 	return depthSkip, "Task has sufficient detail"
 }
 
-// promptInterviewDepth shows the user the recommended depth and lets them choose.
-func promptInterviewDepth(task *AtaTask, recommended interviewDepth, reason string) interviewDepth {
-	fmt.Printf("\n%s── Interview Depth ─────────────────────────%s\n", cCyan, cReset)
-	fmt.Printf("Task: %s%s%s — %s\n", cBold, task.ID, cReset, task.Title)
+// depthOption pairs an interview depth with display text.
+type depthOption struct {
+	depth interviewDepth
+	label string
+	desc  string
+}
 
-	body := strings.TrimSpace(task.Body)
-	if body == "" {
-		fmt.Printf("Body: %s(empty)%s\n", cGray, cReset)
-	} else {
-		fmt.Printf("Body: %d chars\n", len(body))
-	}
+var depthOptions = []depthOption{
+	{depthFull, "Full interview", "Conversational deep-dive, produces a spec"},
+	{depthLight, "Light clarification", "2-3 focused questions, adds a comment"},
+	{depthSkip, "Skip", "Go straight to planning"},
+}
 
-	fmt.Printf("Assessment: %s\n\n", reason)
+// Styles for the depth selector TUI.
+var (
+	depthTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	depthDimStyle   = lipgloss.NewStyle().Faint(true)
+	depthBoldStyle  = lipgloss.NewStyle().Bold(true)
+	depthRecStyle   = lipgloss.NewStyle().Faint(true).Italic(true)
+)
 
-	options := []struct {
-		depth interviewDepth
-		label string
-		desc  string
-	}{
-		{depthFull, "Full interview", "Conversational deep-dive, produces a spec"},
-		{depthLight, "Light interview", "2-3 focused questions, adds a comment"},
-		{depthSkip, "Skip", "Go straight to planning"},
-	}
+// depthModel is a bubbletea model for selecting interview depth.
+type depthModel struct {
+	cursor      int
+	recommended int
+	subtitle    string // precomputed context line (body info + reason)
+	chosen      interviewDepth
+	cancelled   bool
+}
 
-	for i, opt := range options {
-		marker := "  "
-		if opt.depth == recommended {
-			marker = fmt.Sprintf("%s→%s", cGreen, cReset)
+func (m depthModel) Init() tea.Cmd { return nil }
+
+func (m depthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(depthOptions)-1 {
+				m.cursor++
+			}
+		case "enter":
+			m.chosen = depthOptions[m.cursor].depth
+			return m, tea.Quit
+		case "q", "esc", "ctrl+c":
+			m.cancelled = true
+			return m, tea.Quit
 		}
-		fmt.Printf("%s %d) %s — %s\n", marker, i+1, opt.label, opt.desc)
+	}
+	return m, nil
+}
+
+func (m depthModel) View() string {
+	var b strings.Builder
+	b.WriteString(depthTitleStyle.Render("Interview Depth"))
+	b.WriteString("\n")
+	b.WriteString(depthDimStyle.Render(m.subtitle))
+	b.WriteString("\n\n")
+
+	for i, opt := range depthOptions {
+		cursor := "  "
+		label := opt.label + "  " + depthDimStyle.Render(opt.desc)
+		if i == m.cursor {
+			cursor = "> "
+			label = depthBoldStyle.Render(opt.label) + "  " + depthDimStyle.Render(opt.desc)
+		}
+		rec := ""
+		if i == m.recommended {
+			rec = "  " + depthRecStyle.Render("(recommended)")
+		}
+		b.WriteString(cursor + label + rec + "\n")
 	}
 
-	fmt.Printf("\nChoose [1/2/3, Enter=recommended]: ")
+	b.WriteString(depthDimStyle.Render("\n↑/↓ to move, enter to select, esc to cancel"))
+	return b.String()
+}
 
-	reader := bufio.NewReader(os.Stdin)
-	line, _ := reader.ReadString('\n')
-	line = strings.TrimSpace(line)
-
-	switch line {
-	case "":
-		return recommended
-	case "1":
-		return depthFull
-	case "2":
-		return depthLight
-	case "3":
-		return depthSkip
-	default:
-		fmt.Printf("Unrecognized input, using recommended.\n")
-		return recommended
+// promptInterviewDepth shows the user the recommended depth and lets them choose
+// using an interactive arrow-key selector. Returns the chosen depth and false,
+// or zero and true if the user cancelled.
+func promptInterviewDepth(task *AtaTask, recommended interviewDepth, reason string) (interviewDepth, bool) {
+	// Find index of recommended option.
+	recIdx := 0
+	for i, opt := range depthOptions {
+		if opt.depth == recommended {
+			recIdx = i
+			break
+		}
 	}
+
+	// Precompute subtitle from task body + reason.
+	subtitle := "No task description"
+	if body := strings.TrimSpace(task.Body); body != "" {
+		subtitle = fmt.Sprintf("Task body: %d chars", len(body))
+	}
+	subtitle += " — " + reason
+
+	m := depthModel{
+		cursor:      recIdx,
+		recommended: recIdx,
+		subtitle:    subtitle,
+	}
+
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return recommended, false
+	}
+
+	final := result.(depthModel)
+	if final.cancelled {
+		return 0, true
+	}
+	return final.chosen, false
 }
