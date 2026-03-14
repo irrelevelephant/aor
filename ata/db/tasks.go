@@ -65,7 +65,9 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 
 	// Set sort_order to max+1 for the status group.
 	var maxOrder int
-	tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE status = ? AND workspace = ?`, status, workspace).Scan(&maxOrder)
+	if err := tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE status = ? AND workspace = ?`, status, workspace).Scan(&maxOrder); err != nil {
+		return nil, fmt.Errorf("query max sort_order: %w", err)
+	}
 
 	_, err = tx.Exec(`INSERT INTO tasks (id, title, body, status, sort_order, epic_id, workspace, created_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, title, body, status, maxOrder+1, nullStr(epicID), workspace, createdIn)
@@ -186,7 +188,10 @@ func (d *DB) ReadyTasks(workspace, epicID, tag string, limit int) ([]model.Task,
 // Rejects the claim if the task has unclosed dependencies.
 func (d *DB) ClaimTask(id string, pid int) (*model.Task, error) {
 	// Check for blockers before claiming.
-	blockers, _ := d.GetBlockers(id, true)
+	blockers, err := d.GetBlockers(id, true)
+	if err != nil {
+		return nil, fmt.Errorf("check blockers: %w", err)
+	}
 	if len(blockers) > 0 {
 		ids := make([]string, len(blockers))
 		for i, b := range blockers {
@@ -203,7 +208,10 @@ func (d *DB) ClaimTask(id string, pid int) (*model.Task, error) {
 		return nil, fmt.Errorf("claim task: %w", err)
 	}
 
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		// Check if task exists and its status.
 		task, err := d.GetTask(id)
@@ -227,7 +235,10 @@ func (d *DB) ForceClaimTask(id, worktree string) (*model.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("force claim: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return nil, fmt.Errorf("task %s is closed or not found", id)
 	}
@@ -240,7 +251,10 @@ func (d *DB) UnclaimTask(id string) (*model.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unclaim task: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		task, err := d.GetTask(id)
 		if err != nil {
@@ -297,7 +311,10 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("close task: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		task, err := d.GetTask(id)
 		if err != nil {
@@ -308,7 +325,9 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 		}
 		if task.IsEpic {
 			var openCount int
-			d.QueryRow(`SELECT COUNT(*) FROM tasks WHERE epic_id = ? AND status != 'closed'`, id).Scan(&openCount)
+			if err := d.QueryRow(`SELECT COUNT(*) FROM tasks WHERE epic_id = ? AND status != 'closed'`, id).Scan(&openCount); err != nil {
+				return nil, fmt.Errorf("count open subtasks: %w", err)
+			}
 			if openCount > 0 {
 				return nil, fmt.Errorf("cannot close epic %s: %d subtask(s) still open", id, openCount)
 			}
@@ -324,7 +343,10 @@ func (d *DB) ReopenTask(id string) (*model.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reopen task: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return nil, fmt.Errorf("task %s is not closed", id)
 	}
@@ -337,7 +359,10 @@ func (d *DB) PromoteToEpic(id, spec string) (*model.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("promote: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		task, err := d.GetTask(id)
 		if err != nil {
@@ -358,7 +383,10 @@ func (d *DB) DemoteToTask(id string) (*model.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("demote: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		task, err := d.GetTask(id)
 		if err != nil {
@@ -378,7 +406,10 @@ func (d *DB) UpdateSpec(id, spec string) (*model.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("update spec: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return nil, fmt.Errorf("task %s not found", id)
 	}
@@ -567,9 +598,12 @@ func (d *DB) generateUniqueID(startLength int) (string, error) {
 				return "", err
 			}
 			var exists int
-			d.QueryRow(`SELECT 1 FROM tasks WHERE id = ?`, id).Scan(&exists)
-			if exists == 0 {
+			err = d.QueryRow(`SELECT 1 FROM tasks WHERE id = ?`, id).Scan(&exists)
+			if err == sql.ErrNoRows {
 				return id, nil
+			}
+			if err != nil {
+				return "", fmt.Errorf("check ID uniqueness: %w", err)
 			}
 		}
 	}
@@ -635,6 +669,7 @@ func (d *DB) scanTasks(rows *sql.Rows) ([]model.Task, error) {
 }
 
 // populateTags batch-loads tags for a slice of tasks.
+// Tag loading errors are non-fatal: tasks are returned without tags rather than failing.
 func (d *DB) populateTags(tasks []model.Task) ([]model.Task, error) {
 	if len(tasks) == 0 {
 		return tasks, nil

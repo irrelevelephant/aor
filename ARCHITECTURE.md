@@ -27,19 +27,21 @@ Key flags:
 
 ## Prompt Construction
 
-Five prompt builders, each for a different mode:
+Six prompt builders, each for a different mode:
 
 1. **Task execution** (`runner.go`, `buildPrompt`) — Tells Claude it has a pre-claimed task, instructs it to implement, commit, and close. Injects the epic spec when the task belongs to an epic. Includes workspace path and batch size for multi-task sessions.
 
-2. **Interactive pull** (`pull_prompt.go`, `buildPullPrompt`) — Multi-phase workflow for interactive task work: research, plan, review with user (via AskUserQuestion), then execute directly or decompose into subtasks.
+2. **Interactive pull** (`pull_prompt.go`, `buildPullPrompt`) — Multi-phase workflow for interactive task work: research, plan, review with user (via AskUserQuestion), then execute directly or decompose into subtasks. Includes a GSD-style interview phase for underspecified tasks (depth: full, light, or skip).
 
 3. **Worktree merge** (`merge_prompt.go`, `buildMergePrompt`) — Instructs Claude to analyze worktree branches, decide merge order, merge into the main branch, resolve conflicts, and clean up merged worktrees.
 
 4. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Tasks are created with a `--tag` flag so grind mode can scope orchestration to just this session's work. Used by `aor rev`.
 
-5. **Post-task triage** (`triage.go`) — After each session, gathers evidence (commits, diff stats, task status) and either heuristically determines the outcome or spawns a triage agent to assess ambiguous results.
+5. **Spec planning** (`spec_prompt.go`, `buildSpecPrompt`) — Three-phase interactive workflow for spec-driven planning: research the codebase, refine the spec, then decompose into epics and tasks with dependencies. Supports single or multi-spec sessions (multi-spec adds cross-epic dependency handling). Used by `aor spec`.
 
-Task execution, code review, and triage prompts end with a **sentinel instruction** — a required structured JSON line the agent must output as its final action. Pull and merge sessions are interactive (stdin/stdout piped directly) and don't use sentinels.
+6. **Post-task triage** (`triage.go`) — After each session, gathers evidence (commits, diff stats, task status) and either heuristically determines the outcome or spawns a triage agent to assess ambiguous results.
+
+Task execution, code review, and triage prompts end with a **sentinel instruction** — a required structured JSON line the agent must output as its final action. Pull, merge, and spec sessions are interactive (stdin/stdout piped directly) and don't use sentinels.
 
 ## Stream Processing
 

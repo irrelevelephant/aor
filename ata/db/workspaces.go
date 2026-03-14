@@ -32,8 +32,11 @@ func (d *DB) UnregisterWorkspace(path string) error {
 func (d *DB) IsRegisteredWorkspace(path string) (bool, error) {
 	var exists int
 	err := d.QueryRow(`SELECT 1 FROM workspaces WHERE path = ?`, path).Scan(&exists)
-	if err != nil {
+	if err == sql.ErrNoRows {
 		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check workspace: %w", err)
 	}
 	return true, nil
 }
@@ -131,7 +134,10 @@ func (d *DB) CleanWorkspace(path string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("delete tasks: %w", err)
 	}
-	deleted, _ := res.RowsAffected()
+	deleted, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
 
 	if _, err := tx.Exec(`DELETE FROM workspaces WHERE path = ?`, path); err != nil {
 		return 0, fmt.Errorf("delete workspace: %w", err)

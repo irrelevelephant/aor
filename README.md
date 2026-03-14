@@ -8,7 +8,7 @@ Together they form a loop: you create and prioritize tasks in ata (via CLI or we
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.24+
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI (`claude`) in PATH
 
 ### Install
@@ -18,8 +18,7 @@ Together they form a loop: you create and prioritize tasks in ata (via CLI or we
 git clone <repo-url> aor && cd aor
 
 # Install both binaries
-go install .            # installs aor
-cd ata && go install .  # installs ata
+make install
 ```
 
 ### Quick Start
@@ -292,6 +291,7 @@ aor [flags]                    Run the task orchestration loop
 aor pull [flags] [TASK_ID]     Interactive task planning and execution
 aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
 aor rev [flags] [<ref>]        Iterative code review with grind mode
+aor spec [flags] <file.md…>   Spec-driven task planning and execution
 ```
 
 ### Flags
@@ -357,6 +357,9 @@ aor/
   merge_prompt.go      Merge session prompt builder
   selector.go          Interactive fuzzy task selector (bubbletea)
   review.go            Iterative code review with grind mode (aor rev)
+  review_prompt.go     Review session prompt builder
+  spec.go              Spec planning orchestration (aor spec)
+  spec_prompt.go       Spec session prompt builder
   triage.go            Post-session triage (heuristic + agent)
   ata.go               ata CLI wrapper functions
   types.go             Shared types
@@ -378,6 +381,15 @@ aor/
       snapshot.go      Workspace export/import
     cmd/               CLI command implementations
     web/               HTTP server, templates, SSE, static assets
+```
+
+## Development
+
+```sh
+make check    # run go vet + go test across both modules
+make test     # run tests only
+make vet      # run go vet only
+make fmt      # list unformatted files
 ```
 
 ## Data Storage

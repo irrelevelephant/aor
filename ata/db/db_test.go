@@ -348,6 +348,240 @@ func TestDeps(t *testing.T) {
 	}
 }
 
+func TestTags(t *testing.T) {
+	d := testDB(t)
+
+	task1, _ := d.CreateTask("Tagged 1", "", model.StatusQueue, "", "/ws", "")
+	task2, _ := d.CreateTask("Tagged 2", "", model.StatusQueue, "", "/ws", "")
+
+	t.Run("AddAndGetTags", func(t *testing.T) {
+		d.AddTag(task1.ID, "backend")
+		d.AddTag(task1.ID, "api")
+		d.AddTag(task1.ID, "urgent")
+
+		tags, err := d.GetTags(task1.ID)
+		if err != nil {
+			t.Fatalf("GetTags: %v", err)
+		}
+		if len(tags) != 3 {
+			t.Fatalf("got %d tags, want 3", len(tags))
+		}
+		// Should be sorted alphabetically.
+		if tags[0] != "api" || tags[1] != "backend" || tags[2] != "urgent" {
+			t.Errorf("tags = %v, want [api backend urgent]", tags)
+		}
+	})
+
+	t.Run("CaseNormalization", func(t *testing.T) {
+		d.AddTag(task2.ID, "UPPER")
+		tags, _ := d.GetTags(task2.ID)
+		if len(tags) != 1 || tags[0] != "upper" {
+			t.Errorf("expected lowercase tag, got %v", tags)
+		}
+	})
+
+	t.Run("EmptyTagRejection", func(t *testing.T) {
+		err := d.AddTag(task1.ID, "")
+		if err == nil {
+			t.Error("expected error for empty tag")
+		}
+		err = d.AddTag(task1.ID, "   ")
+		if err == nil {
+			t.Error("expected error for whitespace-only tag")
+		}
+	})
+
+	t.Run("RemoveTag", func(t *testing.T) {
+		err := d.RemoveTag(task1.ID, "urgent")
+		if err != nil {
+			t.Fatalf("RemoveTag: %v", err)
+		}
+		tags, _ := d.GetTags(task1.ID)
+		if len(tags) != 2 {
+			t.Errorf("got %d tags after removal, want 2", len(tags))
+		}
+
+		// Remove non-existent tag.
+		err = d.RemoveTag(task1.ID, "nonexistent")
+		if err == nil {
+			t.Error("expected error removing non-existent tag")
+		}
+	})
+
+	t.Run("GetTagsForTasks", func(t *testing.T) {
+		tagMap, err := d.GetTagsForTasks([]string{task1.ID, task2.ID})
+		if err != nil {
+			t.Fatalf("GetTagsForTasks: %v", err)
+		}
+		if len(tagMap[task1.ID]) != 2 {
+			t.Errorf("task1 tags = %d, want 2", len(tagMap[task1.ID]))
+		}
+		if len(tagMap[task2.ID]) != 1 {
+			t.Errorf("task2 tags = %d, want 1", len(tagMap[task2.ID]))
+		}
+	})
+
+	t.Run("ListAllTags", func(t *testing.T) {
+		tags, err := d.ListAllTags("")
+		if err != nil {
+			t.Fatalf("ListAllTags: %v", err)
+		}
+		if len(tags) < 3 {
+			t.Errorf("expected at least 3 tags, got %d", len(tags))
+		}
+
+		// Workspace filter.
+		tags, err = d.ListAllTags("/ws")
+		if err != nil {
+			t.Fatalf("ListAllTags with workspace: %v", err)
+		}
+		if len(tags) < 3 {
+			t.Errorf("expected at least 3 tags for /ws, got %d", len(tags))
+		}
+
+		tags, err = d.ListAllTags("/nonexistent")
+		if err != nil {
+			t.Fatalf("ListAllTags with nonexistent workspace: %v", err)
+		}
+		if len(tags) != 0 {
+			t.Errorf("expected 0 tags for nonexistent workspace, got %d", len(tags))
+		}
+	})
+
+	t.Run("ListTagsForEpic", func(t *testing.T) {
+		epic, _ := d.CreateTask("Tag Epic", "", model.StatusQueue, "", "/ws", "")
+		d.PromoteToEpic(epic.ID, "")
+		child, _ := d.CreateTask("Tag Child", "", model.StatusQueue, epic.ID, "/ws", "")
+		d.AddTag(child.ID, "epic-tag")
+
+		tags, err := d.ListTagsForEpic(epic.ID)
+		if err != nil {
+			t.Fatalf("ListTagsForEpic: %v", err)
+		}
+		if len(tags) != 1 || tags[0] != "epic-tag" {
+			t.Errorf("expected [epic-tag], got %v", tags)
+		}
+	})
+}
+
+func TestWorkspaces(t *testing.T) {
+	d := testDB(t)
+
+	t.Run("RegisterAndCheck", func(t *testing.T) {
+		err := d.RegisterWorkspace("/test/ws", "testws")
+		if err != nil {
+			t.Fatalf("RegisterWorkspace: %v", err)
+		}
+
+		exists, err := d.IsRegisteredWorkspace("/test/ws")
+		if err != nil {
+			t.Fatalf("IsRegisteredWorkspace: %v", err)
+		}
+		if !exists {
+			t.Error("expected workspace to be registered")
+		}
+
+		exists, err = d.IsRegisteredWorkspace("/nonexistent")
+		if err != nil {
+			t.Fatalf("IsRegisteredWorkspace: %v", err)
+		}
+		if exists {
+			t.Error("expected workspace to not be registered")
+		}
+	})
+
+	t.Run("ResolveByName", func(t *testing.T) {
+		path, err := d.ResolveWorkspace("testws")
+		if err != nil {
+			t.Fatalf("ResolveWorkspace by name: %v", err)
+		}
+		if path != "/test/ws" {
+			t.Errorf("path = %q, want /test/ws", path)
+		}
+	})
+
+	t.Run("ResolveByPath", func(t *testing.T) {
+		path, err := d.ResolveWorkspace("/test/ws")
+		if err != nil {
+			t.Fatalf("ResolveWorkspace by path: %v", err)
+		}
+		if path != "/test/ws" {
+			t.Errorf("path = %q, want /test/ws", path)
+		}
+	})
+
+	t.Run("ResolveNotFound", func(t *testing.T) {
+		_, err := d.ResolveWorkspace("nonexistent")
+		if err == nil {
+			t.Error("expected error for nonexistent workspace")
+		}
+	})
+
+	t.Run("Unregister", func(t *testing.T) {
+		err := d.UnregisterWorkspace("/test/ws")
+		if err != nil {
+			t.Fatalf("UnregisterWorkspace: %v", err)
+		}
+		exists, _ := d.IsRegisteredWorkspace("/test/ws")
+		if exists {
+			t.Error("expected workspace to be unregistered")
+		}
+	})
+}
+
+func TestCreateTaskSortOrder(t *testing.T) {
+	d := testDB(t)
+
+	t1, err := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	t2, err := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	t3, err := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	if t1.SortOrder != 1 {
+		t.Errorf("t1 sort_order = %d, want 1", t1.SortOrder)
+	}
+	if t2.SortOrder != 2 {
+		t.Errorf("t2 sort_order = %d, want 2", t2.SortOrder)
+	}
+	if t3.SortOrder != 3 {
+		t.Errorf("t3 sort_order = %d, want 3", t3.SortOrder)
+	}
+}
+
+func TestClaimBlockedTask(t *testing.T) {
+	d := testDB(t)
+
+	a, _ := d.CreateTask("Blocker", "", model.StatusQueue, "", "/ws", "")
+	b, _ := d.CreateTask("Blocked", "", model.StatusQueue, "", "/ws", "")
+
+	if err := d.AddDep(b.ID, a.ID); err != nil {
+		t.Fatalf("AddDep: %v", err)
+	}
+
+	_, err := d.ClaimTask(b.ID, os.Getpid())
+	if err == nil {
+		t.Fatal("expected error claiming blocked task")
+	}
+	if !strings.Contains(err.Error(), "blocked by") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Close blocker, claim should succeed.
+	d.CloseTask(a.ID, "done")
+	_, err = d.ClaimTask(b.ID, os.Getpid())
+	if err != nil {
+		t.Fatalf("ClaimTask after unblocking: %v", err)
+	}
+}
+
 func TestGetTaskWithComments(t *testing.T) {
 	d := testDB(t)
 

@@ -42,7 +42,10 @@ func (d *DB) RemoveTag(taskID, tag string) error {
 	if err != nil {
 		return fmt.Errorf("remove tag: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("tag %q not found on task %s", tag, taskID)
 	}
