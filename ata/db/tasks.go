@@ -182,9 +182,9 @@ func (d *DB) ReadyTasks(workspace, epicID, tag string, limit int) ([]model.Task,
 	return d.scanTasks(rows)
 }
 
-// ClaimTask marks a task as in_progress with the current PID.
+// ClaimTask marks a task as in_progress with the given PID.
 // Rejects the claim if the task has unclosed dependencies.
-func (d *DB) ClaimTask(id string) (*model.Task, error) {
+func (d *DB) ClaimTask(id string, pid int) (*model.Task, error) {
 	// Check for blockers before claiming.
 	blockers, _ := d.GetBlockers(id, true)
 	if len(blockers) > 0 {
@@ -196,7 +196,6 @@ func (d *DB) ClaimTask(id string) (*model.Task, error) {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	pid := os.Getpid()
 
 	res, err := d.Exec(`UPDATE tasks SET status = 'in_progress', claimed_pid = ?, claimed_at = ? WHERE id = ? AND status = 'queue'`,
 		pid, now, id)

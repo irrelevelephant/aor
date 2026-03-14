@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,9 +54,11 @@ func getReadyTasks(epicFilter, tagFilter, workspace string) ([]AtaTask, error) {
 	return tasks, nil
 }
 
-// claimTask marks a task as in_progress.
+// claimTask marks a task as in_progress, storing the aor process PID so that
+// RecoverStuckTasks checks the right (long-lived) process.
 func claimTask(id string) error {
-	out, err := exec.Command("ata", "claim", id, "--json").CombinedOutput()
+	pid := strconv.Itoa(os.Getpid())
+	out, err := exec.Command("ata", "claim", id, "--json", "--pid", pid).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ata claim failed: %w (%s)", err, strings.TrimSpace(string(out)))
 	}

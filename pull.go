@@ -149,8 +149,8 @@ Flags:
 	case task.IsEpic:
 		fmt.Printf("\nTask %s promoted to epic.\n", task.ID)
 		fmt.Printf("Run `aor --epic %s` to orchestrate execution.\n", task.ID)
-	case task.Status == "in_progress":
-		// Task still in_progress — commit any uncommitted changes, then close it.
+	default:
+		// Task still open — commit any uncommitted changes, then close it.
 		checkDir := worktreePath
 		if checkDir == "" {
 			checkDir = detectWorkDir()
@@ -168,8 +168,6 @@ Flags:
 			return fmt.Errorf("close task: %w", err)
 		}
 		fmt.Printf("\nTask %s closed.\n", task.ID)
-	default:
-		fmt.Printf("\nTask %s is still %s.\n", task.ID, task.Status)
 	}
 
 	return nil

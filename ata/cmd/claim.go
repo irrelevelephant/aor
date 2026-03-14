@@ -3,6 +3,7 @@ package cmd
 import (
 	"flag"
 	"fmt"
+	"os"
 
 	"aor/ata/db"
 )
@@ -10,6 +11,7 @@ import (
 func Claim(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("claim", flag.ContinueOnError)
 	jsonOut := fs.Bool("json", false, "Output JSON")
+	pid := fs.Int("pid", 0, "PID of the calling process (default: ata's own PID)")
 
 	flagArgs, positional := splitFlagsAndPositional(args, nil)
 
@@ -18,11 +20,15 @@ func Claim(d *db.DB, args []string) error {
 	}
 
 	if len(positional) == 0 {
-		return exitUsage("usage: ata claim ID [--json]")
+		return exitUsage("usage: ata claim ID [--json] [--pid PID]")
 	}
 
 	id := positional[0]
-	task, err := d.ClaimTask(id)
+	claimPID := *pid
+	if claimPID == 0 {
+		claimPID = os.Getpid()
+	}
+	task, err := d.ClaimTask(id, claimPID)
 	if err != nil {
 		return err
 	}

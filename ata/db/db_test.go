@@ -1,6 +1,7 @@
 package db
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -80,7 +81,7 @@ func TestClaimAndUnclaim(t *testing.T) {
 
 	task, _ := d.CreateTask("Claimable", "", model.StatusQueue, "", "/ws", "")
 
-	claimed, err := d.ClaimTask(task.ID)
+	claimed, err := d.ClaimTask(task.ID, os.Getpid())
 	if err != nil {
 		t.Fatalf("ClaimTask: %v", err)
 	}
@@ -275,7 +276,7 @@ func TestDeps(t *testing.T) {
 	}
 
 	// ClaimTask should reject B.
-	_, err := d.ClaimTask(b.ID)
+	_, err := d.ClaimTask(b.ID, os.Getpid())
 	if err == nil {
 		t.Error("expected ClaimTask on blocked task to fail")
 	}
