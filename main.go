@@ -97,7 +97,7 @@ Tasks are managed by ata (SQLite-backed, workspace-scoped).
 Usage:
   aor [flags]                    Run task orchestration loop
   aor pull [flags] [TASK_ID]     Interactive task planning and execution
-  aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
+  aor merge [flags] [NAME|BRANCH] Merge worktrees back into main branch
   aor rev [flags] [<ref>]        Iterative code review (see: aor rev --help)
   aor spec [flags] <file.md>...  Spec-driven task planning and execution
 

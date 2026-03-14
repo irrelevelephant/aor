@@ -20,14 +20,14 @@ func runMerge(args []string) error {
 		fmt.Fprintf(os.Stderr, `aor merge — Merge worktrees back into the main branch
 
 Usage:
-  aor merge [flags] [WORKTREE_NAME...]
+  aor merge [flags] [NAME_OR_BRANCH...]
 
 Discovers all git worktrees and merges them into the main branch using an
-interactive Claude Code session. If specific worktree names are given, only
-those are merged. Use --exclude to skip specific worktrees.
+interactive Claude Code session. If specific names are given, only matching
+worktrees are merged. Use --exclude to skip specific worktrees.
 
-Worktree names are the directory basename (e.g., "myproject-f7q" for a
-worktree at ../myproject-f7q).
+Arguments and --exclude accept either worktree directory names (e.g.,
+"myproject-f7q") or branch names (e.g., "task/f7q").
 
 Successfully merged worktrees are cleaned up (worktree removed, branch deleted).
 
@@ -69,7 +69,7 @@ Flags:
 		return nil
 	}
 
-	// Apply inclusion filter (positional args are worktree names).
+	// Apply inclusion filter (positional args match worktree names or branch names).
 	includeNames := fs.Args()
 	if len(includeNames) > 0 {
 		nameSet := make(map[string]bool)
@@ -78,14 +78,16 @@ Flags:
 		}
 		var filtered []GitWorktree
 		for _, wt := range candidates {
-			if nameSet[filepath.Base(wt.Path)] {
+			wtName := filepath.Base(wt.Path)
+			branch := wt.Branch
+			if nameSet[wtName] || (branch != "" && nameSet[branch]) {
 				filtered = append(filtered, wt)
 			}
 		}
 		candidates = filtered
 	}
 
-	// Apply exclusion filter.
+	// Apply exclusion filter (also matches worktree names or branch names).
 	if *exclude != "" {
 		excludeSet := make(map[string]bool)
 		for _, n := range strings.Split(*exclude, ",") {
@@ -93,7 +95,9 @@ Flags:
 		}
 		var filtered []GitWorktree
 		for _, wt := range candidates {
-			if !excludeSet[filepath.Base(wt.Path)] {
+			wtName := filepath.Base(wt.Path)
+			branch := wt.Branch
+			if !excludeSet[wtName] && (branch == "" || !excludeSet[branch]) {
 				filtered = append(filtered, wt)
 			}
 		}
