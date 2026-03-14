@@ -29,7 +29,14 @@ func buildPrompt(cfg *Config, batchSize int, claimedTask *AtaTask) string {
 		spec := getEpicSpec(claimedTask.EpicID)
 		if spec != "" {
 			specInstruction = fmt.Sprintf("## Epic Spec (epic %s)\n\n%s\n\n---\n\n", claimedTask.EpicID, spec)
+			specInstruction += lockedDecisionsWarning(spec, "epic spec")
 		}
+	}
+
+	// Inject task's own spec if it has one.
+	if claimedTask.Spec != "" {
+		specInstruction += fmt.Sprintf("## Task Spec (%s)\n\n%s\n\n---\n\n", claimedTask.ID, claimedTask.Spec)
+		specInstruction += lockedDecisionsWarning(claimedTask.Spec, "task spec")
 	}
 
 	workspaceInstruction := ""

@@ -5,10 +5,33 @@ import (
 	"strings"
 )
 
+// interviewDepth controls how much clarification happens before planning.
+type interviewDepth int
+
+const (
+	depthFull  interviewDepth = iota + 1
+	depthLight
+	depthSkip
+)
+
+// lockedDecisionsWarning returns an IMPORTANT notice if the spec text contains
+// a Locked Decisions section, or "" if it does not.
+// label should describe the spec source, e.g. "epic spec" or "task spec".
+func lockedDecisionsWarning(spec, label string) string {
+	if !strings.Contains(spec, "## Locked Decisions") {
+		return ""
+	}
+	return fmt.Sprintf(
+		"IMPORTANT: The %s contains a 'Locked Decisions' section. "+
+			"These are non-negotiable constraints. Do not propose alternatives or deviate from them.\n\n",
+		label,
+	)
+}
+
 // buildPullPrompt constructs the prompt for an interactive pull session.
 // It includes the task details, epic spec if applicable, worktree context,
 // and the multi-phase workflow instructions.
-func buildPullPrompt(task *AtaTask, worktreePath, epicSpec string) string {
+func buildPullPrompt(task *AtaTask, worktreePath, epicSpec string, depth interviewDepth) string {
 	bt := "`"
 	var b strings.Builder
 
@@ -20,11 +43,67 @@ func buildPullPrompt(task *AtaTask, worktreePath, epicSpec string) string {
 
 	if epicSpec != "" {
 		b.WriteString(fmt.Sprintf("This task belongs to epic %s. Epic spec:\n%s\n\n", task.EpicID, epicSpec))
+		b.WriteString(lockedDecisionsWarning(epicSpec, "epic spec"))
+	}
+
+	if task.Spec != "" {
+		b.WriteString(fmt.Sprintf("Task spec:\n%s\n\n", task.Spec))
+		b.WriteString(lockedDecisionsWarning(task.Spec, "task spec"))
 	}
 
 	if worktreePath != "" {
 		b.WriteString(fmt.Sprintf("You are working in a git worktree at: %s\n", worktreePath))
 		b.WriteString("All changes should be made in this worktree.\n\n")
+	}
+
+	// Phase 0: Interview (conditional on depth).
+	switch depth {
+	case depthFull:
+		b.WriteString(fmt.Sprintf(`## Phase 0: Deep Interview
+
+Before planning, you need to understand what the user actually wants. This task has minimal detail, so conduct a conversational interview to clarify scope, requirements, and constraints.
+
+**How to interview:**
+- Start open-ended: "Tell me what you're trying to accomplish with this task."
+- Follow the user's energy — dig deeper where they show uncertainty or excitement
+- Challenge vague statements: "When you say 'better error handling', what does that look like concretely?"
+- Ask for concrete examples and edge cases
+- Cover these areas (naturally, not as a checklist): goal, scope boundaries, constraints, and done-criteria
+
+**When you have enough clarity**, synthesize everything into a structured spec with these sections:
+- **Goal**: What we're trying to achieve
+- **Scope**: What's in and out
+- **Approach**: High-level technical approach
+- **Acceptance Criteria**: Concrete, testable conditions for "done"
+- **Constraints**: Non-negotiable technical or process constraints
+- **Locked Decisions**: Any decisions the user explicitly locked during the interview (these become non-negotiable during execution)
+
+Write the spec to a temp file and save it:
+%scat > /tmp/spec-%s.md << 'SPECEOF'
+<your spec content>
+SPECEOF
+ata spec %s --set-file /tmp/spec-%s.md%s
+
+Then proceed to Phase 1.
+
+`, bt, task.ID, task.ID, task.ID, bt))
+
+	case depthLight:
+		b.WriteString(`## Phase 0: Quick Clarification
+
+This task needs a bit more detail before planning. Ask the user 2-3 focused questions using AskUserQuestion:
+- "What does 'done' look like for this task?"
+- "What's the scope — what should this NOT touch?"
+- "Any constraints or preferences I should know about?"
+
+Don't ask all three if the first answer gives you enough context. Follow up naturally.
+
+Once clarified, add the clarified scope as a comment:
+` + bt + `ata comment ` + task.ID + ` "Clarified scope: <summary of what was discussed>" --author human` + bt + `
+
+Then proceed to Phase 1.
+
+`)
 	}
 
 	b.WriteString(`Follow this workflow:

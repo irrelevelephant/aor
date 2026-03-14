@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 const statusClosed = "closed"
@@ -17,6 +19,8 @@ func runPull(args []string) error {
 	noWorktree := fs.Bool("no-worktree", false, "Don't create a git worktree (default: create one)")
 	workspace := fs.String("workspace", "", "Workspace path (default: auto-detect from git)")
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts (default: skip)")
+	forceInterview := fs.Bool("interview", false, "Force full interview (skip depth prompt)")
+	noInterview := fs.Bool("no-interview", false, "Skip interview entirely")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `aor pull — Interactive task planning and execution
@@ -36,6 +40,10 @@ Flags:
 			return nil
 		}
 		return err
+	}
+
+	if *forceInterview && *noInterview {
+		return fmt.Errorf("--interview and --no-interview are mutually exclusive")
 	}
 
 	// Resolve workspace.
@@ -111,8 +119,20 @@ Flags:
 		}
 	}
 
+	// Determine interview depth.
+	depth := depthSkip
+	switch {
+	case *forceInterview:
+		depth = depthFull
+	case *noInterview:
+		depth = depthSkip
+	default:
+		recommended, reason := assessInterviewDepth(task, epicSpec)
+		depth = promptInterviewDepth(task, recommended, reason)
+	}
+
 	// Build prompt and launch interactive Claude session.
-	prompt := buildPullPrompt(task, worktreePath, epicSpec)
+	prompt := buildPullPrompt(task, worktreePath, epicSpec, depth)
 
 	fmt.Println("\nLaunching interactive planning session...")
 	runInteractiveClaude([]string{prompt}, !*noYolo, worktreePath)
@@ -153,4 +173,90 @@ Flags:
 	}
 
 	return nil
+}
+
+// assessInterviewDepth determines the recommended interview depth based on
+// task content and available context.
+func assessInterviewDepth(task *AtaTask, epicSpec string) (interviewDepth, string) {
+	// Already has a spec — no interview needed.
+	if task.Spec != "" {
+		return depthSkip, "Task already has a spec"
+	}
+
+	body := strings.TrimSpace(task.Body)
+
+	// Empty body cases.
+	if body == "" {
+		if epicSpec == "" {
+			return depthFull, "Task has no description and no epic spec"
+		}
+		return depthLight, "Task has no description but epic provides context"
+	}
+
+	// Short body without detail keywords.
+	if len(body) < 100 {
+		bodyLower := strings.ToLower(body)
+		hasDetailKeywords := strings.Contains(bodyLower, "acceptance criteria") ||
+			strings.Contains(bodyLower, "requirements") ||
+			strings.Contains(bodyLower, "should") ||
+			strings.Contains(bodyLower, "must")
+		if !hasDetailKeywords {
+			return depthLight, "Task has minimal detail"
+		}
+	}
+
+	return depthSkip, "Task has sufficient detail"
+}
+
+// promptInterviewDepth shows the user the recommended depth and lets them choose.
+func promptInterviewDepth(task *AtaTask, recommended interviewDepth, reason string) interviewDepth {
+	fmt.Printf("\n%s── Interview Depth ─────────────────────────%s\n", cCyan, cReset)
+	fmt.Printf("Task: %s%s%s — %s\n", cBold, task.ID, cReset, task.Title)
+
+	body := strings.TrimSpace(task.Body)
+	if body == "" {
+		fmt.Printf("Body: %s(empty)%s\n", cGray, cReset)
+	} else {
+		fmt.Printf("Body: %d chars\n", len(body))
+	}
+
+	fmt.Printf("Assessment: %s\n\n", reason)
+
+	options := []struct {
+		depth interviewDepth
+		label string
+		desc  string
+	}{
+		{depthFull, "Full interview", "Conversational deep-dive, produces a spec"},
+		{depthLight, "Light interview", "2-3 focused questions, adds a comment"},
+		{depthSkip, "Skip", "Go straight to planning"},
+	}
+
+	for i, opt := range options {
+		marker := "  "
+		if opt.depth == recommended {
+			marker = fmt.Sprintf("%s→%s", cGreen, cReset)
+		}
+		fmt.Printf("%s %d) %s — %s\n", marker, i+1, opt.label, opt.desc)
+	}
+
+	fmt.Printf("\nChoose [1/2/3, Enter=recommended]: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+
+	switch line {
+	case "":
+		return recommended
+	case "1":
+		return depthFull
+	case "2":
+		return depthLight
+	case "3":
+		return depthSkip
+	default:
+		fmt.Printf("Unrecognized input, using recommended.\n")
+		return recommended
+	}
 }

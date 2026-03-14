@@ -49,16 +49,12 @@ func Spec(d *db.DB, args []string) error {
 		return err
 	}
 
-	if !task.IsEpic {
-		return fmt.Errorf("task %s is not an epic", id)
-	}
-
 	if *jsonOut {
 		return outputJSON(map[string]string{"id": task.ID, "spec": task.Spec})
 	}
 
 	if task.Spec == "" {
-		fmt.Printf("epic %s has no spec\n", id)
+		fmt.Printf("task %s has no spec\n", id)
 	} else {
 		fmt.Println(task.Spec)
 	}

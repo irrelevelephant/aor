@@ -373,15 +373,15 @@ func (d *DB) DemoteToTask(id string) (*model.Task, error) {
 	return d.GetTask(id)
 }
 
-// UpdateSpec updates the spec for an epic.
+// UpdateSpec updates the spec for a task or epic.
 func (d *DB) UpdateSpec(id, spec string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET spec = ? WHERE id = ? AND is_epic = 1`, spec, id)
+	res, err := d.Exec(`UPDATE tasks SET spec = ? WHERE id = ?`, spec, id)
 	if err != nil {
 		return nil, fmt.Errorf("update spec: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return nil, fmt.Errorf("task %s is not an epic", id)
+		return nil, fmt.Errorf("task %s not found", id)
 	}
 	return d.GetTask(id)
 }
