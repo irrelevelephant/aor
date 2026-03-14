@@ -65,6 +65,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "spec":
+			if err := runSpec(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
+				os.Exit(1)
+			}
+			return
 		}
 	}
 
@@ -93,6 +99,7 @@ Usage:
   aor pull [flags] [TASK_ID]     Interactive task planning and execution
   aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
   aor rev [flags] [<ref>]        Iterative code review (see: aor rev --help)
+  aor spec [flags] <file.md>...  Spec-driven task planning and execution
 
 Controls while running:
   Ctrl+C       Stop agent and exit runner
