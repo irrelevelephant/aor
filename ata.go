@@ -62,15 +62,6 @@ func claimTask(id string) error {
 	return nil
 }
 
-// closeTask marks a task as closed with the given reason.
-func closeTask(id, reason string) error {
-	out, err := exec.Command("ata", "close", id, reason, "--json").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("ata close failed: %w (%s)", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
 // unclaimTask resets a task back to queue.
 func unclaimTask(id string) error {
 	out, err := exec.Command("ata", "unclaim", id, "--json").CombinedOutput()
