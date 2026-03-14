@@ -524,6 +524,16 @@ func runInteractiveClaude(claudeArgs []string, yolo bool, workDir string) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Ignore SIGINT and SIGTSTP while the interactive child is running.
+	// The terminal delivers these to the entire foreground process group;
+	// Claude Code handles them internally. If we don't ignore them here,
+	// Go's default handler kills aor while claude keeps running, leaving
+	// the terminal in a broken state.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTSTP)
+	defer signal.Stop(sigCh)
+
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("\nClaude session ended: %v\n", err)
 	}
