@@ -7,17 +7,27 @@ import (
 
 // AtaTask represents a task from ata CLI JSON output.
 type AtaTask struct {
-	ID        string   `json:"id"`
-	Title     string   `json:"title"`
-	Body      string   `json:"body,omitempty"`
-	Status    string   `json:"status"`
-	SortOrder int      `json:"sort_order"`
-	EpicID    string   `json:"epic_id,omitempty"`
-	Workspace string   `json:"workspace"`
-	IsEpic    bool     `json:"is_epic"`
-	Spec      string   `json:"spec,omitempty"`
-	Tags      []string `json:"tags,omitempty"`
-	CreatedAt string   `json:"created_at"`
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body,omitempty"`
+	Status      string          `json:"status"`
+	SortOrder   int             `json:"sort_order"`
+	EpicID      string          `json:"epic_id,omitempty"`
+	Workspace   string          `json:"workspace"`
+	IsEpic      bool            `json:"is_epic"`
+	Spec        string          `json:"spec,omitempty"`
+	Tags        []string        `json:"tags,omitempty"`
+	Attachments []AtaAttachment `json:"attachments,omitempty"`
+	CreatedAt   string          `json:"created_at"`
+}
+
+// AtaAttachment represents a file attachment from ata CLI JSON output.
+type AtaAttachment struct {
+	ID         string `json:"id"`
+	Filename   string `json:"filename"`
+	StoredName string `json:"stored_name"`
+	MimeType   string `json:"mime_type"`
+	SizeBytes  int64  `json:"size_bytes"`
 }
 
 // GitWorktree represents a git worktree entry from `git worktree list --porcelain`.

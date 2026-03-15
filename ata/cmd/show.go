@@ -31,8 +31,12 @@ func Show(d *db.DB, args []string) error {
 	// Load tags.
 	tags, _ := d.GetTags(id)
 
+	// Load attachments.
+	attachments, _ := d.ListAttachments(id)
+
 	if *jsonOut {
 		twc.Tags = tags
+		twc.Attachments = attachments
 		return outputJSON(twc)
 	}
 

@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -34,10 +35,13 @@ func Snapshot(d *db.DB, args []string) error {
 		}
 	}
 
-	meta, tasks, comments, deps, tags, err := d.ExportWorkspace(ws)
+	meta, tasks, comments, deps, tags, attachments, err := d.ExportWorkspace(ws)
 	if err != nil {
 		return err
 	}
+
+	// Resolve attachments directory.
+	attDir, _ := db.AttachmentsDir()
 
 	// Determine output filename.
 	outPath := *output
@@ -50,27 +54,28 @@ func Snapshot(d *db.DB, args []string) error {
 	}
 
 	// Build tar.gz — write to file, remove on error.
-	if err := writeSnapshotArchive(outPath, meta, tasks, comments, deps, tags); err != nil {
+	if err := writeSnapshotArchive(outPath, meta, tasks, comments, deps, tags, attachments, attDir); err != nil {
 		os.Remove(outPath)
 		return err
 	}
 
 	if *jsonOut {
 		return outputJSON(struct {
-			File     string `json:"file"`
-			Tasks    int    `json:"tasks"`
-			Comments int    `json:"comments"`
-			Deps     int    `json:"deps"`
-			Tags     int    `json:"tags"`
-		}{outPath, len(tasks), len(comments), len(deps), len(tags)})
+			File        string `json:"file"`
+			Tasks       int    `json:"tasks"`
+			Comments    int    `json:"comments"`
+			Deps        int    `json:"deps"`
+			Tags        int    `json:"tags"`
+			Attachments int    `json:"attachments"`
+		}{outPath, len(tasks), len(comments), len(deps), len(tags), len(attachments)})
 	}
 
-	fmt.Printf("snapshot: %s (%d tasks, %d comments, %d deps, %d tags)\n",
-		outPath, len(tasks), len(comments), len(deps), len(tags))
+	fmt.Printf("snapshot: %s (%d tasks, %d comments, %d deps, %d tags, %d attachments)\n",
+		outPath, len(tasks), len(comments), len(deps), len(tags), len(attachments))
 	return nil
 }
 
-func writeSnapshotArchive(outPath string, meta any, tasks []model.Task, comments []model.Comment, deps []model.TaskDep, tags []model.TaskTag) error {
+func writeSnapshotArchive(outPath string, meta any, tasks []model.Task, comments []model.Comment, deps []model.TaskDep, tags []model.TaskTag, attachments []model.Attachment, attachmentsDir string) error {
 	f, err := os.Create(outPath)
 	if err != nil {
 		return fmt.Errorf("create output: %w", err)
@@ -98,7 +103,27 @@ func writeSnapshotArchive(outPath string, meta any, tasks []model.Task, comments
 	if err := writeTarJSONL(tw, "task_deps.jsonl", deps); err != nil {
 		return err
 	}
-	return writeTarJSONL(tw, "task_tags.jsonl", tags)
+	if err := writeTarJSONL(tw, "task_tags.jsonl", tags); err != nil {
+		return err
+	}
+	if err := writeTarJSONL(tw, "attachments.jsonl", attachments); err != nil {
+		return err
+	}
+
+	// Write attachment files into the archive.
+	for _, a := range attachments {
+		filePath := filepath.Join(attachmentsDir, a.TaskID, a.StoredName)
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			// Skip missing files silently — they may have been deleted from disk.
+			continue
+		}
+		if err := writeTarEntry(tw, "attachments/"+a.TaskID+"/"+a.StoredName, data); err != nil {
+			return fmt.Errorf("write attachment %s: %w", a.StoredName, err)
+		}
+	}
+
+	return nil
 }
 
 var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9]+`)

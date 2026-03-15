@@ -261,6 +261,41 @@ func addTagToTask(taskID, tag string) error {
 	return nil
 }
 
+// formatAttachments returns a prompt section listing attachment file paths.
+// Returns empty string if there are no attachments.
+func formatAttachments(attachments []AtaAttachment, taskID string) string {
+	if len(attachments) == 0 {
+		return ""
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	baseDir := filepath.Join(home, ".ata", "attachments", taskID)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n## Attachments\nThis task has %d attachment(s). Use the Read tool to view them:\n", len(attachments))
+	for _, a := range attachments {
+		size := formatHumanSize(a.SizeBytes)
+		absPath := filepath.Join(baseDir, a.StoredName)
+		fmt.Fprintf(&b, "- %s (%s, %s): %s\n", a.Filename, a.MimeType, size, absPath)
+	}
+	return b.String()
+}
+
+// formatHumanSize returns a human-readable file size.
+func formatHumanSize(b int64) string {
+	switch {
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
 // getEpicSpec retrieves the spec for an epic.
 func getEpicSpec(epicID string) string {
 	out, err := exec.Command("ata", "spec", epicID, "--json").Output()

@@ -112,6 +112,42 @@
             </form>
         </details>
     </div>
+    <div class="attachments-section">
+        <h2>Attachments</h2>
+        {{if $.Attachments}}
+        <div class="attachment-list">
+            {{range $.Attachments}}
+            <div class="attachment-row">
+                {{if .IsImage}}
+                <a href="/attachments/{{.TaskID}}/{{.StoredName}}" target="_blank">
+                    <img src="/attachments/{{.TaskID}}/{{.StoredName}}" class="attachment-thumb" alt="{{.Filename}}">
+                </a>
+                {{end}}
+                <div class="attachment-info">
+                    <a href="/attachments/{{.TaskID}}/{{.StoredName}}" class="attachment-name">{{.Filename}}</a>
+                    <span class="attachment-meta">{{.MimeType}} &middot; {{formatBytes .SizeBytes}}</span>
+                </div>
+                <button class="btn btn-sm" onclick="copyMarkdown(this.dataset.md)" data-md="{{.MarkdownRef ""}}" title="Copy markdown">Copy MD</button>
+                {{if ne $.Epic.Status "closed"}}
+                <form action="/task/{{$.Epic.ID}}/attachments/delete" method="POST" style="display:inline"
+                      onsubmit="return confirm('Delete this attachment?')">
+                    <input type="hidden" name="attachment_id" value="{{.ID}}">
+                    <button type="submit" class="btn-icon" title="Delete attachment">&times;</button>
+                </form>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+        {{else}}
+        <p class="empty">No attachments.</p>
+        {{end}}
+        {{if ne $.Epic.Status "closed"}}
+        <form class="attachment-upload" action="/task/{{$.Epic.ID}}/attachments" method="POST" enctype="multipart/form-data">
+            <input type="file" name="file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp,application/pdf,text/plain,text/markdown,.md">
+            <button type="submit" class="btn btn-sm">Upload</button>
+        </form>
+        {{end}}
+    </div>
 {{end}}
 
     <div class="children-section">

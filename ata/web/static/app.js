@@ -218,6 +218,13 @@ function initTagFormSSESuppression() {
     });
 }
 
+// Copy markdown reference to clipboard.
+function copyMarkdown(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        // Brief visual feedback could be added here.
+    });
+}
+
 // Called by Cancel button on body edit form.
 function cancelBodyEdit() {
     document.getElementById('body-display').style.display = '';

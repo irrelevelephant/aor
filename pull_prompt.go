@@ -51,6 +51,11 @@ func buildPullPrompt(task *AtaTask, worktreePath, epicSpec string, depth intervi
 		b.WriteString(lockedDecisionsWarning(task.Spec, "task spec"))
 	}
 
+	if att := formatAttachments(task.Attachments, task.ID); att != "" {
+		b.WriteString(att)
+		b.WriteString("\n")
+	}
+
 	if worktreePath != "" {
 		b.WriteString(fmt.Sprintf("You are working in a git worktree at: %s\n", worktreePath))
 		b.WriteString("All changes should be made in this worktree.\n\n")

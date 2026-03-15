@@ -23,6 +23,27 @@ func DefaultDBPath() (string, error) {
 	return filepath.Join(home, ".ata", "ata.db"), nil
 }
 
+// AttachmentsDir returns the default attachments directory (~/.ata/attachments).
+func AttachmentsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("get home dir: %w", err)
+	}
+	return filepath.Join(home, ".ata", "attachments"), nil
+}
+
+// FormatBytes returns a human-readable file size string.
+func FormatBytes(b int64) string {
+	switch {
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
 // Open opens (or creates) the SQLite database at the given path and runs migrations.
 func Open(path string) (*DB, error) {
 	dir := filepath.Dir(path)

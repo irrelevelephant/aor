@@ -7,11 +7,11 @@ import (
 	"aor/ata/model"
 )
 
-// ExportWorkspace exports all data for a workspace: metadata, tasks, comments, deps, and tags.
-func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []model.Comment, []model.TaskDep, []model.TaskTag, error) {
+// ExportWorkspace exports all data for a workspace: metadata, tasks, comments, deps, tags, and attachments.
+func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []model.Comment, []model.TaskDep, []model.TaskTag, []model.Attachment, error) {
 	ws, err := d.GetWorkspace(path)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("get workspace: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("get workspace: %w", err)
 	}
 
 	var sourceName string
@@ -28,11 +28,11 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 
 	tasks, err := d.ListTasks(path, "", "", "", "")
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("list tasks: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("list tasks: %w", err)
 	}
 
 	if len(tasks) == 0 {
-		return meta, nil, nil, nil, nil, nil
+		return meta, nil, nil, nil, nil, nil, nil
 	}
 
 	taskIDs := make([]string, len(tasks))
@@ -44,7 +44,7 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 	ph, phArgs := inPlaceholders(taskIDs)
 	commentRows, err := d.Query(`SELECT id, task_id, body, author, created_at FROM comments WHERE task_id IN (`+ph+`) ORDER BY created_at ASC`, phArgs...)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("query comments: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("query comments: %w", err)
 	}
 	defer commentRows.Close()
 
@@ -52,18 +52,18 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 	for commentRows.Next() {
 		var c model.Comment
 		if err := commentRows.Scan(&c.ID, &c.TaskID, &c.Body, &c.Author, &c.CreatedAt); err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("scan comment: %w", err)
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("scan comment: %w", err)
 		}
 		comments = append(comments, c)
 	}
 	if err := commentRows.Err(); err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("comments rows: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("comments rows: %w", err)
 	}
 
 	// Batch-query deps — both sides must be in the workspace task set.
 	depRows, err := d.Query(`SELECT task_id, depends_on, created_at FROM task_deps WHERE task_id IN (`+ph+`) AND depends_on IN (`+ph+`)`, append(phArgs, phArgs...)...)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("query deps: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("query deps: %w", err)
 	}
 	defer depRows.Close()
 
@@ -71,18 +71,18 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 	for depRows.Next() {
 		var dep model.TaskDep
 		if err := depRows.Scan(&dep.TaskID, &dep.DependsOn, &dep.CreatedAt); err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("scan dep: %w", err)
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("scan dep: %w", err)
 		}
 		deps = append(deps, dep)
 	}
 	if err := depRows.Err(); err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("deps rows: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("deps rows: %w", err)
 	}
 
 	// Batch-query tags.
 	tagRows, err := d.Query(`SELECT task_id, tag, created_at FROM task_tags WHERE task_id IN (`+ph+`)`, phArgs...)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("query tags: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("query tags: %w", err)
 	}
 	defer tagRows.Close()
 
@@ -90,27 +90,46 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 	for tagRows.Next() {
 		var tag model.TaskTag
 		if err := tagRows.Scan(&tag.TaskID, &tag.Tag, &tag.CreatedAt); err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("scan tag: %w", err)
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("scan tag: %w", err)
 		}
 		tags = append(tags, tag)
 	}
 	if err := tagRows.Err(); err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("tags rows: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("tags rows: %w", err)
 	}
 
-	return meta, tasks, comments, deps, tags, nil
+	// Batch-query attachments.
+	attRows, err := d.Query(`SELECT id, task_id, filename, stored_name, mime_type, size_bytes, created_at FROM attachments WHERE task_id IN (`+ph+`) ORDER BY created_at ASC`, phArgs...)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("query attachments: %w", err)
+	}
+	defer attRows.Close()
+
+	var attachments []model.Attachment
+	for attRows.Next() {
+		var a model.Attachment
+		if err := attRows.Scan(&a.ID, &a.TaskID, &a.Filename, &a.StoredName, &a.MimeType, &a.SizeBytes, &a.CreatedAt); err != nil {
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("scan attachment: %w", err)
+		}
+		attachments = append(attachments, a)
+	}
+	if err := attRows.Err(); err != nil {
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("attachments rows: %w", err)
+	}
+
+	return meta, tasks, comments, deps, tags, attachments, nil
 }
 
 // ImportWorkspace replaces a workspace with imported data.
 // The target workspace is fully wiped before import.
-func (d *DB) ImportWorkspace(targetPath, targetName string, sourcePath string, tasks []model.Task, comments []model.Comment, deps []model.TaskDep, tags []model.TaskTag) error {
+func (d *DB) ImportWorkspace(targetPath, targetName string, sourcePath string, tasks []model.Task, comments []model.Comment, deps []model.TaskDep, tags []model.TaskTag, attachments []model.Attachment) error {
 	tx, err := d.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Wipe existing workspace data (cascades to comments, deps, tags via FK).
+	// Wipe existing workspace data (cascades to comments, deps, tags, attachments via FK).
 	if _, err := tx.Exec(`DELETE FROM tasks WHERE workspace = ?`, targetPath); err != nil {
 		return fmt.Errorf("delete tasks: %w", err)
 	}
@@ -165,6 +184,15 @@ func (d *DB) ImportWorkspace(targetPath, targetName string, sourcePath string, t
 			tag.TaskID, tag.Tag, tag.CreatedAt)
 		if err != nil {
 			return fmt.Errorf("insert tag %s/%s: %w", tag.TaskID, tag.Tag, err)
+		}
+	}
+
+	// Insert attachments.
+	for _, a := range attachments {
+		_, err := tx.Exec(`INSERT INTO attachments (id, task_id, filename, stored_name, mime_type, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			a.ID, a.TaskID, a.Filename, a.StoredName, a.MimeType, a.SizeBytes, a.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert attachment %s: %w", a.ID, err)
 		}
 	}
 

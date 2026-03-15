@@ -39,6 +39,9 @@ func buildPrompt(cfg *Config, batchSize int, claimedTask *AtaTask) string {
 		specInstruction += lockedDecisionsWarning(claimedTask.Spec, "task spec")
 	}
 
+	// Inject attachments section if the task has any.
+	attachmentsSection := formatAttachments(claimedTask.Attachments, claimedTask.ID)
+
 	workspaceInstruction := ""
 	if cfg.Workspace != "" {
 		workspaceInstruction = fmt.Sprintf("Workspace: %s\n- When creating tasks, use: ata create \"title\" --workspace \"%s\" --json\n- When creating tasks under an epic, add: --epic EPIC_ID\n\n", cfg.Workspace, cfg.Workspace)
@@ -103,7 +106,7 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 
 	return fmt.Sprintf(`You are working through tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
 
-%s%s%s%s%s%s
+%s%s%s%s%s%s%s
 
 For each task:
 1. Implement the work.
@@ -139,7 +142,7 @@ Task decomposition:
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
-Start now.`, specInstruction, filterInstruction, workspaceInstruction, worktreeInstruction, claimedInstruction, additionalTasks, discoveredInstruction, batchSize, decomposeCmd)
+Start now.`, specInstruction, filterInstruction, workspaceInstruction, worktreeInstruction, claimedInstruction, additionalTasks, attachmentsSection, discoveredInstruction, batchSize, decomposeCmd)
 }
 
 // claimTracker keeps track of the currently claimed task so we can

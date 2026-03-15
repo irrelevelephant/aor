@@ -567,6 +567,38 @@ button.tag-badge { cursor: pointer; }
 .task-blocked { opacity: 0.6; }
 .task-blocked:hover { opacity: 1; }
 
+/* Attachments */
+.attachments-section { margin-bottom: 2rem; }
+.attachment-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+.attachment-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+.attachment-thumb {
+    max-width: 120px;
+    max-height: 80px;
+    border-radius: var(--radius);
+    object-fit: cover;
+}
+.attachment-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.attachment-name { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-meta { font-size: 0.8rem; color: var(--text-dim); }
+.attachment-upload {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.5rem;
+}
+.attachment-upload input[type="file"] {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+}
+
 /* Comments */
 .comments-section { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem; }
 .comments-list { margin-bottom: 1rem; }

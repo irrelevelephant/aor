@@ -46,10 +46,11 @@ type Comment struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// TaskWithComments is a task with its associated comments, used by show.
+// TaskWithComments is a task with its associated comments and attachments, used by show.
 type TaskWithComments struct {
 	Task
-	Comments []Comment `json:"comments,omitempty"`
+	Comments    []Comment    `json:"comments,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
 // Workspace represents a registered workspace.
@@ -102,6 +103,35 @@ type TaskTag struct {
 	TaskID    string `json:"task_id"`
 	Tag       string `json:"tag"`
 	CreatedAt string `json:"created_at"`
+}
+
+// Attachment represents a file attached to a task.
+type Attachment struct {
+	ID         string `json:"id"`
+	TaskID     string `json:"task_id"`
+	Filename   string `json:"filename"`
+	StoredName string `json:"stored_name"`
+	MimeType   string `json:"mime_type"`
+	SizeBytes  int64  `json:"size_bytes"`
+	CreatedAt  string `json:"created_at"`
+}
+
+// IsImage returns true if the attachment is an image type.
+func (a Attachment) IsImage() bool {
+	switch a.MimeType {
+	case "image/png", "image/jpeg", "image/gif", "image/svg+xml", "image/webp":
+		return true
+	}
+	return false
+}
+
+// MarkdownRef returns a markdown reference for the attachment.
+func (a Attachment) MarkdownRef(baseURL string) string {
+	url := baseURL + "/attachments/" + a.TaskID + "/" + a.StoredName
+	if a.IsImage() {
+		return "![" + a.Filename + "](" + url + ")"
+	}
+	return "[" + a.Filename + "](" + url + ")"
 }
 
 // EpicProgress holds progress info for an epic.

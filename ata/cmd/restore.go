@@ -3,13 +3,14 @@ package cmd
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"aor/ata/db"
@@ -91,6 +92,13 @@ func Restore(d *db.DB, args []string) error {
 	if err != nil {
 		return fmt.Errorf("parse tags: %w", err)
 	}
+	attachments, err := parseJSONL[model.Attachment](entries["attachments.jsonl"])
+	if err != nil {
+		return fmt.Errorf("parse attachments: %w", err)
+	}
+
+	// Resolve attachments directory.
+	attDir, _ := db.AttachmentsDir()
 
 	// Confirm unless --force.
 	if !*force {
@@ -105,22 +113,48 @@ func Restore(d *db.DB, args []string) error {
 		}
 	}
 
-	if err := d.ImportWorkspace(ws, targetName, meta.SourcePath, tasks, comments, deps, tags); err != nil {
+	// Clean up existing attachment files for tasks being replaced.
+	if attDir != "" {
+		existingTasks, _ := d.ListTasks(ws, "", "", "", "")
+		for _, t := range existingTasks {
+			os.RemoveAll(filepath.Join(attDir, t.ID))
+		}
+	}
+
+	if err := d.ImportWorkspace(ws, targetName, meta.SourcePath, tasks, comments, deps, tags, attachments); err != nil {
 		return fmt.Errorf("import: %w", err)
+	}
+
+	// Extract attachment files from archive.
+	if attDir != "" {
+		for name, data := range entries {
+			if !strings.HasPrefix(name, "attachments/") {
+				continue
+			}
+			// name is "attachments/{taskID}/{storedName}"
+			destPath := filepath.Join(attDir, strings.TrimPrefix(name, "attachments/"))
+			if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+				return fmt.Errorf("create attachment dir: %w", err)
+			}
+			if err := os.WriteFile(destPath, data, 0o644); err != nil {
+				return fmt.Errorf("write attachment file: %w", err)
+			}
+		}
 	}
 
 	if *jsonOut {
 		return outputJSON(struct {
-			Workspace string `json:"workspace"`
-			Tasks     int    `json:"tasks"`
-			Comments  int    `json:"comments"`
-			Deps      int    `json:"deps"`
-			Tags      int    `json:"tags"`
-		}{ws, len(tasks), len(comments), len(deps), len(tags)})
+			Workspace   string `json:"workspace"`
+			Tasks       int    `json:"tasks"`
+			Comments    int    `json:"comments"`
+			Deps        int    `json:"deps"`
+			Tags        int    `json:"tags"`
+			Attachments int    `json:"attachments"`
+		}{ws, len(tasks), len(comments), len(deps), len(tags), len(attachments)})
 	}
 
-	fmt.Printf("restored: %s (%d tasks, %d comments, %d deps, %d tags)\n",
-		ws, len(tasks), len(comments), len(deps), len(tags))
+	fmt.Printf("restored: %s (%d tasks, %d comments, %d deps, %d tags, %d attachments)\n",
+		ws, len(tasks), len(comments), len(deps), len(tags), len(attachments))
 	return nil
 }
 

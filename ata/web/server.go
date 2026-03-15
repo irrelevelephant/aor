@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"hash/fnv"
 	"html/template"
+	"io"
 	"log"
-	"sort"
+	"mime"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -67,11 +71,12 @@ func (h *Hub) Broadcast(event, workspace, data string) {
 }
 
 type Server struct {
-	db       *db.DB
-	hub      *Hub
-	pages    map[string]*template.Template
-	partials *template.Template
-	md       goldmark.Markdown
+	db             *db.DB
+	hub            *Hub
+	pages          map[string]*template.Template
+	partials       *template.Template
+	md             goldmark.Markdown
+	attachmentsDir string
 }
 
 // uniqueSortedTags extracts a deduplicated, sorted list of tags from a tag map.
@@ -215,6 +220,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 		"tagFilterURL": func(baseURL, tag string) string {
 			return setTagQuery(baseURL, "tag", tag)
 		},
+		"formatBytes": db.FormatBytes,
 	}
 
 	// Parse each page template separately to avoid "content" block conflicts.
@@ -236,12 +242,16 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 		return fmt.Errorf("parse partials: %w", err)
 	}
 
+	// Resolve attachments directory.
+	attDir, _ := db.AttachmentsDir()
+
 	srv := &Server{
-		db:       d,
-		hub:      newHub(),
-		pages:    pages,
-		partials: partials,
-		md:       md,
+		db:             d,
+		hub:            newHub(),
+		pages:          pages,
+		partials:       partials,
+		md:             md,
+		attachmentsDir: attDir,
 	}
 
 	mux := http.NewServeMux()
@@ -267,6 +277,9 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	mux.HandleFunc("POST /task/{id}/deps/remove", srv.handleRemoveDep)
 	mux.HandleFunc("POST /task/{id}/tags", srv.handleAddTag)
 	mux.HandleFunc("POST /task/{id}/tags/remove", srv.handleRemoveTag)
+	mux.HandleFunc("POST /task/{id}/attachments", srv.handleUploadAttachment)
+	mux.HandleFunc("POST /task/{id}/attachments/delete", srv.handleDeleteAttachment)
+	mux.HandleFunc("GET /attachments/{taskID}/{filename}", srv.handleServeAttachment)
 	mux.HandleFunc("POST /reorder", srv.handleReorder)
 
 	// SSE.
@@ -550,6 +563,10 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("ListAllTags %s: %v", twc.Workspace, err)
 	}
+	attachments, err := s.db.ListAttachments(id)
+	if err != nil {
+		log.Printf("ListAttachments %s: %v", id, err)
+	}
 
 	s.render(w, "task.html", map[string]any{
 		"Task":          twc,
@@ -561,6 +578,7 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		"IsBlocked":     isBlocked,
 		"Tags":          tags,
 		"AllTags":       allTags,
+		"Attachments":   attachments,
 	})
 }
 
@@ -627,6 +645,11 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ListAllTags %s: %v", task.Workspace, err)
 	}
 
+	attachments, err := s.db.ListAttachments(id)
+	if err != nil {
+		log.Printf("ListAttachments epic %s: %v", id, err)
+	}
+
 	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
 		"Epic":          task,
@@ -640,6 +663,7 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		"EpicURL":       epicURL,
 		"Tags":          epicTags,
 		"AllTags":       allTags,
+		"Attachments":   attachments,
 	})
 }
 
@@ -939,6 +963,185 @@ func (s *Server) tagRedirect(id string, task *model.Task, r *http.Request) strin
 		return "/epic/" + id
 	}
 	return "/task/" + id
+}
+
+// allowedMIME is the set of allowed upload MIME types.
+var allowedMIME = map[string]bool{
+	"image/png":     true,
+	"image/jpeg":    true,
+	"image/gif":     true,
+	"image/svg+xml": true,
+	"image/webp":    true,
+	"application/pdf": true,
+	"text/plain":      true,
+	"text/markdown":   true,
+}
+
+// sanitizeFilename returns a safe filename, stripping path traversal and null bytes.
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name)
+	name = strings.ReplaceAll(name, "\x00", "")
+	if name == "" || name == "." || name == ".." {
+		name = "attachment"
+	}
+	return name
+}
+
+func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	// Enforce 10 MB limit.
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20+1024) // extra 1KB for multipart headers
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "file too large (max 10 MB)", 400)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file required", 400)
+		return
+	}
+	defer file.Close()
+
+	// Read first 512 bytes for content detection.
+	buf := make([]byte, 512)
+	n, _ := file.Read(buf)
+	detected := http.DetectContentType(buf[:n])
+	// Reset reader.
+	file.Seek(0, io.SeekStart)
+
+	// For SVG, DetectContentType returns text/xml or text/plain. Check extension too.
+	if strings.HasSuffix(strings.ToLower(header.Filename), ".svg") {
+		detected = "image/svg+xml"
+	}
+	// For markdown, DetectContentType returns text/plain. Check extension.
+	if strings.HasSuffix(strings.ToLower(header.Filename), ".md") {
+		detected = "text/markdown"
+	}
+
+	if !allowedMIME[detected] {
+		http.Error(w, fmt.Sprintf("file type %s not allowed", detected), 400)
+		return
+	}
+
+	filename := sanitizeFilename(header.Filename)
+
+	// Create DB record (storedName = id + "_" + filename, computed internally).
+	att, err := s.db.CreateAttachment(id, filename, detected, header.Size)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	// Write file to disk.
+	taskDir := filepath.Join(s.attachmentsDir, id)
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		s.db.DeleteAttachment(att.ID)
+		http.Error(w, "failed to create attachment directory", 500)
+		return
+	}
+
+	filePath := filepath.Join(taskDir, att.StoredName)
+	dst, err := os.Create(filePath)
+	if err != nil {
+		s.db.DeleteAttachment(att.ID)
+		http.Error(w, "failed to write file", 500)
+		return
+	}
+	defer dst.Close()
+
+	written, err := io.Copy(dst, file)
+	if err != nil {
+		os.Remove(filePath)
+		s.db.DeleteAttachment(att.ID)
+		http.Error(w, "failed to write file", 500)
+		return
+	}
+
+	// Update size_bytes with actual bytes written.
+	if written != header.Size {
+		s.db.Exec(`UPDATE attachments SET size_bytes = ? WHERE id = ?`, written, att.ID)
+	}
+
+	task, _ := s.db.GetTask(id)
+	if task != nil {
+		s.hub.Broadcast("task_updated", task.Workspace, id)
+	}
+
+	dest := "/task/" + id
+	if task != nil && task.IsEpic {
+		dest = "/epic/" + id
+	}
+	s.hxRedirect(w, r, dest, http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteAttachment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	r.ParseForm()
+	attID := r.FormValue("attachment_id")
+	if attID == "" {
+		http.Error(w, "attachment_id required", 400)
+		return
+	}
+
+	att, err := s.db.GetAttachment(attID)
+	if err != nil {
+		http.Error(w, "attachment not found", 404)
+		return
+	}
+
+	// Verify attachment belongs to this task.
+	if att.TaskID != id {
+		http.Error(w, "attachment does not belong to this task", 400)
+		return
+	}
+
+	// Remove from disk.
+	os.Remove(filepath.Join(s.attachmentsDir, att.TaskID, att.StoredName))
+
+	// Remove from DB.
+	if err := s.db.DeleteAttachment(attID); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	task, _ := s.db.GetTask(id)
+	if task != nil {
+		s.hub.Broadcast("task_updated", task.Workspace, id)
+	}
+
+	dest := "/task/" + id
+	if task != nil && task.IsEpic {
+		dest = "/epic/" + id
+	}
+	s.hxRedirect(w, r, dest, http.StatusSeeOther)
+}
+
+func (s *Server) handleServeAttachment(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("taskID")
+	filename := r.PathValue("filename")
+
+	// Sanitize to prevent path traversal.
+	filename = filepath.Base(filename)
+	filePath := filepath.Join(s.attachmentsDir, taskID, filename)
+
+	// Detect MIME from extension for Content-Type header.
+	ext := filepath.Ext(filename)
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+
+	// SVG: force download to prevent script execution.
+	if strings.HasSuffix(strings.ToLower(filename), ".svg") {
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	} else if !strings.HasPrefix(mimeType, "image/") {
+		// Non-images: suggest download.
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	}
+
+	http.ServeFile(w, r, filePath)
 }
 
 func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {

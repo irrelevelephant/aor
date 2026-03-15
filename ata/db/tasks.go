@@ -610,10 +610,16 @@ func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 	return recovered, nil
 }
 
-// generateUniqueID creates a unique ID, retrying on collision and escalating
-// to longer IDs if needed.
+// generateUniqueID creates a unique ID for the tasks table.
 func (d *DB) generateUniqueID(startLength int) (string, error) {
+	return d.generateUniqueIDForTable(startLength, "tasks")
+}
+
+// generateUniqueIDForTable creates a unique ID, retrying on collision and escalating
+// to longer IDs if needed. The table must have a TEXT PRIMARY KEY column named "id".
+func (d *DB) generateUniqueIDForTable(startLength int, table string) (string, error) {
 	const maxLength = 8
+	query := `SELECT 1 FROM ` + table + ` WHERE id = ?`
 	for length := startLength; length <= maxLength; length++ {
 		for i := 0; i < 10; i++ {
 			id, err := model.GenerateID(length)
@@ -621,7 +627,7 @@ func (d *DB) generateUniqueID(startLength int) (string, error) {
 				return "", err
 			}
 			var exists int
-			err = d.QueryRow(`SELECT 1 FROM tasks WHERE id = ?`, id).Scan(&exists)
+			err = d.QueryRow(query, id).Scan(&exists)
 			if err == sql.ErrNoRows {
 				return id, nil
 			}
