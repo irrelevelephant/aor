@@ -99,7 +99,7 @@ Usage:
 
 Commands:
   init      Register current directory as a workspace
-  clean     Delete all tasks and unregister a workspace
+  clean     Delete tasks (all or closed-only)
   create    Create a new task
   list      List tasks
   show      Show task details

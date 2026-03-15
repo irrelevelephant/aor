@@ -238,6 +238,8 @@ Register a workspace with a short name to get cleaner URLs and easier CLI usage:
 ```sh
 ata init --name myproject     # register current repo with a short name
 ata clean --workspace myproject --force  # delete all tasks and unregister
+ata clean --closed --force              # delete only closed tasks
+ata clean --closed --older-than 30d     # delete closed tasks older than 30 days
 ```
 
 Workspaces resolve correctly across git worktrees — all worktrees of the same repo map to the registered workspace path.
@@ -255,7 +257,7 @@ The archive is a portable `.tar.gz` containing JSONL files — human-inspectable
 
 ```
 ata init [--workspace PATH] [--name NAME]                  Register workspace
-ata clean [--workspace NAME|PATH] [--force]                Delete all workspace data
+ata clean [--workspace NAME|PATH] [--closed] [--older-than Nd] [--force] [--json]  Delete tasks (all or closed-only)
 ata create TITLE [--body TEXT] [--status backlog|queue] [--epic ID] [--tag a,b] [--workspace PATH] [--json]
 ata list [--workspace PATH] [--status STATUS] [--epic ID] [--tag TAG] [--all] [--json]
 ata show ID [--json]
