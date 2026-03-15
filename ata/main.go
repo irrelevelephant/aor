@@ -42,6 +42,8 @@ func main() {
 		cmdErr = cmd.List(d, args)
 	case "show":
 		cmdErr = cmd.Show(d, args)
+	case "edit":
+		cmdErr = cmd.Edit(d, args)
 	case "close":
 		cmdErr = cmd.Close(d, args)
 	case "ready":
@@ -101,6 +103,7 @@ Commands:
   create    Create a new task
   list      List tasks
   show      Show task details
+  edit      Edit task title, body, or spec
   close     Close a task
   ready     List queue tasks (ready to work)
   claim     Claim a task (set in_progress)

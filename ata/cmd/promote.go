@@ -3,7 +3,6 @@ package cmd
 import (
 	"flag"
 	"fmt"
-	"os"
 
 	"aor/ata/db"
 )
@@ -29,11 +28,11 @@ func Promote(d *db.DB, args []string) error {
 
 	spec := ""
 	if *specFile != "" {
-		data, err := os.ReadFile(*specFile)
+		var err error
+		spec, err = readFileString(*specFile)
 		if err != nil {
 			return fmt.Errorf("read spec file: %w", err)
 		}
-		spec = string(data)
 	}
 
 	task, err := d.PromoteToEpic(id, spec)

@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -80,6 +81,26 @@ func rawWorkingDir() string {
 	}
 	cwd, _ := os.Getwd()
 	return cwd
+}
+
+// flagWasSet returns true if a flag was explicitly provided on the command line.
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
+// readFileString reads a file and returns its contents as a string.
+func readFileString(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func exitUsage(msg string) error {

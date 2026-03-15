@@ -3,7 +3,6 @@ package cmd
 import (
 	"flag"
 	"fmt"
-	"os"
 
 	"aor/ata/db"
 )
@@ -28,11 +27,11 @@ func Spec(d *db.DB, args []string) error {
 	id := positional[0]
 
 	if *setFile != "" {
-		data, err := os.ReadFile(*setFile)
+		s, err := readFileString(*setFile)
 		if err != nil {
 			return fmt.Errorf("read spec file: %w", err)
 		}
-		task, err := d.UpdateSpec(id, string(data))
+		task, err := d.UpdateTask(id, nil, nil, &s)
 		if err != nil {
 			return err
 		}

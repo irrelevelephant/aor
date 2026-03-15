@@ -262,6 +262,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	mux.HandleFunc("POST /task/{id}/demote", srv.handleDemoteEpic)
 	mux.HandleFunc("POST /task/{id}/comments", srv.handleAddComment)
 	mux.HandleFunc("POST /epic/{id}/spec", srv.handleUpdateSpec)
+	mux.HandleFunc("POST /task/{id}/spec", srv.handleUpdateSpec)
 	mux.HandleFunc("POST /task/{id}/deps", srv.handleAddDep)
 	mux.HandleFunc("POST /task/{id}/deps/remove", srv.handleRemoveDep)
 	mux.HandleFunc("POST /task/{id}/tags", srv.handleAddTag)
@@ -693,27 +694,30 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
 
-	task, err := s.db.GetTask(id)
+	// Build update params from form.
+	var pTitle, pBody *string
+	if title := r.FormValue("title"); title != "" {
+		pTitle = &title
+	}
+	if r.Form.Has("body") {
+		body := r.FormValue("body")
+		pBody = &body
+	}
+
+	if pTitle == nil && pBody == nil {
+		http.Error(w, "no fields to update", 400)
+		return
+	}
+
+	task, err := s.db.UpdateTask(id, pTitle, pBody, nil)
 	if err != nil {
 		http.Error(w, "not found", 404)
 		return
 	}
 
-	// Update fields that are present.
-	if title := r.FormValue("title"); title != "" {
-		s.db.Exec(`UPDATE tasks SET title = ? WHERE id = ?`, title, id)
-	}
-	if body := r.FormValue("body"); r.Form.Has("body") {
-		s.db.Exec(`UPDATE tasks SET body = ? WHERE id = ?`, body, id)
-	}
-
 	s.hub.Broadcast("task_updated", task.Workspace, id)
 
 	if r.Header.Get("HX-Request") == "true" {
-		task, err = s.db.GetTask(id)
-		if err != nil {
-			log.Printf("GetTask %s: %v", id, err)
-		}
 		s.partials.ExecuteTemplate(w, "task_row.html", task)
 		return
 	}
@@ -812,13 +816,17 @@ func (s *Server) handleUpdateSpec(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	spec := r.FormValue("spec")
 
-	_, err := s.db.UpdateSpec(id, spec)
+	task, err := s.db.UpdateTask(id, nil, nil, &spec)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
-	s.hxRedirect(w, r, "/epic/"+id, http.StatusSeeOther)
+	dest := "/task/" + id
+	if task.IsEpic {
+		dest = "/epic/" + id
+	}
+	s.hxRedirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {

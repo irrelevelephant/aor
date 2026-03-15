@@ -400,11 +400,34 @@ func (d *DB) DemoteToTask(id string) (*model.Task, error) {
 	return d.GetTask(id)
 }
 
-// UpdateSpec updates the spec for a task or epic.
-func (d *DB) UpdateSpec(id, spec string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET spec = ? WHERE id = ?`, spec, id)
+// UpdateTask updates task fields dynamically. nil pointer = no change, non-nil = set value.
+func (d *DB) UpdateTask(id string, title, body, spec *string) (*model.Task, error) {
+	var setClauses []string
+	var args []any
+
+	if title != nil {
+		setClauses = append(setClauses, "title = ?")
+		args = append(args, *title)
+	}
+	if body != nil {
+		setClauses = append(setClauses, "body = ?")
+		args = append(args, *body)
+	}
+	if spec != nil {
+		setClauses = append(setClauses, "spec = ?")
+		args = append(args, *spec)
+	}
+
+	if len(setClauses) == 0 {
+		return nil, fmt.Errorf("no fields to update")
+	}
+
+	query := "UPDATE tasks SET " + strings.Join(setClauses, ", ") + " WHERE id = ?"
+	args = append(args, id)
+
+	res, err := d.Exec(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("update spec: %w", err)
+		return nil, fmt.Errorf("update task: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

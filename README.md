@@ -259,6 +259,7 @@ ata clean [--workspace NAME|PATH] [--force]                Delete all workspace 
 ata create TITLE [--body TEXT] [--status backlog|queue] [--epic ID] [--tag a,b] [--workspace PATH] [--json]
 ata list [--workspace PATH] [--status STATUS] [--epic ID] [--tag TAG] [--all] [--json]
 ata show ID [--json]
+ata edit ID [--title TITLE] [--body BODY] [--body-file PATH] [--spec SPEC] [--spec-file PATH] [--json]
 ata close ID [REASON] [--json]
 ata ready [--workspace PATH] [--epic ID] [--tag TAG] [--limit N] [--json]
 ata claim ID [--json]
@@ -339,8 +340,8 @@ This is the middle step of the standard `pull → rev → merge` workflow.
 
 - **Dashboard** — lists all registered workspaces with active task counts; auto-redirects when only one workspace exists
 - **Workspace view** — two-column layout (queue + backlog) with drag-to-reorder and cross-list drag; in-progress section below; tag filter bar for quick filtering by tag
-- **Task detail** — inline-editable title/body, markdown rendering, tag editor with autocomplete, comment thread, dependency editor (add/remove blockers, view blocking relationships)
-- **Epic view** — rendered spec, child task list with progress bar and tag badges, back-link to workspace
+- **Task detail** — inline-editable title/body, markdown spec with edit toggle, tag editor with autocomplete, comment thread, dependency editor (add/remove blockers, view blocking relationships)
+- **Epic view** — rendered spec with edit toggle, child task list with progress bar and tag badges, back-link to workspace
 - **Named URLs** — workspaces with short names use `/w/name` instead of `/w?path=...`
 - **Live updates** — SSE pushes changes from CLI/agent activity in real time
 

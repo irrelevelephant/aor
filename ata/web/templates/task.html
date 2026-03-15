@@ -134,6 +134,24 @@
         </form>
     </div>
 
+    <div class="spec-section">
+        <h2>Spec</h2>
+        {{if .Spec}}
+        <div class="markdown-body spec-body">{{renderMarkdown .Spec}}</div>
+        {{else}}
+        <p class="empty">No spec defined.</p>
+        {{end}}
+        {{if ne .Status "closed"}}
+        <details>
+            <summary>Edit spec</summary>
+            <form action="/task/{{.ID}}/spec" method="POST">
+                <textarea name="spec" rows="12" class="spec-editor">{{.Spec}}</textarea>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+        </details>
+        {{end}}
+    </div>
+
     <div class="comments-section">
         <h2>Comments</h2>
         <div class="comments-list" id="comments">
