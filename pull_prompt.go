@@ -143,7 +143,7 @@ Implement the plan:
 
 	b.WriteString("## Phase 3b: Decompose into Subtasks\n\n")
 	b.WriteString("Break the work into subtasks:\n")
-	b.WriteString(fmt.Sprintf("- Create each subtask: %s%s%s\n", bt, buildAtaCreateCmd("subtask title", ataCreateOpts{EpicID: task.ID, Body: "description"}), bt))
+	b.WriteString(fmt.Sprintf("- Create each subtask: %s%s%s\n", bt, buildAtaCreateCmd("subtask title", ataCreateOpts{EpicID: task.ID, Body: "description", Workspace: task.Workspace}), bt))
 	b.WriteString(fmt.Sprintf("- Add dependencies between subtasks where needed: %sata dep add TASK DEPENDS_ON%s\n", bt, bt))
 	b.WriteString(fmt.Sprintf("- Order them by priority: %sata reorder ID --position N%s\n", bt, bt))
 	b.WriteString("- Show the user the final breakdown\n")

@@ -7,11 +7,12 @@ import (
 
 func TestBuildPullPrompt(t *testing.T) {
 	task := &AtaTask{
-		ID:     "abc",
-		Title:  "Implement feature X",
-		Body:   "Details about feature X",
-		EpicID: "ep1",
-		Spec:   "## Locked Decisions\nUse REST not gRPC",
+		ID:        "abc",
+		Title:     "Implement feature X",
+		Body:      "Details about feature X",
+		EpicID:    "ep1",
+		Spec:      "## Locked Decisions\nUse REST not gRPC",
+		Workspace: "/test/workspace",
 	}
 
 	prompt := buildPullPrompt(task, "/tmp/worktree", "Epic spec content", depthFull)
@@ -29,6 +30,7 @@ func TestBuildPullPrompt(t *testing.T) {
 		"Phase 3a: Execute Directly",
 		"Phase 3b: Decompose into Subtasks",
 		"Locked Decisions",
+		`--workspace "/test/workspace"`,
 	}
 	for _, check := range checks {
 		if !strings.Contains(prompt, check) {
