@@ -599,6 +599,22 @@ button.tag-badge { cursor: pointer; }
     margin-top: 0.5rem;
 }
 .attachment-upload input[type="file"] {
+    display: none;
+}
+.file-label {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.file-label:hover {
+    border-color: var(--text-dim);
+}
+.file-name {
     font-size: 0.85rem;
     color: var(--text-dim);
 }

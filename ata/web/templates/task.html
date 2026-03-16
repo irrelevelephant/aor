@@ -174,7 +174,9 @@
         {{end}}
         {{if ne .Status "closed"}}
         <form class="attachment-upload" action="/task/{{.ID}}/attachments" method="POST" enctype="multipart/form-data">
-            <input type="file" name="file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp,application/pdf,text/plain,text/markdown,.md">
+            <input type="file" name="file" id="task-file-input" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp,application/pdf,text/plain,text/markdown,.md" onchange="document.getElementById('task-file-name').textContent=this.files[0]?.name||''">
+            <label for="task-file-input" class="file-label">Choose File</label>
+            <span class="file-name" id="task-file-name"></span>
             <button type="submit" class="btn btn-sm">Upload</button>
         </form>
         {{end}}
