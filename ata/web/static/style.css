@@ -257,6 +257,12 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     transition: background 0.1s;
     min-width: 0;
 }
+@media (max-width: 600px) {
+    main { padding: 0.75rem; }
+    .column { padding: 0.35rem 0.1rem; }
+    .column h2 { padding: 0 0.4rem; }
+    .task-row { padding: 0.35rem 0.1rem; }
+}
 .task-row:hover { background: rgba(255,255,255,0.04); }
 .task-link { flex: 1; min-width: 0; word-break: break-word; }
 
@@ -275,7 +281,7 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 }
 .drag-handle:active { cursor: grabbing; }
 @media (pointer: coarse) {
-    .drag-handle { min-width: 44px; min-height: 44px; }
+    .drag-handle { min-width: 36px; min-height: 44px; padding: 0.1rem; }
 }
 .sortable-ghost { opacity: 0.4; }
 .sortable-chosen { background: rgba(88,166,255,0.1); }
