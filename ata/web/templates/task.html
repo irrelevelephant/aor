@@ -135,7 +135,7 @@
         </div>
         <form class="body-edit" id="body-edit" style="display:none"
               hx-post="/task/{{.ID}}" hx-swap="none">
-            <textarea name="body" rows="8" class="body-editor">{{.Body}}</textarea>
+            <textarea name="body" class="body-editor">{{.Body}}</textarea>
             <div class="body-edit-actions">
                 <button type="submit" class="btn btn-primary btn-sm">Save</button>
                 <button type="button" class="btn btn-sm" onclick="cancelEdit('body')">Cancel</button>

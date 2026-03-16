@@ -90,7 +90,7 @@
         </div>
         <form class="body-edit" id="spec-edit" style="display:none"
               hx-post="/epic/{{.ID}}/spec" hx-swap="none">
-            <textarea name="spec" rows="12" class="spec-editor">{{.Spec}}</textarea>
+            <textarea name="spec" class="spec-editor">{{.Spec}}</textarea>
             <div class="body-edit-actions">
                 <button type="submit" class="btn btn-primary btn-sm">Save</button>
                 <button type="button" class="btn btn-sm" onclick="cancelEdit('spec')">Cancel</button>

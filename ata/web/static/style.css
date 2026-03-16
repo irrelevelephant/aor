@@ -312,6 +312,8 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     font-size: 0.9rem;
     line-height: 1.5;
     resize: vertical;
+    field-sizing: content;
+    min-height: 8lh;
 }
 .body-edit-actions {
     display: flex;
@@ -371,6 +373,8 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     font-size: 0.9rem;
     resize: vertical;
     margin-top: 0.5rem;
+    field-sizing: content;
+    min-height: 12lh;
 }
 
 /* Dependencies */
