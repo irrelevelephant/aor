@@ -72,8 +72,14 @@ func Show(d *db.DB, args []string) error {
 		fmt.Println()
 	}
 
-	if t.Body != "" {
-		fmt.Printf("\n%s\n", t.Body)
+	if t.IsEpic {
+		if t.Spec != "" {
+			fmt.Printf("\nSpec:\n%s\n", t.Spec)
+		}
+	} else {
+		if t.Body != "" {
+			fmt.Printf("\nDescription:\n%s\n", t.Body)
+		}
 	}
 	if t.CloseReason != "" {
 		fmt.Printf("\nClose reason: %s\n", t.CloseReason)

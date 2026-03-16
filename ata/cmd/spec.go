@@ -26,6 +26,15 @@ func Spec(d *db.DB, args []string) error {
 
 	id := positional[0]
 
+	// Validate that the task is an epic.
+	task, err := d.GetTask(id)
+	if err != nil {
+		return err
+	}
+	if !task.IsEpic {
+		return fmt.Errorf("spec is only for epics; use 'ata edit %s --description' for tasks", id)
+	}
+
 	if *setFile != "" {
 		s, err := readFileString(*setFile)
 		if err != nil {
@@ -42,18 +51,12 @@ func Spec(d *db.DB, args []string) error {
 		return nil
 	}
 
-	// Show spec.
-	task, err := d.GetTask(id)
-	if err != nil {
-		return err
-	}
-
 	if *jsonOut {
 		return outputJSON(map[string]string{"id": task.ID, "spec": task.Spec})
 	}
 
 	if task.Spec == "" {
-		fmt.Printf("task %s has no spec\n", id)
+		fmt.Printf("epic %s has no spec\n", id)
 	} else {
 		fmt.Println(task.Spec)
 	}

@@ -28,11 +28,11 @@ backlog → queue → in_progress → closed
 
 ### Creating tasks
 ```bash
-ata create "TITLE"                          # defaults to backlog
-ata create "TITLE" --body "details here"    # with body text
-ata create "TITLE" --status queue           # directly to queue
-ata create "TITLE" --epic EPIC_ID           # under an epic
-ata create "TITLE" --tag backend,urgent     # with tags
+ata create "TITLE"                              # defaults to backlog
+ata create "TITLE" --description "details here" # with description (--desc alias)
+ata create "TITLE" --status queue               # directly to queue
+ata create "TITLE" --epic EPIC_ID               # under an epic
+ata create "TITLE" --tag backend,urgent         # with tags
 ```
 
 ### Listing and viewing
@@ -50,10 +50,10 @@ ata ready --limit 5             # limit results
 ### Editing tasks
 ```bash
 ata edit ID --title "New title"
-ata edit ID --body "Updated body"
-ata edit ID --body-file path/to/file.md
-ata edit ID --spec "Epic spec content"      # for epics
-ata edit ID --spec-file path/to/spec.md     # for epics
+ata edit ID --description "Updated desc"        # tasks only (--desc alias)
+ata edit ID --desc-file path/to/file.md         # tasks only
+ata edit ID --spec "Epic spec content"          # epics only
+ata edit ID --spec-file path/to/spec.md         # epics only
 ```
 
 ### Closing tasks
@@ -73,13 +73,13 @@ ata recover                     # recover tasks with dead PIDs
 
 ## Epics and specs
 
-Epics are tasks with `is_epic=true` and an optional markdown spec.
+Epics are tasks with `is_epic=true`. Epics have **specs** (structured requirements); regular tasks have **descriptions** (lightweight context). The `ata spec` command is epic-only.
 
 ```bash
 ata promote ID                          # promote task to epic
 ata promote ID --spec-file arch.md      # promote with spec
-ata spec ID                             # view epic spec
-ata spec ID --set-file spec.md          # set epic spec
+ata spec ID                             # view epic spec (epic-only)
+ata spec ID --set-file spec.md          # set epic spec (epic-only)
 ata epic-close-eligible                 # auto-close epics with all children closed
 ```
 

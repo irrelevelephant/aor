@@ -79,24 +79,6 @@
     </div>
     {{end}}
 
-    <div class="task-body" id="task-body">
-        <div class="body-display" id="body-display">
-            {{if .Body}}
-            <div class="markdown-body">{{renderMarkdown .Body}}</div>
-            {{else}}
-            <p class="empty body-placeholder">Click to add a description...</p>
-            {{end}}
-        </div>
-        <form class="body-edit" id="body-edit" style="display:none"
-              hx-post="/task/{{.ID}}" hx-swap="none">
-            <textarea name="body" rows="8" class="body-editor">{{.Body}}</textarea>
-            <div class="body-edit-actions">
-                <button type="submit" class="btn btn-primary btn-sm">Save</button>
-                <button type="button" class="btn btn-sm" onclick="cancelBodyEdit()">Cancel</button>
-            </div>
-        </form>
-    </div>
-
     <div class="spec-section">
         <h2>Spec</h2>
         {{if .Spec}}

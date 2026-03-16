@@ -272,7 +272,6 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	mux.HandleFunc("POST /task/{id}/demote", srv.handleDemoteEpic)
 	mux.HandleFunc("POST /task/{id}/comments", srv.handleAddComment)
 	mux.HandleFunc("POST /epic/{id}/spec", srv.handleUpdateSpec)
-	mux.HandleFunc("POST /task/{id}/spec", srv.handleUpdateSpec)
 	mux.HandleFunc("POST /task/{id}/deps", srv.handleAddDep)
 	mux.HandleFunc("POST /task/{id}/deps/remove", srv.handleRemoveDep)
 	mux.HandleFunc("POST /task/{id}/tags", srv.handleAddTag)
@@ -733,6 +732,19 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject body/description updates for epics — use spec instead.
+	if pBody != nil {
+		existing, err := s.db.GetTask(id)
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		if existing.IsEpic {
+			http.Error(w, "use spec for epics, not description", 400)
+			return
+		}
+	}
+
 	task, err := s.db.UpdateTask(id, pTitle, pBody, nil)
 	if err != nil {
 		http.Error(w, "not found", 404)
@@ -765,7 +777,11 @@ func (s *Server) handleCloseTask(w http.ResponseWriter, r *http.Request) {
 
 	s.hub.Broadcast("task_closed", task.Workspace, id)
 
-	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
+	dest := "/task/" + id
+	if task.IsEpic {
+		dest = "/epic/" + id
+	}
+	s.hxRedirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
@@ -778,7 +794,11 @@ func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
 
 	s.hub.Broadcast("task_updated", task.Workspace, id)
 
-	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
+	dest := "/task/" + id
+	if task.IsEpic {
+		dest = "/epic/" + id
+	}
+	s.hxRedirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (s *Server) handlePromoteTask(w http.ResponseWriter, r *http.Request) {
@@ -840,17 +860,23 @@ func (s *Server) handleUpdateSpec(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	spec := r.FormValue("spec")
 
-	task, err := s.db.UpdateTask(id, nil, nil, &spec)
+	// Validate task is an epic.
+	existing, err := s.db.GetTask(id)
 	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	if !existing.IsEpic {
+		http.Error(w, "spec is only for epics", 400)
+		return
+	}
+
+	if _, err := s.db.UpdateTask(id, nil, nil, &spec); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
-	dest := "/task/" + id
-	if task.IsEpic {
-		dest = "/epic/" + id
-	}
-	s.hxRedirect(w, r, dest, http.StatusSeeOther)
+	s.hxRedirect(w, r, "/epic/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
