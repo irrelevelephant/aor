@@ -136,16 +136,9 @@ func runRev(args []string) error {
 		return fmt.Errorf("git not found in PATH")
 	}
 
-	base, err := resolveBase(cfg.Base)
-	if err != nil {
-		return fmt.Errorf("resolve base ref: %w", err)
-	}
-
 	if cfg.LogDir == "" {
 		cfg.LogDir = resolveLogDir()
 	}
-
-	workDir := detectWorkDir()
 	if cfg.Workspace == "" {
 		cfg.Workspace = detectWorkspaceFromGit()
 	}
@@ -157,6 +150,23 @@ func runRev(args []string) error {
 	defer log.Close()
 
 	stdinCh := startStdinReader()
+
+	return runRevDirect(cfg, log, stdinCh)
+}
+
+// runRevDirect runs the review logic with an already-initialized logger and stdin channel.
+// It is called by runRev (subcommand entry point) and by runMultiEpic (inline review).
+func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
+	base, err := resolveBase(cfg.Base)
+	if err != nil {
+		return fmt.Errorf("resolve base ref: %w", err)
+	}
+
+	workDir := detectWorkDir()
+	if cfg.Workspace == "" {
+		cfg.Workspace = detectWorkspaceFromGit()
+	}
+
 	stats := &ReviewStats{StartedAt: time.Now()}
 
 	// Generate rev tag from worktree/directory basename.

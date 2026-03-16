@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 )
 
 // ANSI escape codes for terminal output.
@@ -39,6 +41,7 @@ type Config struct {
 	// Shared resources — set when run() is called as a sub-process (e.g. sweep mode).
 	StdinCh         <-chan string // shared stdin reader (nil = create own)
 	Log             *Logger      // shared logger (nil = create own)
+	Stats           *RunStats    // shared stats (nil = create own)
 	SuppressSummary bool         // skip printSummary
 	SkipRecovery    bool         // skip recoverStuckTasks (caller already ran it)
 }
@@ -83,6 +86,7 @@ func main() {
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
 	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to queue and exit")
+	rev := flag.Bool("rev", false, "Run code review after each epic completes")
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
 
 	flag.StringVar(&cfg.LogDir, "log-dir", "", "Log directory (default: ~/.ata/runner-logs)")
@@ -95,11 +99,13 @@ Each task runs in a fresh Claude Code context window. Output streams in real tim
 Tasks are managed by ata (SQLite-backed, workspace-scoped).
 
 Usage:
-  aor [flags]                    Run task orchestration loop
+  aor [flags] [EPIC_ID...]       Run task orchestration loop
   aor pull [flags] [TASK_ID]     Interactive task planning and execution
   aor merge [flags] [NAME|BRANCH] Merge worktrees back into main branch
   aor rev [flags] [<ref>]        Iterative code review (see: aor rev --help)
   aor spec [flags] <file.md>...  Spec-driven task planning and execution
+
+Positional EPIC_IDs are processed serially. Use --rev to review after each epic.
 
 Controls while running:
   Ctrl+C       Stop agent and exit runner
@@ -134,10 +140,116 @@ Flags:
 		return
 	}
 
-	if err := run(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
-		os.Exit(1)
+	epics := collectEpics(cfg.EpicFilter, flag.Args())
+	if len(epics) > 1 || *rev {
+		if err := runMultiEpic(cfg, epics, *rev); err != nil {
+			fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
+			os.Exit(1)
+		}
+	} else {
+		if len(epics) == 1 && epics[0] != "" {
+			cfg.EpicFilter = epics[0]
+		}
+		if err := run(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
+			os.Exit(1)
+		}
 	}
+}
+
+// collectEpics merges positional args and the -epic flag into a list of epic IDs.
+// Positional args take priority. Returns [""] if no epics specified (no filter).
+func collectEpics(epicFlag string, positionalArgs []string) []string {
+	if len(positionalArgs) > 0 {
+		return positionalArgs
+	}
+	if epicFlag != "" {
+		parts := strings.Split(epicFlag, ",")
+		var epics []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				epics = append(epics, p)
+			}
+		}
+		if len(epics) > 0 {
+			return epics
+		}
+	}
+	return []string{""}
+}
+
+// runMultiEpic processes multiple epics serially, optionally running code review
+// after each epic's work completes.
+func runMultiEpic(cfg *Config, epics []string, rev bool) error {
+	log, err := NewLogger(cfg.LogDir)
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+
+	stdinCh := startStdinReader()
+	stats := &RunStats{StartedAt: time.Now()}
+
+	cfg.Log = log
+	cfg.StdinCh = stdinCh
+	cfg.Stats = stats
+	cfg.SuppressSummary = true
+
+	epicLabels := make([]string, len(epics))
+	for i, e := range epics {
+		if e == "" {
+			epicLabels[i] = "(all)"
+		} else {
+			epicLabels[i] = e
+		}
+	}
+	log.Log("Multi-epic run: %s (rev=%v)", strings.Join(epicLabels, ", "), rev)
+	fmt.Println()
+
+	for i, epic := range epics {
+		label := epicLabels[i]
+
+		if len(epics) > 1 {
+			fmt.Printf("\n%s═══ Epic %s (%d/%d) ═══════════════════════════════════════%s\n\n",
+				cCyan, label, i+1, len(epics), cReset)
+		}
+
+		preSHA, _ := headSHA()
+
+		// Shallow-copy cfg so the loop doesn't mutate the caller's original.
+		iterCfg := *cfg
+		iterCfg.EpicFilter = epic
+		if i > 0 {
+			iterCfg.SkipRecovery = true
+		}
+
+		if err := run(&iterCfg); err != nil {
+			log.Log("%sEpic %s failed: %v%s", cRed, label, err, cReset)
+		}
+
+		if rev {
+			postSHA, _ := headSHA()
+			if postSHA != preSHA {
+				log.Log("Running code review for epic %s (base: %s)", label, preSHA)
+				revCfg := &ReviewConfig{
+					Base:      preSHA,
+					MaxRounds: 3,
+					Yolo:      cfg.Yolo,
+					LogDir:    cfg.LogDir,
+					Workspace: cfg.Workspace,
+				}
+				if err := runRevDirect(revCfg, log, stdinCh); err != nil {
+					log.Log("%sReview for epic %s failed: %v (continuing)%s", cYellow, label, err, cReset)
+				}
+			} else {
+				log.Log("No new commits for epic %s — skipping review", label)
+			}
+		}
+	}
+
+	printSummary(log, stats)
+	return nil
 }
 
 // detectWorkspaceFromGit auto-detects the workspace path from git toplevel,

@@ -290,19 +290,22 @@ All mutation commands support `--json` for structured output, making ata scripta
 ## aor CLI Reference
 
 ```
-aor [flags]                    Run the task orchestration loop
+aor [flags] [EPIC_ID...]       Run the task orchestration loop
 aor pull [flags] [TASK_ID]     Interactive task planning and execution
 aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
 aor rev [flags] [<ref>]        Iterative code review with sweep mode
 aor spec [flags] <file.md…>   Spec-driven task planning and execution
 ```
 
+Positional `EPIC_ID` arguments are processed serially — all tasks for the first epic, then the second, etc. Use `--rev` to automatically run code review after each epic completes.
+
 ### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--epic ID` | | Only work on tasks under this epic |
+| `--epic ID` | | Only work on tasks under this epic (comma-separated for multiple) |
 | `--tag TAG` | | Only work on tasks with this tag |
+| `--rev` | false | Run code review after each epic completes |
 | `--max-tasks N` | 0 (unlimited) | Stop after N tasks |
 | `--batch-size N` | 1 | Tasks per Claude session before fresh context |
 | `--dry-run` | false | Show what would happen without running |
@@ -311,6 +314,15 @@ aor spec [flags] <file.md…>   Spec-driven task planning and execution
 | `--no-yolo` | false | Require permission prompts (default: skip) |
 | `--workspace PATH` | auto-detect | Workspace path |
 | `--log-dir PATH` | `~/.ata/runner-logs` | Session log directory |
+
+**Multi-epic examples:**
+
+```sh
+aor abc def ghi          # process epics abc, def, ghi serially
+aor --rev abc def        # process each epic, review commits after each
+aor -epic abc,def --rev  # comma-separated via flag (same result)
+aor --rev                # process all tasks, review all commits at end
+```
 
 ### `aor rev` — Iterative Code Review with Sweep Mode
 

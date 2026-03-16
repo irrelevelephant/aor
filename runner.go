@@ -220,7 +220,10 @@ func run(cfg *Config) error {
 	if stdinCh == nil {
 		stdinCh = startStdinReader()
 	}
-	stats := &RunStats{StartedAt: time.Now()}
+	stats := cfg.Stats
+	if stats == nil {
+		stats = &RunStats{StartedAt: time.Now()}
+	}
 	type taskHistory struct {
 		NoProgressCount int
 	}
