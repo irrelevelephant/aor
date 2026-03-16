@@ -10,8 +10,8 @@ import (
 	"aor/ata/db"
 )
 
-func Remove(d *db.DB, args []string) error {
-	fs := flag.NewFlagSet("remove", flag.ContinueOnError)
+func Uninit(d *db.DB, args []string) error {
+	fs := flag.NewFlagSet("uninit", flag.ContinueOnError)
 	force := fs.Bool("force", false, "Skip confirmation prompts")
 	clean := fs.Bool("clean", false, "Also delete all tasks")
 
