@@ -83,26 +83,21 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	}
 
 	// Build discovered task instruction.
-	createCmd := `ata create "<issue>" --status queue`
-	if cfg.Workspace != "" {
-		createCmd += fmt.Sprintf(` --workspace "%s"`, cfg.Workspace)
-	}
-	if claimedTask.EpicID != "" {
-		createCmd += fmt.Sprintf(` --epic "%s"`, claimedTask.EpicID)
-	}
-	if cfg.TagFilter != "" {
-		createCmd += fmt.Sprintf(` --tag "%s"`, cfg.TagFilter)
-	}
+	createCmd := buildAtaCreateCmd("<issue>", ataCreateOpts{
+		Workspace: cfg.Workspace,
+		EpicID:    claimedTask.EpicID,
+		Tag:       cfg.TagFilter,
+		JSON:      true,
+	})
 	discoveredInstruction := fmt.Sprintf(`5. File discovered issues for any new problems found outside current scope.
-   Use: %s --json`, createCmd)
+   Use: %s`, createCmd)
 
-	decomposeCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic "%s"`, claimedTask.ID)
-	if cfg.Workspace != "" {
-		decomposeCmd += fmt.Sprintf(` --workspace "%s"`, cfg.Workspace)
-	}
-	if cfg.TagFilter != "" {
-		decomposeCmd += fmt.Sprintf(` --tag "%s"`, cfg.TagFilter)
-	}
+	decomposeCmd := buildAtaCreateCmd("Subtask: ...", ataCreateOpts{
+		Workspace: cfg.Workspace,
+		EpicID:    claimedTask.ID,
+		Tag:       cfg.TagFilter,
+		JSON:      true,
+	})
 
 	return fmt.Sprintf(`You are working through tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
 

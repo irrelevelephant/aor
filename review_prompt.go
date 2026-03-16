@@ -7,20 +7,36 @@ import (
 
 const maxInlineDiffChars = 50000
 
-// ataCreateCmd returns the ata create command template for review.
-func ataCreateCmd(tag, epicID, workspace string) string {
-	cmd := `ata create "<issue title>" --status queue`
-	if workspace != "" {
-		cmd += fmt.Sprintf(` --workspace "%s"`, workspace)
+// ataCreateOpts holds optional flags for building an ata create command string.
+type ataCreateOpts struct {
+	Workspace string
+	EpicID    string
+	Tag       string
+	Body      string
+	JSON      bool
+}
+
+// buildAtaCreateCmd constructs an `ata create` command string with the given
+// title placeholder and optional flags. Used across prompt builders to avoid
+// duplicating the flag-appending logic.
+func buildAtaCreateCmd(title string, opts ataCreateOpts) string {
+	cmd := fmt.Sprintf(`ata create "%s" --status queue`, title)
+	if opts.Workspace != "" {
+		cmd += fmt.Sprintf(` --workspace "%s"`, opts.Workspace)
 	}
-	if epicID != "" {
-		cmd += fmt.Sprintf(` --epic "%s"`, epicID)
+	if opts.EpicID != "" {
+		cmd += fmt.Sprintf(` --epic "%s"`, opts.EpicID)
 	}
-	if tag != "" {
-		cmd += fmt.Sprintf(` --tag "%s"`, tag)
+	if opts.Tag != "" {
+		cmd += fmt.Sprintf(` --tag "%s"`, opts.Tag)
 	}
-	cmd += " --json"
-	return "`" + cmd + "`"
+	if opts.Body != "" {
+		cmd += fmt.Sprintf(` --body "%s"`, opts.Body)
+	}
+	if opts.JSON {
+		cmd += " --json"
+	}
+	return cmd
 }
 
 // buildReviewPrompt constructs the prompt for a code review session.
@@ -73,7 +89,7 @@ For each issue you find:
 2. **Large issues or pre-existing issues** (not introduced in this diff): File a task only. Do NOT attempt to fix these.
 
 Use ` + "`ata`" + ` to file tasks:
-- ` + ataCreateCmd(tag, epicID, workspace) + `
+- ` + "`" + buildAtaCreateCmd("<issue title>", ataCreateOpts{Workspace: workspace, EpicID: epicID, Tag: tag, JSON: true}) + "`" + `
 - After fixing an issue, close the filed task: ` + "`ata close <id> \"<what you did>\" --json`" + `
 
 ## Review focus (in priority order)
