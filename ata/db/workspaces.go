@@ -122,6 +122,18 @@ func (d *DB) WorkspacesWithCounts() ([]model.WorkspaceInfo, error) {
 	return result, rows.Err()
 }
 
+// WorkspaceTaskCounts returns open and closed task counts for a workspace.
+func (d *DB) WorkspaceTaskCounts(path string) (open int, closed int, err error) {
+	err = d.QueryRow(
+		`SELECT COALESCE(SUM(CASE WHEN status != 'closed' THEN 1 ELSE 0 END), 0),
+		        COALESCE(SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END), 0)
+		 FROM tasks WHERE workspace = ?`, path).Scan(&open, &closed)
+	if err != nil {
+		return 0, 0, fmt.Errorf("count workspace tasks: %w", err)
+	}
+	return open, closed, nil
+}
+
 // CleanWorkspace deletes all tasks (comments cascade via FK) and the workspace registration.
 func (d *DB) CleanWorkspace(path string) (int64, error) {
 	tx, err := d.Begin()

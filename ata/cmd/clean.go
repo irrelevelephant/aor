@@ -168,18 +168,11 @@ func cleanClosed(d *db.DB, ws, olderThan string, force, jsonOut bool) error {
 
 // cleanAll is the nuclear option: delete ALL tasks and unregister workspace.
 func cleanAll(d *db.DB, ws string, force bool) error {
-	// Get all task IDs before deletion so we can clean up attachment dirs.
-	allTasks, err := d.ListTasks(ws, "", "", "", "")
-	if err != nil {
-		return err
-	}
-	taskIDs := make([]string, len(allTasks))
-	for i, t := range allTasks {
-		taskIDs[i] = t.ID
-	}
-
 	if !force {
-		fmt.Printf("This will permanently delete ALL %d tasks and unregister workspace: %s\n", len(allTasks), ws)
+		// Count tasks for the confirmation message.
+		open, closed, _ := d.WorkspaceTaskCounts(ws)
+		total := open + closed
+		fmt.Printf("This will permanently delete ALL %d tasks and unregister workspace: %s\n", total, ws)
 		fmt.Print("Type the workspace path to confirm: ")
 		reader := bufio.NewReader(os.Stdin)
 		answer, _ := reader.ReadString('\n')
@@ -197,18 +190,37 @@ func cleanAll(d *db.DB, ws string, force bool) error {
 		}
 	}
 
-	deleted, err := d.CleanWorkspace(ws)
+	deleted, removedDirs, err := doCleanWorkspace(d, ws)
 	if err != nil {
 		return err
 	}
-
-	removedDirs := removeAttachmentDirs(taskIDs)
 
 	fmt.Printf("deleted %d tasks, unregistered workspace: %s\n", deleted, ws)
 	if removedDirs > 0 {
 		fmt.Printf("removed %d attachment directories\n", removedDirs)
 	}
 	return nil
+}
+
+// doCleanWorkspace deletes all tasks and unregisters the workspace, including
+// attachment cleanup. Returns the number of deleted tasks and removed attachment dirs.
+func doCleanWorkspace(d *db.DB, ws string) (deleted int64, removedDirs int, err error) {
+	allTasks, err := d.ListTasks(ws, "", "", "", "")
+	if err != nil {
+		return 0, 0, err
+	}
+	taskIDs := make([]string, len(allTasks))
+	for i, t := range allTasks {
+		taskIDs[i] = t.ID
+	}
+
+	deleted, err = d.CleanWorkspace(ws)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	removedDirs = removeAttachmentDirs(taskIDs)
+	return deleted, removedDirs, nil
 }
 
 // removeAttachmentDirs removes attachment directories from disk for the given task IDs.

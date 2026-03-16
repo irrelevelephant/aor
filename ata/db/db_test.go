@@ -527,6 +527,40 @@ func TestWorkspaces(t *testing.T) {
 			t.Error("expected workspace to be unregistered")
 		}
 	})
+
+	t.Run("TaskCounts", func(t *testing.T) {
+		d.RegisterWorkspace("/count/ws", "countws")
+		d.CreateTask("Open1", "", model.StatusQueue, "", "/count/ws", "")
+		d.CreateTask("Open2", "", model.StatusBacklog, "", "/count/ws", "")
+		t3, _ := d.CreateTask("Closed1", "", model.StatusQueue, "", "/count/ws", "")
+		d.CloseTask(t3.ID, "done")
+		t4, _ := d.CreateTask("Closed2", "", model.StatusQueue, "", "/count/ws", "")
+		d.CloseTask(t4.ID, "done")
+		t5, _ := d.CreateTask("Closed3", "", model.StatusQueue, "", "/count/ws", "")
+		d.CloseTask(t5.ID, "done")
+
+		open, closed, err := d.WorkspaceTaskCounts("/count/ws")
+		if err != nil {
+			t.Fatalf("WorkspaceTaskCounts: %v", err)
+		}
+		if open != 2 {
+			t.Errorf("open = %d, want 2", open)
+		}
+		if closed != 3 {
+			t.Errorf("closed = %d, want 3", closed)
+		}
+	})
+
+	t.Run("TaskCountsEmpty", func(t *testing.T) {
+		d.RegisterWorkspace("/empty/ws", "emptyws")
+		open, closed, err := d.WorkspaceTaskCounts("/empty/ws")
+		if err != nil {
+			t.Fatalf("WorkspaceTaskCounts: %v", err)
+		}
+		if open != 0 || closed != 0 {
+			t.Errorf("expected 0/0, got %d/%d", open, closed)
+		}
+	})
 }
 
 func TestCreateTaskSortOrder(t *testing.T) {

@@ -124,6 +124,9 @@ ata move ID1 ID2 --to queue                 # move specific tasks
 ```bash
 ata init                        # register current git root
 ata init --name myproject       # register with a name
+ata remove myproject            # unregister (prompts with task counts)
+ata remove myproject --clean    # unregister and delete all tasks
+ata remove --force --clean      # skip confirmation, auto-detect workspace
 ```
 
 ## Cleanup

@@ -36,6 +36,8 @@ func main() {
 		cmdErr = cmd.Init(d, args)
 	case "clean":
 		cmdErr = cmd.Clean(d, args)
+	case "remove":
+		cmdErr = cmd.Remove(d, args)
 	case "create":
 		cmdErr = cmd.Create(d, args)
 	case "list":
@@ -99,6 +101,7 @@ Usage:
 
 Commands:
   init      Register current directory as a workspace
+  remove    Unregister a workspace
   clean     Delete tasks (all or closed-only)
   create    Create a new task
   list      List tasks

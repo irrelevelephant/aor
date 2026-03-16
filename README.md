@@ -236,8 +236,9 @@ Tasks are scoped to a **workspace** — typically a git repository root, auto-de
 Register a workspace with a short name to get cleaner URLs and easier CLI usage:
 
 ```sh
-ata init --name myproject     # register current repo with a short name
-ata clean --workspace myproject --force  # delete all tasks and unregister
+ata init --name myproject               # register current repo with a short name
+ata remove myproject                    # unregister (prompts to also delete tasks)
+ata remove myproject --clean --force    # unregister and delete all tasks
 ata clean --closed --force              # delete only closed tasks
 ata clean --closed --older-than 30d     # delete closed tasks older than 30 days
 ```
@@ -257,6 +258,7 @@ The archive is a portable `.tar.gz` containing JSONL files — human-inspectable
 
 ```
 ata init [--workspace PATH] [--name NAME]                  Register workspace
+ata remove [WORKSPACE] [--clean] [--force]                 Unregister a workspace
 ata clean [--workspace NAME|PATH] [--closed] [--older-than Nd] [--force] [--json]  Delete tasks (all or closed-only)
 ata create TITLE [--body TEXT] [--status backlog|queue] [--epic ID] [--tag a,b] [--workspace PATH] [--json]
 ata list [--workspace PATH] [--status STATUS] [--epic ID] [--tag TAG] [--all] [--json]
