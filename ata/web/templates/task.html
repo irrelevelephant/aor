@@ -31,6 +31,15 @@
             <button type="submit" class="btn btn-sm" title="Convert this task into an epic that can contain sub-tasks">Promote to Epic</button>
         </form>
         {{end}}
+        {{if eq .Status "queue"}}
+        <form action="/reorder" method="POST" style="display:inline">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <input type="hidden" name="status" value="backlog">
+            <input type="hidden" name="position" value="0">
+            <input type="hidden" name="redirect" value="/task/{{.ID}}">
+            <button type="submit" class="btn btn-sm">Backlog</button>
+        </form>
+        {{end}}
     </div>
     {{else}}
     <div class="task-actions">

@@ -1164,6 +1164,10 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 	if task != nil {
 		s.hub.Broadcast("task_reordered", task.Workspace, id)
 	}
+	if dest := r.FormValue("redirect"); dest != "" {
+		s.hxRedirect(w, r, dest, http.StatusSeeOther)
+		return
+	}
 	w.WriteHeader(200)
 }
 
