@@ -253,6 +253,15 @@ func run(cfg *Config) error {
 		}
 	}
 
+	tryCloseEpics := func() {
+		if closed, err := closeEligibleEpics(cfg.Workspace); err != nil {
+			log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
+		} else if len(closed) > 0 {
+			stats.EpicsClosed += len(closed)
+			log.Log("Auto-closed %d epic(s): %s", len(closed), strings.Join(closed, ", "))
+		}
+	}
+
 	for {
 		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.TagFilter, cfg.Workspace)
 		if err != nil {
@@ -516,12 +525,7 @@ func run(cfg *Config) error {
 
 		// Auto-close any epics whose children are all complete.
 		if iterCompleted {
-			if closed, err := closeEligibleEpics(cfg.Workspace); err != nil {
-				log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
-			} else if len(closed) > 0 {
-				stats.EpicsClosed += len(closed)
-				log.Log("Auto-closed %d epic(s): %s", len(closed), strings.Join(closed, ", "))
-			}
+			tryCloseEpics()
 		}
 
 		if result.UserQuit {
@@ -536,6 +540,10 @@ func run(cfg *Config) error {
 			cGray, cReset)
 		time.Sleep(3 * time.Second)
 	}
+
+	// Final epic auto-close check — the loop may have exited (via break)
+	// before the in-loop auto-close had a chance to run.
+	tryCloseEpics()
 
 	if !cfg.SuppressSummary {
 		printSummary(log, stats)
