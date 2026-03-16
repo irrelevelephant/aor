@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', function() {
         new Sortable(el, {
             group: 'workspace',
             handle: '.drag-handle',
-            draggable: '> .task-row, > .epic-group',
+            draggable: '.task-row, .epic-group',
             animation: 150,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
