@@ -44,7 +44,8 @@ func buildPrompt(cfg *Config, batchSize int, claimedTask *AtaTask) string {
 
 	workspaceInstruction := ""
 	if cfg.Workspace != "" {
-		workspaceInstruction = fmt.Sprintf("Workspace: %s\n- When creating tasks, use: ata create \"title\" --workspace \"%s\" --json\n- When creating tasks under an epic, add: --epic EPIC_ID\n\n", cfg.Workspace, cfg.Workspace)
+		workspaceInstruction = fmt.Sprintf("Workspace: %s\n- When creating tasks, use: %s\n- When creating tasks under an epic, add: --epic EPIC_ID\n\n",
+			cfg.Workspace, buildAtaCreateCmd("title", ataCreateOpts{Workspace: cfg.Workspace, JSON: true}))
 	}
 
 	worktreeInstruction := ""

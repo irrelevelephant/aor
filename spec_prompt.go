@@ -26,7 +26,7 @@ func buildSpecPrompt(specContents []string, workspace string) string {
 	// Workspace context.
 	if workspace != "" {
 		b.WriteString(fmt.Sprintf("Workspace: %s\n", workspace))
-		b.WriteString(fmt.Sprintf("When creating tasks, use: %sata create \"title\" --workspace \"%s\" --json%s\n\n", bt, workspace, bt))
+		b.WriteString(fmt.Sprintf("When creating tasks, use: %s%s%s\n\n", bt, buildAtaCreateCmd("title", ataCreateOpts{Workspace: workspace, JSON: true}), bt))
 	}
 
 	multiSpec := len(specContents) > 1
@@ -126,14 +126,17 @@ Once the plan is approved:
 
 `)
 
+	epicCmd := buildAtaCreateCmd("Epic title", ataCreateOpts{Workspace: workspace, JSON: true})
+	childCmd := buildAtaCreateCmd("Task title", ataCreateOpts{Body: "description", EpicID: "<epic-id>", Workspace: workspace, JSON: true})
+
 	if multiSpec {
-		b.WriteString(fmt.Sprintf(`1. For each spec, create an epic:
-   %sata create "Epic title" --status queue --workspace "%s" --json%s
+		fmt.Fprintf(&b, `1. For each spec, create an epic:
+   %s%s%s
 2. Promote each to an epic with the refined spec as the spec content:
    %sata promote <epic-id> --spec-file /dev/stdin%s (pipe the spec text)
    Note: since you can't pipe, instead use: write the spec to a temp file, then %sata promote <epic-id> --spec-file /tmp/spec-<id>.md%s
 3. Create child tasks under each epic:
-   %sata create "Task title" --body "description" --epic <epic-id> --status queue --workspace "%s" --json%s
+   %s%s%s
 4. Set up dependencies between tasks:
    %sata dep add <task-id> <depends-on-id>%s
 5. Set sort order for execution priority:
@@ -141,20 +144,20 @@ Once the plan is approved:
 6. For cross-epic dependencies:
    %sata dep add <task-in-epic-B> <task-in-epic-A>%s
 
-`, bt, workspace, bt, bt, bt, bt, bt, bt, workspace, bt, bt, bt, bt, bt, bt, bt))
+`, bt, epicCmd, bt, bt, bt, bt, bt, bt, childCmd, bt, bt, bt, bt, bt, bt, bt)
 	} else {
-		b.WriteString(fmt.Sprintf(`1. Create the epic:
-   %sata create "Epic title" --status queue --workspace "%s" --json%s
+		fmt.Fprintf(&b, `1. Create the epic:
+   %s%s%s
 2. Promote it with the refined spec:
    Write the refined spec to a temp file, then run: %sata promote <epic-id> --spec-file /tmp/spec-<id>.md%s
 3. Create child tasks:
-   %sata create "Task title" --body "description" --epic <epic-id> --status queue --workspace "%s" --json%s
+   %s%s%s
 4. Set up dependencies:
    %sata dep add <task-id> <depends-on-id>%s
 5. Set sort order:
    %sata reorder <task-id> --position <N>%s
 
-`, bt, workspace, bt, bt, bt, bt, workspace, bt, bt, bt, bt, bt))
+`, bt, epicCmd, bt, bt, bt, bt, childCmd, bt, bt, bt, bt, bt)
 	}
 
 	b.WriteString(`After creating all epics, tasks, and dependencies, show a final summary:
