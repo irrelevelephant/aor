@@ -229,7 +229,7 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 
 	triagePrompt := buildTriagePrompt(ev)
 	triageCfg := &Config{
-		Yolo:    cfg.Yolo,
+		Yolo:    false, // triage agent should never modify code
 		LogDir:  cfg.LogDir,
 		WorkDir: cfg.WorkDir,
 	}

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -306,7 +307,8 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	// Static files.
 	mux.Handle("GET /static/", http.FileServerFS(content))
 
-	// Wrap with recovery middleware so panics don't kill the server.
+	// Wrap with recovery middleware so panics don't kill the server,
+	// and limit non-multipart POST bodies to 1 MB to prevent abuse.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -314,6 +316,9 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 				http.Error(w, "internal server error", 500)
 			}
 		}()
+		if r.Method == "POST" && !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+			r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		}
 		mux.ServeHTTP(w, r)
 	})
 
@@ -1003,10 +1008,14 @@ var allowedMIME = map[string]bool{
 	"text/markdown":   true,
 }
 
-// sanitizeFilename returns a safe filename, stripping path traversal and null bytes.
+// headerUnsafe strips characters that could break HTTP headers or enable path traversal.
+var headerUnsafe = strings.NewReplacer("\x00", "", "\"", "", "\r", "", "\n", "")
+
+// sanitizeFilename returns a safe filename, stripping path traversal, null bytes,
+// and characters that could break HTTP headers (quotes, CR, LF).
 func sanitizeFilename(name string) string {
 	name = filepath.Base(name)
-	name = strings.ReplaceAll(name, "\x00", "")
+	name = headerUnsafe.Replace(name)
 	if name == "" || name == "." || name == ".." {
 		name = "attachment"
 	}
@@ -1087,7 +1096,9 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 
 	// Update size_bytes with actual bytes written.
 	if written != header.Size {
-		s.db.Exec(`UPDATE attachments SET size_bytes = ? WHERE id = ?`, written, att.ID)
+		if _, err := s.db.Exec(`UPDATE attachments SET size_bytes = ? WHERE id = ?`, written, att.ID); err != nil {
+			log.Printf("update attachment size %s: %v", att.ID, err)
+		}
 	}
 
 	task, _ := s.db.GetTask(id)
@@ -1159,12 +1170,13 @@ func (s *Server) handleServeAttachment(w http.ResponseWriter, r *http.Request) {
 		mimeType = "application/octet-stream"
 	}
 
-	// SVG: force download to prevent script execution.
+	// SVG: force download and sandbox to prevent script execution.
 	if strings.HasSuffix(strings.ToLower(filename), ".svg") {
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+		w.Header().Set("Content-Security-Policy", "sandbox")
 	} else if !strings.HasPrefix(mimeType, "image/") {
 		// Non-images: suggest download.
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	}
 
 	http.ServeFile(w, r, filePath)
@@ -1175,8 +1187,11 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 	id := r.FormValue("id")
 	posStr := r.FormValue("position")
 	newStatus := r.FormValue("status")
-	var pos int
-	fmt.Sscanf(posStr, "%d", &pos)
+	pos, err := strconv.Atoi(posStr)
+	if err != nil {
+		http.Error(w, "invalid position", 400)
+		return
+	}
 
 	if err := s.db.Reorder(id, pos, newStatus); err != nil {
 		http.Error(w, err.Error(), 500)

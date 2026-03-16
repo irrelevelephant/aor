@@ -32,6 +32,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                     body: body
+                }).then(function(resp) {
+                    if (!resp.ok) {
+                        console.error('reorder failed:', resp.status);
+                        window.location.reload();
+                    }
+                }).catch(function(err) {
+                    console.error('reorder error:', err);
+                    window.location.reload();
                 });
                 updateColumnCounts();
             }
