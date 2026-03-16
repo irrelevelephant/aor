@@ -35,7 +35,7 @@ Six prompt builders, each for a different mode:
 
 3. **Worktree merge** (`merge_prompt.go`, `buildMergePrompt`) — Instructs Claude to analyze worktree branches, decide merge order, merge into the main branch, resolve conflicts, and clean up merged worktrees.
 
-4. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Tasks are created with a `--tag` flag so grind mode can scope orchestration to just this session's work. Used by `aor rev`.
+4. **Code review** (`review_prompt.go`, `buildReviewPrompt`) — Inlines a git diff and asks Claude to find/fix issues across 6 priority areas. Tasks are created with a `--tag` flag so sweep mode can scope orchestration to just this session's work. Used by `aor rev`.
 
 5. **Spec planning** (`spec_prompt.go`, `buildSpecPrompt`) — Three-phase interactive workflow for spec-driven planning: research the codebase, refine the spec, then decompose into epics and tasks with dependencies. Supports single or multi-spec sessions (multi-spec adds cross-epic dependency handling). Used by `aor spec`.
 
@@ -132,7 +132,7 @@ If no task ID is given, a bubbletea-based fuzzy selector shows ready tasks.
 
 Supports `--exclude` to skip specific worktrees and positional args to include only specific ones.
 
-## `aor rev` — Iterative Code Review with Grind Mode
+## `aor rev` — Iterative Code Review with Sweep Mode
 
 Two nested loops in `review.go`:
 
@@ -145,7 +145,7 @@ Two nested loops in `review.go`:
 5. Check convergence (no issues, all minor, repeating issues, HEAD cycling)
 6. Repeat up to `--max-rounds` (default 3)
 
-**Outer loop** (grind cycles, in `runRev`):
+**Outer loop** (sweep cycles, in `runRev`):
 
 1. Run inner review loop
 2. Commit sweep — catch uncommitted review fixes
@@ -154,7 +154,7 @@ Two nested loops in `review.go`:
 5. Run orchestration loop (`run()`) filtered to the rev tag — fixes the filed tasks
 6. Loop back for another review pass
 
-The outer loop has no hard cycle cap — convergence checks in the inner loop and the "no open tasks" check provide the safety net. The `revContext` struct holds stable state (config, base ref, tag, logger, stdin channel) shared across grind cycles.
+The outer loop has no hard cycle cap — convergence checks in the inner loop and the "no open tasks" check provide the safety net. The `revContext` struct holds stable state (config, base ref, tag, logger, stdin channel) shared across sweep cycles.
 
 ## ata — Task Management
 

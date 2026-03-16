@@ -293,7 +293,7 @@ All mutation commands support `--json` for structured output, making ata scripta
 aor [flags]                    Run the task orchestration loop
 aor pull [flags] [TASK_ID]     Interactive task planning and execution
 aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
-aor rev [flags] [<ref>]        Iterative code review with grind mode
+aor rev [flags] [<ref>]        Iterative code review with sweep mode
 aor spec [flags] <file.md…>   Spec-driven task planning and execution
 ```
 
@@ -312,7 +312,7 @@ aor spec [flags] <file.md…>   Spec-driven task planning and execution
 | `--workspace PATH` | auto-detect | Workspace path |
 | `--log-dir PATH` | `~/.ata/runner-logs` | Session log directory |
 
-### `aor rev` — Iterative Code Review with Grind Mode
+### `aor rev` — Iterative Code Review with Sweep Mode
 
 Runs Claude Code in an automated review loop against your recent changes. Best used from a worktree after `aor pull` completes, before merging back to main.
 
@@ -325,11 +325,11 @@ aor rev --workspace /path/to/project
 
 Each round, Claude examines the diff, files tasks for issues found, and applies fixes directly — committing as it goes. The inner review loop stops when no issues remain, all issues are minor, the round limit is reached (default: 3 rounds), or issues start repeating.
 
-**Grind mode** (always on): after the review loop converges, if tasks were filed that are too large to fix inline, aor automatically runs the orchestration loop to work through them — then reviews again. This outer loop repeats until a review pass comes back clean. Tasks filed during review are tagged `rev-<worktree-basename>` to scope the orchestration to just this session's work. Convergence checks (no issues, minor severity, repeating issues, HEAD cycling) provide the safety net.
+**Sweep mode** (always on): after the review loop converges, if tasks were filed that are too large to fix inline, aor automatically runs the orchestration loop to work through them — then reviews again. This outer loop repeats until a review pass comes back clean. Tasks filed during review are tagged `rev-<worktree-basename>` to scope the orchestration to just this session's work. Convergence checks (no issues, minor severity, repeating issues, HEAD cycling) provide the safety net.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--max-rounds N` | 3 | Maximum review rounds per grind cycle |
+| `--max-rounds N` | 3 | Maximum review rounds per sweep cycle |
 | `--no-yolo` | false | Require permission prompts |
 | `--workspace PATH` | auto-detect | Workspace path |
 | `--log-dir PATH` | `~/.ata/runner-logs` | Session log directory |
@@ -359,7 +359,7 @@ aor/
   merge.go             Worktree merge orchestration (aor merge)
   merge_prompt.go      Merge session prompt builder
   selector.go          Interactive fuzzy task selector (bubbletea)
-  review.go            Iterative code review with grind mode (aor rev)
+  review.go            Iterative code review with sweep mode (aor rev)
   review_prompt.go     Review session prompt builder
   spec.go              Spec planning orchestration (aor spec)
   spec_prompt.go       Spec session prompt builder

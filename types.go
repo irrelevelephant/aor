@@ -200,7 +200,7 @@ type ReviewStats struct {
 	RoundsRun   int
 	TotalTasks  int
 	TotalFixes  int
-	GrindCycles int
+	SweepCycles int
 	StopReason  string
 	CommitSweep bool
 	StartedAt   time.Time

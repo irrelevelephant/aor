@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// revContext holds the stable context shared across grind cycles.
+// revContext holds the stable context shared across sweep cycles.
 type revContext struct {
 	cfg        *ReviewConfig
 	sessionCfg *Config
@@ -182,14 +182,14 @@ func runRev(args []string) error {
 
 	var allTasksFiled []ReviewTask
 
-	// Outer grind loop: review → fix tasks → review again.
+	// Outer sweep loop: review → fix tasks → review again.
 	// Convergence checks (no issues, minor severity, repeating issues, HEAD
 	// cycling) provide the safety net — no hard cycle cap.
 	for cycle := 1; ; cycle++ {
-		stats.GrindCycles = cycle
+		stats.SweepCycles = cycle
 
 		if cycle > 1 {
-			fmt.Printf("\n%s═══ Grind cycle %d ═══════════════════════════════════════%s\n",
+			fmt.Printf("\n%s═══ Sweep cycle %d ═══════════════════════════════════════%s\n",
 				cCyan, cycle, cReset)
 		}
 
@@ -272,7 +272,7 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	fs.StringVar(&cfg.Workspace, "workspace", "", "Workspace path (default: auto-detect from git)")
 
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `aor rev — Iterative code review with grind mode
+		fmt.Fprintf(fs.Output(), `aor rev — Iterative code review with sweep mode
 
 Reviews the diff from a base ref to HEAD + working tree. Files tasks for issues,
 fixes small/medium problems inline, and iterates until convergence. When tasks
@@ -396,8 +396,8 @@ func printReviewSummary(log *Logger, stats *ReviewStats) {
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 	log.Log("%s  Code Review Summary%s", cBold, cReset)
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
-	if stats.GrindCycles > 1 {
-		log.Log("  Grind cycles:      %d", stats.GrindCycles)
+	if stats.SweepCycles > 1 {
+		log.Log("  Sweep cycles:      %d", stats.SweepCycles)
 	}
 	log.Log("  Rounds run:        %d", stats.RoundsRun)
 	log.Log("  Tasks filed:       %s%d%s", colorForTaskCount(stats.TotalTasks), stats.TotalTasks, cReset)

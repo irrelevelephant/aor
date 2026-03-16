@@ -180,7 +180,7 @@ func run(cfg *Config) error {
 		return err
 	}
 
-	// Use shared logger if provided (grind mode), otherwise create our own.
+	// Use shared logger if provided (sweep mode), otherwise create our own.
 	log := cfg.Log
 	if log == nil {
 		var err error
@@ -215,7 +215,7 @@ func run(cfg *Config) error {
 		close(exitSigCh)
 	}()
 
-	// Use shared stdin reader if provided (grind mode), otherwise create our own.
+	// Use shared stdin reader if provided (sweep mode), otherwise create our own.
 	stdinCh := cfg.StdinCh
 	if stdinCh == nil {
 		stdinCh = startStdinReader()
