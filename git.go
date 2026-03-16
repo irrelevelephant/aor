@@ -257,6 +257,25 @@ func hasUncommittedChangesIn(dir string) bool {
 	return len(strings.TrimSpace(string(out))) > 0
 }
 
+// buildCommitSweepPrompt builds the prompt for a commit sweep session.
+// context describes the source of changes (e.g. "from a code review").
+// msgGuidance describes what the commit message should contain (e.g. "summarizing the review fixes").
+func buildCommitSweepPrompt(context, msgGuidance string) string {
+	opening := "There are uncommitted changes"
+	if context != "" {
+		opening += " " + context
+	}
+	return opening + ". " +
+		"Run `git diff` and `git status` to see what changed. " +
+		"If there are untracked files that should clearly be ignored " +
+		"(e.g. .env files, build artifacts, editor configs, OS files), " +
+		"add them to .gitignore instead of staging them. " +
+		"Then stage and commit the real changes " +
+		"with " + msgGuidance + ". Do not push. " +
+		"If the only changes are files that belong in .gitignore, " +
+		"update .gitignore and commit that instead."
+}
+
 // commitsBetween returns git log --oneline from..to.
 func commitsBetween(from, to string) (string, error) {
 	out, err := exec.Command("git", "log", "--oneline", from+".."+to).Output()

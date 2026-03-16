@@ -164,9 +164,7 @@ Flags:
 
 		if hasUncommittedChangesIn(checkDir) {
 			fmt.Printf("\n%sUncommitted changes detected — running commit sweep...%s\n", cYellow, cReset)
-			commitPrompt := "There are uncommitted changes. " +
-				"Run `git diff` to see what changed, then stage and commit the changes " +
-				"with a clear, descriptive commit message. Do not push."
+			commitPrompt := buildCommitSweepPrompt("", "a clear, descriptive commit message")
 			runInteractiveClaude([]string{commitPrompt}, !*noYolo, checkDir)
 		}
 

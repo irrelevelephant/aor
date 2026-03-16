@@ -215,9 +215,7 @@ func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
 		// 2. Commit sweep.
 		if hasUncommittedChanges() {
 			rc.log.Log("Uncommitted review fixes detected — running commit sweep")
-			commitPrompt := "There are uncommitted changes from a code review. " +
-				"Run `git diff` to see what changed, then stage and commit the changes " +
-				"with a message summarizing the review fixes. Do not push."
+			commitPrompt := buildCommitSweepPrompt("from a code review", "a message summarizing the review fixes")
 			sweepResult := runSession(rc.sessionCfg, rc.log, commitPrompt, rc.stdinCh)
 			if sweepResult.Error != nil {
 				rc.log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
