@@ -344,9 +344,14 @@ func run(cfg *Config) error {
 
 		stats.SessionsRun++
 
-		// Inject previous-attempt context so the next agent knows what happened.
-		if comments, err := getTaskComments(next.ID); err == nil && comments != "" {
-			next.Body += "\n\n## Previous Attempt Notes\n" + comments
+		// Inject comments so the agent has human notes and previous-attempt context.
+		if human, system, err := getTaskComments(next.ID); err == nil {
+			if human != "" {
+				next.Body += "\n\n## Human Comments\n" + human
+			}
+			if system != "" {
+				next.Body += "\n\n## Previous Attempt Notes\n" + system
+			}
 		}
 
 		prompt := buildPrompt(cfg, effectiveBatchSize, next)

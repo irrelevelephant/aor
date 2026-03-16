@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+// Author values for task comments (mirrors ata/model constants).
+const authorHuman = "human"
+
 // findAta verifies that the ata CLI is available in PATH.
 func findAta() error {
 	if _, err := exec.LookPath("ata"); err != nil {
@@ -107,10 +110,11 @@ func addComment(id, body, author string) error {
 }
 
 // getTaskComments retrieves comments for a task via ata show --json.
-func getTaskComments(id string) (string, error) {
+// Returns two strings: human comments and system/agent comments (previous attempt notes).
+func getTaskComments(id string) (human, system string, err error) {
 	out, err := exec.Command("ata", "show", id, "--json").Output()
 	if err != nil {
-		return "", fmt.Errorf("ata show failed: %w", err)
+		return "", "", fmt.Errorf("ata show failed: %w", err)
 	}
 
 	var twc struct {
@@ -121,18 +125,22 @@ func getTaskComments(id string) (string, error) {
 		} `json:"comments"`
 	}
 	if err := json.Unmarshal(out, &twc); err != nil {
-		return "", nil
+		return "", "", nil
 	}
 
 	if len(twc.Comments) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 
-	var b strings.Builder
+	var hb, sb strings.Builder
 	for _, c := range twc.Comments {
-		fmt.Fprintf(&b, "[%s] %s: %s\n", c.CreatedAt, c.Author, c.Body)
+		if c.Author == authorHuman {
+			fmt.Fprintf(&hb, "[%s] %s\n", c.CreatedAt, c.Body)
+		} else {
+			fmt.Fprintf(&sb, "[%s] %s (%s)\n", c.CreatedAt, c.Body, c.Author)
+		}
 	}
-	return b.String(), nil
+	return hb.String(), sb.String(), nil
 }
 
 // getTasksCreatedAfter returns tasks created after the given time for a workspace.
