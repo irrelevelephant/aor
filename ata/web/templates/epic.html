@@ -11,6 +11,7 @@
             hx-swap="none">{{.Title}}</h1>
         <span class="badge epic-badge">epic</span>
         <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
+        {{if $.IsBlocked}}<span class="badge blocked-badge">blocked</span>{{end}}
     </div>
 
     <div class="tags-section">
@@ -135,6 +136,54 @@
         </form>
         {{end}}
     </div>
+
+    <div class="deps-section">
+        <h2>Dependencies</h2>
+        {{if $.Blockers}}
+        <div class="dep-list">
+            <h3>Blocked by</h3>
+            {{range $.Blockers}}
+            <div class="dep-row">
+                <span class="id-badge">{{.ID}}</span>
+                <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="dep-link">{{.Title}}</a>
+                <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
+                {{if ne $.Epic.Status "closed"}}
+                <form action="/task/{{$.Epic.ID}}/deps/remove" method="POST" class="dep-remove-form"
+                      hx-post="/task/{{$.Epic.ID}}/deps/remove" hx-swap="none">
+                    <input type="hidden" name="depends_on" value="{{.ID}}">
+                    <button type="submit" class="btn-icon" title="Remove dependency">&times;</button>
+                </form>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if $.Blocking}}
+        <div class="dep-list">
+            <h3>Blocks</h3>
+            {{range $.Blocking}}
+            <div class="dep-row">
+                <span class="id-badge">{{.ID}}</span>
+                <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="dep-link">{{.Title}}</a>
+                <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if ne $.Epic.Status "closed"}}
+        <form class="dep-add-form" action="/task/{{$.Epic.ID}}/deps" method="POST"
+              hx-post="/task/{{$.Epic.ID}}/deps" hx-swap="none">
+            <input type="text" name="depends_on" placeholder="Task ID..." class="input-sm" required>
+            <button type="submit" class="btn btn-sm">Add dependency</button>
+        </form>
+        {{end}}
+
+        {{if not $.Blockers}}{{if not $.Blocking}}
+        <p class="empty">No dependencies.</p>
+        {{end}}{{end}}
+    </div>
 {{end}}
 
     <div class="children-section">
@@ -155,6 +204,13 @@
         </div>
         {{else}}
         <p class="empty">No sub-tasks{{if $.TagFilter.HasFilters}} matching filter{{end}}.</p>
+        {{end}}
+        {{if ne $.Epic.Status "closed"}}
+        <form class="dep-add-form" action="/epic/{{$.Epic.ID}}/children" method="POST"
+              hx-post="/epic/{{$.Epic.ID}}/children" hx-swap="none">
+            <input type="text" name="child_id" placeholder="Task ID..." class="input-sm" required>
+            <button type="submit" class="btn btn-sm">Add sub-task</button>
+        </form>
         {{end}}
     </div>
 

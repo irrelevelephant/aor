@@ -298,6 +298,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	mux.HandleFunc("POST /task/{id}/tags/remove", srv.handleRemoveTag)
 	mux.HandleFunc("POST /task/{id}/attachments", srv.handleUploadAttachment)
 	mux.HandleFunc("POST /task/{id}/attachments/delete", srv.handleDeleteAttachment)
+	mux.HandleFunc("POST /epic/{id}/children", srv.handleAddChild)
 	mux.HandleFunc("GET /attachments/{taskID}/{filename}", srv.handleServeAttachment)
 	mux.HandleFunc("POST /reorder", srv.handleReorder)
 
@@ -538,6 +539,13 @@ func workspaceURL(path, name string) string {
 	return "/w?path=" + url.QueryEscape(path)
 }
 
+func taskDetailURL(task *model.Task, id string) string {
+	if task != nil && task.IsEpic {
+		return "/epic/" + id
+	}
+	return "/task/" + id
+}
+
 func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	twc, err := s.db.GetTaskWithComments(id)
@@ -669,6 +677,22 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ListAttachments epic %s: %v", id, err)
 	}
 
+	blockers, err := s.db.GetBlockers(id, false)
+	if err != nil {
+		log.Printf("GetBlockers epic %s: %v", id, err)
+	}
+	blocking, err := s.db.GetBlocking(id)
+	if err != nil {
+		log.Printf("GetBlocking epic %s: %v", id, err)
+	}
+	isBlocked := false
+	for _, b := range blockers {
+		if b.Status != model.StatusClosed {
+			isBlocked = true
+			break
+		}
+	}
+
 	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
 		"Epic":          task,
@@ -683,6 +707,9 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		"Tags":          epicTags,
 		"AllTags":       allTags,
 		"Attachments":   attachments,
+		"Blockers":      blockers,
+		"Blocking":      blocking,
+		"IsBlocked":     isBlocked,
 	})
 }
 
@@ -921,7 +948,7 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
 		s.hub.Broadcast("task_updated", task.Workspace, id)
 	}
 
-	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
+	s.hxRedirect(w, r, taskDetailURL(task, id), http.StatusSeeOther)
 }
 
 func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
@@ -946,7 +973,25 @@ func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
 		s.hub.Broadcast("task_updated", task.Workspace, id)
 	}
 
-	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
+	s.hxRedirect(w, r, taskDetailURL(task, id), http.StatusSeeOther)
+}
+
+func (s *Server) handleAddChild(w http.ResponseWriter, r *http.Request) {
+	epicID := r.PathValue("id")
+	r.ParseForm()
+	childID := strings.TrimSpace(r.FormValue("child_id"))
+	if childID == "" {
+		http.Error(w, "child_id required", 400)
+		return
+	}
+	if err := s.db.SetEpicID(childID, epicID); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	if epic, err := s.db.GetTask(epicID); err == nil && epic != nil {
+		s.hub.Broadcast("task_updated", epic.Workspace, epicID)
+	}
+	s.hxRedirect(w, r, "/epic/"+epicID, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
