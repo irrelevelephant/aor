@@ -74,24 +74,9 @@ document.addEventListener('DOMContentLoaded', function() {
     initInlineTagForms();
     initTagFormSSESuppression();
 
-    // Body inline editing on task detail page.
-    var bodyDisplay = document.getElementById('body-display');
-    var bodyEdit = document.getElementById('body-edit');
-    if (bodyDisplay && bodyEdit) {
-        bodyDisplay.addEventListener('click', function() {
-            bodyDisplay.style.display = 'none';
-            bodyEdit.style.display = 'block';
-            var textarea = bodyEdit.querySelector('textarea');
-            textarea.focus();
-            // Move cursor to end.
-            textarea.selectionStart = textarea.value.length;
-        });
-
-        // After saving, reload to show rendered markdown.
-        bodyEdit.addEventListener('htmx:afterRequest', function(e) {
-            if (e.detail.successful) window.location.reload();
-        });
-    }
+    // Inline editing for body (task detail) and spec (epic detail).
+    initClickToEdit('body-display', 'body-edit');
+    initClickToEdit('spec-display', 'spec-edit');
 });
 
 // Deterministic tag hue matching the Go tagHue() implementation.
@@ -225,10 +210,27 @@ function copyMarkdown(text) {
     });
 }
 
-// Called by Cancel button on body edit form.
-function cancelBodyEdit() {
-    document.getElementById('body-display').style.display = '';
-    document.getElementById('body-edit').style.display = 'none';
+// Generic click-to-edit initializer for body and spec sections.
+function initClickToEdit(displayId, editId) {
+    var display = document.getElementById(displayId);
+    var edit = document.getElementById(editId);
+    if (!display || !edit) return;
+    display.addEventListener('click', function() {
+        display.style.display = 'none';
+        edit.style.display = 'block';
+        var textarea = edit.querySelector('textarea');
+        textarea.focus();
+        textarea.selectionStart = textarea.value.length;
+    });
+    edit.addEventListener('htmx:afterRequest', function(e) {
+        if (e.detail.successful) window.location.reload();
+    });
+}
+
+// Called by Cancel buttons on edit forms.
+function cancelEdit(prefix) {
+    document.getElementById(prefix + '-display').style.display = '';
+    document.getElementById(prefix + '-edit').style.display = 'none';
 }
 
 // Tag filter: click pill to toggle include, click "−" to toggle exclude.

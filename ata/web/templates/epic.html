@@ -81,18 +81,21 @@
 
     <div class="spec-section">
         <h2>Spec</h2>
-        {{if .Spec}}
-        <div class="markdown-body spec-body">{{renderMarkdown .Spec}}</div>
-        {{else}}
-        <p class="empty">No spec defined.</p>
-        {{end}}
-        <details>
-            <summary>Edit spec</summary>
-            <form action="/epic/{{.ID}}/spec" method="POST">
-                <textarea name="spec" rows="12" class="spec-editor">{{.Spec}}</textarea>
-                <button type="submit" class="btn btn-primary">Save</button>
-            </form>
-        </details>
+        <div class="body-display" id="spec-display">
+            {{if .Spec}}
+            <div class="markdown-body spec-body">{{renderMarkdown .Spec}}</div>
+            {{else}}
+            <p class="empty body-placeholder">Click to add a spec...</p>
+            {{end}}
+        </div>
+        <form class="body-edit" id="spec-edit" style="display:none"
+              hx-post="/epic/{{.ID}}/spec" hx-swap="none">
+            <textarea name="spec" rows="12" class="spec-editor">{{.Spec}}</textarea>
+            <div class="body-edit-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                <button type="button" class="btn btn-sm" onclick="cancelEdit('spec')">Cancel</button>
+            </div>
+        </form>
     </div>
     <div class="attachments-section">
         <h2>Attachments</h2>
