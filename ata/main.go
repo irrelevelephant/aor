@@ -48,6 +48,8 @@ func main() {
 		cmdErr = cmd.Edit(d, args)
 	case "close":
 		cmdErr = cmd.Close(d, args)
+	case "reopen":
+		cmdErr = cmd.Reopen(d, args)
 	case "ready":
 		cmdErr = cmd.Ready(d, args)
 	case "claim":
@@ -108,6 +110,7 @@ Commands:
   show      Show task details
   edit      Edit task title, body, or spec
   close     Close a task
+  reopen    Reopen a closed task
   ready     List queue tasks (ready to work)
   claim     Claim a task (set in_progress)
   unclaim   Unclaim a task (reset to queue)

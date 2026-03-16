@@ -136,8 +136,8 @@ prioritize queue          pick top task
 
 ```
 backlog ──► queue ──► in_progress ──► closed
-                          │
-                          └──► queue  (unclaim resets to queue)
+                          │                      │
+                          └──► queue  (unclaim)   └──► backlog  (reopen)
 ```
 
 - **backlog** — raw ideas, not yet prioritized
@@ -265,6 +265,7 @@ ata list [--workspace PATH] [--status STATUS] [--epic ID] [--tag TAG] [--all] [-
 ata show ID [--json]
 ata edit ID [--title TITLE] [--body BODY] [--body-file PATH] [--spec SPEC] [--spec-file PATH] [--json]
 ata close ID [REASON] [--json]
+ata reopen ID [--json]                                              Reopen a closed task (back to backlog)
 ata ready [--workspace PATH] [--epic ID] [--tag TAG] [--limit N] [--json]
 ata claim ID [--json]
 ata unclaim [ID] [--workspace PATH] [--json]

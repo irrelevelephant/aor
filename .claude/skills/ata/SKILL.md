@@ -18,8 +18,8 @@ allowed-tools: Bash
 
 ```
 backlog → queue → in_progress → closed
-                      ↓
-                  (unclaim) → queue
+                      ↓                     ↓
+                  (unclaim) → queue    (reopen) → backlog
 ```
 
 **Statuses**: `backlog`, `queue`, `in_progress`, `closed`
@@ -60,6 +60,11 @@ ata edit ID --spec-file path/to/spec.md         # epics only
 ```bash
 ata close ID                    # mark complete
 ata close ID "reason text"      # with close reason
+```
+
+### Reopening tasks
+```bash
+ata reopen ID                   # move closed task back to backlog
 ```
 
 ### Claiming (used by aor orchestrator)
