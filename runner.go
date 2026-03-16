@@ -488,11 +488,11 @@ func run(cfg *Config) error {
 			}
 
 			if s.RemainingReady == 0 {
-				// When filtering by tag, don't trust the agent's count —
-				// it only sees tasks within the current scope (e.g. one epic),
-				// but other tagged tasks/epics may still be waiting.
-				if cfg.TagFilter != "" {
-					log.Log("Agent reports queue empty — re-checking for more tagged tasks...")
+				// When filtering by tag or epic, don't trust the agent's count —
+				// it only sees tasks at session start, but new tasks may have
+				// been created during the run (e.g. subtasks under an epic).
+				if cfg.TagFilter != "" || cfg.EpicFilter != "" {
+					log.Log("Agent reports queue empty — re-checking for more tasks...")
 				} else {
 					log.Log("%sAgent reports no remaining ready tasks.%s", cGreen, cReset)
 					break
