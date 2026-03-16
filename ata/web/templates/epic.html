@@ -141,9 +141,10 @@
         <h2>Sub-tasks</h2>
         {{template "tag_filter_bar.html" $.TagFilter}}
         {{if .Children}}
-        <div class="task-list">
+        <div class="task-list sortable" data-parent="{{$.Epic.ID}}">
             {{range .Children}}
             <div class="task-row" data-id="{{.ID}}" id="task-{{.ID}}">
+                <span class="drag-handle">⠿</span>
                 <span class="id-badge">{{.ID}}</span>
                 <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
                 <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>

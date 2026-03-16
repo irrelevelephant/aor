@@ -39,3 +39,34 @@ func (d *DB) Reorder(id string, position int, newStatus string) error {
 
 	return tx.Commit()
 }
+
+// ReorderInEpic sets a child task's sort_order within its parent epic's children.
+func (d *DB) ReorderInEpic(id string, position int, epicID string) error {
+	tx, err := d.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Verify the task belongs to this epic.
+	var n int
+	err = tx.QueryRow(`SELECT 1 FROM tasks WHERE id = ? AND epic_id = ?`, id, epicID).Scan(&n)
+	if err != nil {
+		return fmt.Errorf("task %s is not a child of epic %s", id, epicID)
+	}
+
+	// Shift existing children at or after the target position.
+	_, err = tx.Exec(`UPDATE tasks SET sort_order = sort_order + 1 WHERE epic_id = ? AND sort_order >= ? AND id != ?`,
+		epicID, position, id)
+	if err != nil {
+		return fmt.Errorf("shift tasks: %w", err)
+	}
+
+	// Set the target task's position.
+	_, err = tx.Exec(`UPDATE tasks SET sort_order = ? WHERE id = ?`, position, id)
+	if err != nil {
+		return fmt.Errorf("set position: %w", err)
+	}
+
+	return tx.Commit()
+}

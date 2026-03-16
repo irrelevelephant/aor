@@ -14,8 +14,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Sortable.js on drag-to-reorder lists.
     // Queue and backlog share a group so tasks can be dragged between them.
     document.querySelectorAll('.sortable').forEach(function(el) {
+        var isEpicChildren = !!el.dataset.parent;
         new Sortable(el, {
-            group: 'tasks',
+            group: isEpicChildren ? undefined : 'tasks',
             handle: '.drag-handle',
             animation: 150,
             ghostClass: 'sortable-ghost',
@@ -23,8 +24,11 @@ document.addEventListener('DOMContentLoaded', function() {
             onEnd: function(evt) {
                 var id = evt.item.dataset.id;
                 var targetStatus = evt.to.dataset.status;
+                var parentId = evt.to.dataset.parent;
                 var body = 'id=' + encodeURIComponent(id) + '&position=' + evt.newIndex;
-                if (targetStatus) {
+                if (parentId) {
+                    body += '&parent=' + encodeURIComponent(parentId);
+                } else if (targetStatus) {
                     body += '&status=' + encodeURIComponent(targetStatus);
                 }
                 window._localActionUntil = Date.now() + 1000;

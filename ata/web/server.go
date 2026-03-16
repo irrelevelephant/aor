@@ -1187,13 +1187,19 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 	id := r.FormValue("id")
 	posStr := r.FormValue("position")
 	newStatus := r.FormValue("status")
+	parentID := r.FormValue("parent")
 	pos, err := strconv.Atoi(posStr)
 	if err != nil {
 		http.Error(w, "invalid position", 400)
 		return
 	}
 
-	if err := s.db.Reorder(id, pos, newStatus); err != nil {
+	if parentID != "" {
+		err = s.db.ReorderInEpic(id, pos, parentID)
+	} else {
+		err = s.db.Reorder(id, pos, newStatus)
+	}
+	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
