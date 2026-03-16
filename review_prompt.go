@@ -56,6 +56,8 @@ For each issue you find:
 1. **Small/medium issues in the current diff**: Fix the code directly. Make a commit. Then file a task noting the fix.
 2. **Large issues or pre-existing issues** (not introduced in this diff): File a task only. Do NOT attempt to fix these.
 
+Do not silently skip issues. If an issue is worth noting, either fix it or file a task. Only omit issues if there is a clear reason not to track them (e.g., intentional trade-off, documented exception).
+
 Use ` + "`ata`" + ` to file tasks:
 - ` + "`" + buildAtaCreateCmd("<issue title>", ataCreateOpts{Workspace: workspace, EpicID: epicID, Tag: tag, JSON: true}) + "`" + `
 - After fixing an issue, close the filed task: ` + "`ata close <id> \"<what you did>\" --json`" + `
