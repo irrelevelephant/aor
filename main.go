@@ -238,6 +238,7 @@ func runMultiEpic(cfg *Config, epics []string, rev bool) error {
 					Yolo:      cfg.Yolo,
 					LogDir:    cfg.LogDir,
 					Workspace: cfg.Workspace,
+					EpicID:    epic,
 				}
 				if err := runRevDirect(revCfg, log, stdinCh); err != nil {
 					log.Log("%sReview for epic %s failed: %v (continuing)%s", cYellow, label, err, cReset)

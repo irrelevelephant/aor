@@ -8,8 +8,14 @@ import (
 const maxInlineDiffChars = 50000
 
 // ataCreateCmd returns the ata create command template for review.
-func ataCreateCmd(tag string) string {
+func ataCreateCmd(tag, epicID, workspace string) string {
 	cmd := `ata create "<issue title>" --status queue`
+	if workspace != "" {
+		cmd += fmt.Sprintf(` --workspace "%s"`, workspace)
+	}
+	if epicID != "" {
+		cmd += fmt.Sprintf(` --epic "%s"`, epicID)
+	}
 	if tag != "" {
 		cmd += fmt.Sprintf(` --tag "%s"`, tag)
 	}
@@ -18,7 +24,7 @@ func ataCreateCmd(tag string) string {
 }
 
 // buildReviewPrompt constructs the prompt for a code review session.
-func buildReviewPrompt(diff, base string, round int, priorTasks []ReviewTask, tag string) string {
+func buildReviewPrompt(diff, base string, round int, priorTasks []ReviewTask, tag, epicID, workspace string) string {
 	var b strings.Builder
 
 	// Role.
@@ -67,7 +73,7 @@ For each issue you find:
 2. **Large issues or pre-existing issues** (not introduced in this diff): File a task only. Do NOT attempt to fix these.
 
 Use ` + "`ata`" + ` to file tasks:
-- ` + ataCreateCmd(tag) + `
+- ` + ataCreateCmd(tag, epicID, workspace) + `
 - After fixing an issue, close the filed task: ` + "`ata close <id> \"<what you did>\" --json`" + `
 
 ## Review focus (in priority order)

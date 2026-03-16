@@ -47,7 +47,7 @@ func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []ReviewTask
 			break
 		}
 
-		prompt := buildReviewPrompt(diff, rc.base, round, allTasks, rc.revTag)
+		prompt := buildReviewPrompt(diff, rc.base, round, allTasks, rc.revTag, rc.cfg.EpicID, rc.cfg.Workspace)
 
 		fmt.Printf("\n%s─── Review round %d/%d ──────────────────────────────────%s\n\n",
 			cBlue, round, rc.cfg.MaxRounds, cReset)
@@ -280,6 +280,7 @@ func parseRevFlags(args []string) (*ReviewConfig, error) {
 	noYolo := fs.Bool("no-yolo", false, "Require permission prompts")
 	fs.StringVar(&cfg.LogDir, "log-dir", "", "Log directory")
 	fs.StringVar(&cfg.Workspace, "workspace", "", "Workspace path (default: auto-detect from git)")
+	fs.StringVar(&cfg.EpicID, "epic", "", "Associate filed tasks with this epic")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), `aor rev — Iterative code review with sweep mode

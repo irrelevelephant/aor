@@ -126,6 +126,7 @@ type ReviewConfig struct {
 	Yolo      bool
 	LogDir    string
 	Workspace string
+	EpicID    string // when reviewing an epic, tasks filed during review inherit this epic
 }
 
 // ReviewStatus is the structured output from a review session.

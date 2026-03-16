@@ -90,7 +90,7 @@ func TestBuildReviewPrompt(t *testing.T) {
 		{ID: "t1", Title: "Fix bug"},
 	}
 
-	prompt := buildReviewPrompt(diff, "abc123", 2, priorTasks, "review")
+	prompt := buildReviewPrompt(diff, "abc123", 2, priorTasks, "review", "epic-42", "/tmp/ws")
 
 	checks := []string{
 		"abc123",
@@ -100,6 +100,8 @@ func TestBuildReviewPrompt(t *testing.T) {
 		"t1: Fix bug",
 		"REVIEW_STATUS",
 		"review",
+		`--epic "epic-42"`,
+		`--workspace "/tmp/ws"`,
 	}
 	for _, check := range checks {
 		if !strings.Contains(prompt, check) {
@@ -108,7 +110,7 @@ func TestBuildReviewPrompt(t *testing.T) {
 	}
 
 	// Round 1 should not show prior tasks.
-	prompt1 := buildReviewPrompt(diff, "abc123", 1, nil, "")
+	prompt1 := buildReviewPrompt(diff, "abc123", 1, nil, "", "", "")
 	if strings.Contains(prompt1, "Prior review rounds") {
 		t.Error("round 1 should not show prior tasks")
 	}

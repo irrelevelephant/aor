@@ -88,7 +88,7 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 		createCmd += fmt.Sprintf(` --workspace "%s"`, cfg.Workspace)
 	}
 	if claimedTask.EpicID != "" {
-		createCmd += fmt.Sprintf(` --epic %s`, claimedTask.EpicID)
+		createCmd += fmt.Sprintf(` --epic "%s"`, claimedTask.EpicID)
 	}
 	if cfg.TagFilter != "" {
 		createCmd += fmt.Sprintf(` --tag "%s"`, cfg.TagFilter)
@@ -96,7 +96,7 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	discoveredInstruction := fmt.Sprintf(`5. File discovered issues for any new problems found outside current scope.
    Use: %s --json`, createCmd)
 
-	decomposeCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic %s`, claimedTask.ID)
+	decomposeCmd := fmt.Sprintf(`ata create "Subtask: ..." --status queue --epic "%s"`, claimedTask.ID)
 	if cfg.Workspace != "" {
 		decomposeCmd += fmt.Sprintf(` --workspace "%s"`, cfg.Workspace)
 	}
