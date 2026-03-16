@@ -7,46 +7,67 @@ function updateColumnCounts() {
     });
 }
 
+function sendReorder(id, position, opts) {
+    var body = 'id=' + encodeURIComponent(id) + '&position=' + position;
+    if (opts.parent) body += '&parent=' + encodeURIComponent(opts.parent);
+    if (opts.oldParent !== undefined) body += '&oldParent=' + encodeURIComponent(opts.oldParent);
+    if (opts.status) body += '&status=' + encodeURIComponent(opts.status);
+    window._localActionUntil = Date.now() + 1000;
+    fetch('/reorder', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body
+    }).then(function(resp) {
+        if (!resp.ok) { console.error('reorder failed:', resp.status); window.location.reload(); }
+    }).catch(function() { window.location.reload(); });
+    updateColumnCounts();
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // Suppress SSE reloads briefly after local actions to avoid self-triggered reloads.
     window._localActionUntil = 0;
 
-    // Sortable.js on drag-to-reorder lists.
-    // Queue and backlog share a group so tasks can be dragged between them.
-    document.querySelectorAll('.sortable').forEach(function(el) {
-        var isEpicChildren = !!el.dataset.parent;
+    function onSortEnd(evt) {
+        var id = evt.item.dataset.id;
+        var fromEpic = evt.from.dataset.epic || '';
+        var toEpic = evt.to.dataset.epic || '';
+        var status = evt.to.dataset.status || evt.to.closest('[data-status]').dataset.status;
+        sendReorder(id, evt.newIndex, {
+            status: status,
+            parent: toEpic,
+            oldParent: fromEpic !== toEpic ? fromEpic : undefined
+        });
+    }
+
+    // Top-level sortable lists (queue, backlog columns).
+    document.querySelectorAll('.task-list.sortable').forEach(function(el) {
         new Sortable(el, {
-            group: isEpicChildren ? undefined : 'tasks',
+            group: 'workspace',
             handle: '.drag-handle',
+            draggable: '> .task-row, > .epic-group',
             animation: 150,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
-            onEnd: function(evt) {
-                var id = evt.item.dataset.id;
-                var targetStatus = evt.to.dataset.status;
-                var parentId = evt.to.dataset.parent;
-                var body = 'id=' + encodeURIComponent(id) + '&position=' + evt.newIndex;
-                if (parentId) {
-                    body += '&parent=' + encodeURIComponent(parentId);
-                } else if (targetStatus) {
-                    body += '&status=' + encodeURIComponent(targetStatus);
+            onEnd: onSortEnd,
+            onMove: function(evt) {
+                // Don't allow epic groups to be dropped into epic children.
+                if (evt.dragged.classList.contains('epic-group') && evt.to.classList.contains('epic-children')) {
+                    return false;
                 }
-                window._localActionUntil = Date.now() + 1000;
-                fetch('/reorder', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: body
-                }).then(function(resp) {
-                    if (!resp.ok) {
-                        console.error('reorder failed:', resp.status);
-                        window.location.reload();
-                    }
-                }).catch(function(err) {
-                    console.error('reorder error:', err);
-                    window.location.reload();
-                });
-                updateColumnCounts();
             }
+        });
+    });
+
+    // Nested sortable lists (epic children).
+    document.querySelectorAll('.epic-children.sortable').forEach(function(el) {
+        new Sortable(el, {
+            group: 'workspace',
+            handle: '.drag-handle',
+            draggable: '.child-row, .task-row',
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            onEnd: onSortEnd
         });
     });
 

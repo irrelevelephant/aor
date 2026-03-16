@@ -36,9 +36,32 @@
 <div class="columns" data-sse-workspace="{{.Path}}">
 
     <div class="column">
-        <h2>Queue <span class="count">{{len .Queue}}</span></h2>
+        <h2>Queue <span class="count">{{.QueueCount}}</span></h2>
         <div class="task-list sortable" id="queue-list" data-status="queue">
             {{range .Queue}}
+            {{if and .IsEpic (or .Children (not .EpicID))}}
+            <div class="epic-group" data-id="{{.ID}}" id="task-{{.ID}}">
+                <div class="task-row epic-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}">
+                    <span class="drag-handle">⠿</span>
+                    <span class="id-badge">{{.ID}}</span>
+                    <a href="/epic/{{.ID}}" class="task-link">{{.Title}}</a>
+                    <span class="badge epic-badge">epic</span>
+                    {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+                    {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                </div>
+                <div class="epic-children sortable" data-epic="{{.ID}}" data-status="queue">
+                    {{range .Children}}
+                    <div class="task-row child-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
+                        <span class="drag-handle">⠿</span>
+                        <span class="id-badge">{{.ID}}</span>
+                        <a href="/task/{{.ID}}" class="task-link">{{.Title}}</a>
+                        {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+                        {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{else}}
             <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
                 <span class="drag-handle">⠿</span>
                 <span class="id-badge">{{.ID}}</span>
@@ -49,13 +72,37 @@
                 {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
             </div>
             {{end}}
+            {{end}}
         </div>
     </div>
 
     <div class="column">
-        <h2>Backlog <span class="count">{{len .Backlog}}</span></h2>
+        <h2>Backlog <span class="count">{{.BacklogCount}}</span></h2>
         <div class="task-list sortable" id="backlog-list" data-status="backlog">
             {{range .Backlog}}
+            {{if and .IsEpic (or .Children (not .EpicID))}}
+            <div class="epic-group" data-id="{{.ID}}" id="task-{{.ID}}">
+                <div class="task-row epic-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}">
+                    <span class="drag-handle">⠿</span>
+                    <span class="id-badge">{{.ID}}</span>
+                    <a href="/epic/{{.ID}}" class="task-link">{{.Title}}</a>
+                    <span class="badge epic-badge">epic</span>
+                    {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+                    {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                </div>
+                <div class="epic-children sortable" data-epic="{{.ID}}" data-status="backlog">
+                    {{range .Children}}
+                    <div class="task-row child-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
+                        <span class="drag-handle">⠿</span>
+                        <span class="id-badge">{{.ID}}</span>
+                        <a href="/task/{{.ID}}" class="task-link">{{.Title}}</a>
+                        {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+                        {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{else}}
             <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
                 <span class="drag-handle">⠿</span>
                 <span class="id-badge">{{.ID}}</span>
@@ -65,6 +112,7 @@
                 {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
                 {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
             </div>
+            {{end}}
             {{end}}
         </div>
     </div>

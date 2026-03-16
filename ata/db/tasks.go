@@ -439,6 +439,99 @@ func (d *DB) UpdateTask(id string, title, body, spec *string) (*model.Task, erro
 	return d.GetTask(id)
 }
 
+// ListTaskTree returns tasks as a tree: top-level items (standalone + epics) with children nested.
+// Children whose parent epic is not in this status appear as top-level nodes.
+func (d *DB) ListTaskTree(workspace, status, tag, excludeTag string) ([]model.TaskTreeNode, error) {
+	tasks, err := d.ListTasks(workspace, status, "", tag, excludeTag)
+	if err != nil {
+		return nil, err
+	}
+
+	// Partition into top-level and children.
+	var topLevel []model.Task
+	childrenByEpic := make(map[string][]model.Task)
+	for _, t := range tasks {
+		if t.EpicID == "" {
+			topLevel = append(topLevel, t)
+		} else {
+			childrenByEpic[t.EpicID] = append(childrenByEpic[t.EpicID], t)
+		}
+	}
+
+	// Build result.
+	var result []model.TaskTreeNode
+	for _, t := range topLevel {
+		node := model.TaskTreeNode{Task: t}
+		if t.IsEpic {
+			node.Children = childrenByEpic[t.ID]
+			delete(childrenByEpic, t.ID)
+		}
+		result = append(result, node)
+	}
+
+	// Orphaned children (parent epic not in this status) become top-level.
+	for _, children := range childrenByEpic {
+		for _, c := range children {
+			result = append(result, model.TaskTreeNode{Task: c})
+		}
+	}
+
+	return result, nil
+}
+
+// SetEpicID moves a task into or out of an epic.
+// If newEpicID is non-empty, the task becomes a child of that epic (auto-promoting it).
+// If newEpicID is empty, the task is removed from its current epic.
+func (d *DB) SetEpicID(taskID, newEpicID string) error {
+	tx, err := d.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if newEpicID != "" {
+		// Auto-promote target to epic if needed.
+		if _, err := tx.Exec(`UPDATE tasks SET is_epic = 1 WHERE id = ? AND is_epic = 0`, newEpicID); err != nil {
+			return fmt.Errorf("auto-promote epic: %w", err)
+		}
+
+		// Place at end of epic's children in the task's current status.
+		var maxOrder int
+		err := tx.QueryRow(
+			`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE epic_id = ?`,
+			newEpicID).Scan(&maxOrder)
+		if err != nil {
+			return fmt.Errorf("query max sort_order: %w", err)
+		}
+
+		if _, err := tx.Exec(`UPDATE tasks SET epic_id = ?, sort_order = ? WHERE id = ?`,
+			newEpicID, maxOrder+1, taskID); err != nil {
+			return fmt.Errorf("set epic_id: %w", err)
+		}
+	} else {
+		// Remove from epic: get workspace and status for placing at end of top-level.
+		var status, workspace string
+		if err := tx.QueryRow(`SELECT status, workspace FROM tasks WHERE id = ?`, taskID).Scan(&status, &workspace); err != nil {
+			return fmt.Errorf("task %s not found", taskID)
+		}
+
+		var maxOrder int
+		err := tx.QueryRow(
+			`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '')`,
+			status, workspace).Scan(&maxOrder)
+		if err != nil {
+			return fmt.Errorf("query max sort_order: %w", err)
+		}
+
+		if _, err := tx.Exec(`UPDATE tasks SET epic_id = NULL, sort_order = ? WHERE id = ?`,
+			maxOrder+1, taskID); err != nil {
+			return fmt.Errorf("clear epic_id: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 // EpicCloseEligible returns epics where all children are closed.
 func (d *DB) EpicCloseEligible(workspace string) ([]model.Task, error) {
 	query := `SELECT ` + prefixCols("e", taskCols) + `

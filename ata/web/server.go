@@ -115,6 +115,25 @@ func tagsForTasks(tagMap map[string][]string, slices ...[]model.Task) []string {
 	return result
 }
 
+// treeCount returns the total number of tasks in a tree (top-level + all children).
+func treeCount(nodes []model.TaskTreeNode) int {
+	n := len(nodes)
+	for _, node := range nodes {
+		n += len(node.Children)
+	}
+	return n
+}
+
+// flattenTree extracts all tasks from tree nodes into a flat slice.
+func flattenTree(nodes []model.TaskTreeNode) []model.Task {
+	var tasks []model.Task
+	for _, n := range nodes {
+		tasks = append(tasks, n.Task)
+		tasks = append(tasks, n.Children...)
+	}
+	return tasks
+}
+
 // tagPalette contains well-spaced hues that avoid 250–310 (purple, used by epics).
 var tagPalette = []uint32{0, 28, 55, 85, 125, 165, 195, 220, 320, 345}
 
@@ -382,17 +401,17 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 
-	queue, err := s.db.ListTasks(path, model.StatusQueue, "", tag, xtag)
+	queue, err := s.db.ListTaskTree(path, model.StatusQueue, tag, xtag)
 	if err != nil {
-		log.Printf("ListTasks queue: %v", err)
+		log.Printf("ListTaskTree queue: %v", err)
 	}
 	inProgress, err := s.db.ListTasks(path, model.StatusInProgress, "", tag, xtag)
 	if err != nil {
 		log.Printf("ListTasks in_progress: %v", err)
 	}
-	backlog, err := s.db.ListTasks(path, model.StatusBacklog, "", tag, xtag)
+	backlog, err := s.db.ListTaskTree(path, model.StatusBacklog, tag, xtag)
 	if err != nil {
-		log.Printf("ListTasks backlog: %v", err)
+		log.Printf("ListTaskTree backlog: %v", err)
 	}
 
 	var closed []model.Task
@@ -404,18 +423,12 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Collect all visible task IDs for batch queries.
-	var allIDs []string
-	for _, t := range queue {
-		allIDs = append(allIDs, t.ID)
-	}
-	for _, t := range backlog {
-		allIDs = append(allIDs, t.ID)
-	}
-	for _, t := range inProgress {
-		allIDs = append(allIDs, t.ID)
-	}
-	for _, t := range closed {
-		allIDs = append(allIDs, t.ID)
+	allOpen := append(flattenTree(queue), flattenTree(backlog)...)
+	allOpen = append(allOpen, inProgress...)
+	allVisible := append(allOpen, closed...)
+	allIDs := make([]string, len(allVisible))
+	for i, t := range allVisible {
+		allIDs[i] = t.ID
 	}
 
 	blockedIDs, err := s.db.BlockedTaskIDs(allIDs)
@@ -443,7 +456,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	// Tags from open tasks only — used for quick-add autocomplete so stale
 	// tags from closed tasks don't clutter the suggestions.
-	openTags := tagsForTasks(tagMap, queue, backlog, inProgress)
+	openTags := tagsForTasks(tagMap, allOpen)
 
 	// For the filter bar when unfiltered, derive from visible tasks to avoid
 	// showing tags that only appear on closed/hidden tasks.
@@ -488,16 +501,18 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		"WorkspaceURL":   wsURL,
 		"FilteredURL":    filteredWsURL,
 		"ShowClosedURL":  showClosedURL,
-		"Queue":        queue,
-		"InProgress":   inProgress,
-		"Backlog":      backlog,
-		"Closed":       closed,
-		"ShowClosed":   showClosed,
-		"BlockedIDs":   blockedIDs,
-		"TagMap":       tagMap,
-		"TagFilter":    tagFilterData(filterBarTags, tag, xtag),
-		"AllTags":      allTags,
-		"OpenTags":     openTags,
+		"Queue":          queue,
+		"QueueCount":     treeCount(queue),
+		"InProgress":     inProgress,
+		"Backlog":        backlog,
+		"BacklogCount":   treeCount(backlog),
+		"Closed":         closed,
+		"ShowClosed":     showClosed,
+		"BlockedIDs":     blockedIDs,
+		"TagMap":         tagMap,
+		"TagFilter":      tagFilterData(filterBarTags, tag, xtag),
+		"AllTags":        allTags,
+		"OpenTags":       openTags,
 	})
 }
 
@@ -1188,13 +1203,34 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 	posStr := r.FormValue("position")
 	newStatus := r.FormValue("status")
 	parentID := r.FormValue("parent")
+	oldParentID := r.FormValue("oldParent")
 	pos, err := strconv.Atoi(posStr)
 	if err != nil {
 		http.Error(w, "invalid position", 400)
 		return
 	}
 
-	if parentID != "" {
+	// Detect epic membership change.
+	epicChanged := oldParentID != parentID
+
+	if epicChanged {
+		// Reparenting: update epic_id first, then reorder within new context.
+		if err := s.db.SetEpicID(id, parentID); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		// Update status if crossing columns (SetEpicID doesn't change status).
+		if newStatus != "" {
+			if _, err := s.db.Exec(`UPDATE tasks SET status = ? WHERE id = ? AND status != ?`, newStatus, id, newStatus); err != nil {
+				log.Printf("update status for reparent: %v", err)
+			}
+		}
+		if parentID != "" {
+			err = s.db.ReorderInEpic(id, pos, parentID)
+		} else {
+			err = s.db.Reorder(id, pos, newStatus)
+		}
+	} else if parentID != "" {
 		err = s.db.ReorderInEpic(id, pos, parentID)
 	} else {
 		err = s.db.Reorder(id, pos, newStatus)

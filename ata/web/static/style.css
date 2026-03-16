@@ -286,6 +286,25 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .sortable-ghost { opacity: 0.4; }
 .sortable-chosen { background: rgba(88,166,255,0.1); }
 
+.epic-group {
+    border-left: 2px solid var(--purple);
+    border-radius: var(--radius);
+    margin: 0.125rem 0;
+}
+
+.epic-row {
+    background: rgba(188, 140, 255, 0.06);
+}
+
+.epic-children {
+    padding-left: 1.5rem;
+    min-height: 1.5rem;
+}
+
+.child-row {
+    font-size: 0.95em;
+}
+
 /* Task detail */
 .task-detail, .epic-detail { max-width: 800px; }
 .task-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; }

@@ -37,6 +37,12 @@ type Task struct {
 	UpdatedAt   string   `json:"updated_at"`
 }
 
+// TaskTreeNode wraps a top-level task or epic with its children for tree rendering.
+type TaskTreeNode struct {
+	Task
+	Children []Task
+}
+
 // Comment represents a comment on a task.
 type Comment struct {
 	ID        int    `json:"id"`

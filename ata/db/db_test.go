@@ -616,6 +616,220 @@ func TestClaimBlockedTask(t *testing.T) {
 	}
 }
 
+func TestReorderDown(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
+	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
+	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+
+	// Move first task to last position.
+	if err := d.Reorder(t1.ID, 2, ""); err != nil {
+		t.Fatalf("Reorder down: %v", err)
+	}
+
+	tasks, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	if tasks[0].ID != t2.ID {
+		t.Errorf("position 0: want %s, got %s", t2.ID, tasks[0].ID)
+	}
+	if tasks[1].ID != t3.ID {
+		t.Errorf("position 1: want %s, got %s", t3.ID, tasks[1].ID)
+	}
+	if tasks[2].ID != t1.ID {
+		t.Errorf("position 2: want %s, got %s", t1.ID, tasks[2].ID)
+	}
+}
+
+func TestReorderCrossStatus(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("Queue1", "", model.StatusQueue, "", "/ws", "")
+	t2, _ := d.CreateTask("Queue2", "", model.StatusQueue, "", "/ws", "")
+	b1, _ := d.CreateTask("Backlog1", "", model.StatusBacklog, "", "/ws", "")
+
+	// Move t1 from queue to backlog at position 0.
+	if err := d.Reorder(t1.ID, 0, model.StatusBacklog); err != nil {
+		t.Fatalf("Reorder cross-status: %v", err)
+	}
+
+	queue, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	if len(queue) != 1 || queue[0].ID != t2.ID {
+		t.Errorf("queue should have only t2, got %v", queue)
+	}
+
+	backlog, _ := d.ListTasks("/ws", model.StatusBacklog, "", "", "")
+	if len(backlog) != 2 {
+		t.Fatalf("expected 2 backlog tasks, got %d", len(backlog))
+	}
+	if backlog[0].ID != t1.ID {
+		t.Errorf("backlog[0]: want %s, got %s", t1.ID, backlog[0].ID)
+	}
+	if backlog[1].ID != b1.ID {
+		t.Errorf("backlog[1]: want %s, got %s", b1.ID, backlog[1].ID)
+	}
+}
+
+func TestReorderInEpic(t *testing.T) {
+	d := testDB(t)
+
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
+	c3, _ := d.CreateTask("Child3", "", model.StatusQueue, epic.ID, "/ws", "")
+
+	// Move c1 to last position.
+	if err := d.ReorderInEpic(c1.ID, 2, epic.ID); err != nil {
+		t.Fatalf("ReorderInEpic: %v", err)
+	}
+
+	children, _ := d.ListTasks("", "", epic.ID, "", "")
+	if len(children) != 3 {
+		t.Fatalf("expected 3 children, got %d", len(children))
+	}
+	if children[0].ID != c2.ID {
+		t.Errorf("position 0: want %s, got %s", c2.ID, children[0].ID)
+	}
+	if children[1].ID != c3.ID {
+		t.Errorf("position 1: want %s, got %s", c3.ID, children[1].ID)
+	}
+	if children[2].ID != c1.ID {
+		t.Errorf("position 2: want %s, got %s", c1.ID, children[2].ID)
+	}
+}
+
+func TestSetEpicID(t *testing.T) {
+	d := testDB(t)
+
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+	task, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "/ws", "")
+
+	// Move task into epic.
+	if err := d.SetEpicID(task.ID, epic.ID); err != nil {
+		t.Fatalf("SetEpicID: %v", err)
+	}
+
+	got, _ := d.GetTask(task.ID)
+	if got.EpicID != epic.ID {
+		t.Errorf("epic_id = %q, want %q", got.EpicID, epic.ID)
+	}
+}
+
+func TestSetEpicIDClear(t *testing.T) {
+	d := testDB(t)
+
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+	child, _ := d.CreateTask("Child", "", model.StatusQueue, epic.ID, "/ws", "")
+
+	// Remove from epic.
+	if err := d.SetEpicID(child.ID, ""); err != nil {
+		t.Fatalf("SetEpicID clear: %v", err)
+	}
+
+	got, _ := d.GetTask(child.ID)
+	if got.EpicID != "" {
+		t.Errorf("epic_id = %q, want empty", got.EpicID)
+	}
+}
+
+func TestSetEpicIDAutoPromote(t *testing.T) {
+	d := testDB(t)
+
+	// Create two regular tasks.
+	target, _ := d.CreateTask("Will become epic", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("Child", "", model.StatusQueue, "", "/ws", "")
+
+	// SetEpicID should auto-promote target.
+	if err := d.SetEpicID(task.ID, target.ID); err != nil {
+		t.Fatalf("SetEpicID: %v", err)
+	}
+
+	got, _ := d.GetTask(target.ID)
+	if !got.IsEpic {
+		t.Error("expected target to be auto-promoted to epic")
+	}
+}
+
+func TestListTaskTree(t *testing.T) {
+	d := testDB(t)
+
+	// Create an epic with children and a standalone task.
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
+	standalone, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "/ws", "")
+
+	tree, err := d.ListTaskTree("/ws", model.StatusQueue, "", "")
+	if err != nil {
+		t.Fatalf("ListTaskTree: %v", err)
+	}
+
+	// Should have 2 top-level nodes: epic and standalone.
+	if len(tree) != 2 {
+		t.Fatalf("expected 2 top-level nodes, got %d", len(tree))
+	}
+
+	// Find the epic node.
+	var epicNode *model.TaskTreeNode
+	for i := range tree {
+		if tree[i].ID == epic.ID {
+			epicNode = &tree[i]
+			break
+		}
+	}
+	if epicNode == nil {
+		t.Fatal("epic node not found in tree")
+	}
+	if len(epicNode.Children) != 2 {
+		t.Fatalf("expected 2 children, got %d", len(epicNode.Children))
+	}
+
+	childIDs := map[string]bool{epicNode.Children[0].ID: true, epicNode.Children[1].ID: true}
+	if !childIDs[c1.ID] || !childIDs[c2.ID] {
+		t.Errorf("expected children %s and %s, got %v", c1.ID, c2.ID, childIDs)
+	}
+
+	// Standalone should have no children.
+	for _, n := range tree {
+		if n.ID == standalone.ID {
+			if len(n.Children) != 0 {
+				t.Errorf("standalone should have 0 children, got %d", len(n.Children))
+			}
+		}
+	}
+}
+
+func TestListTaskTreeOrphanedChildren(t *testing.T) {
+	d := testDB(t)
+
+	// Epic in backlog, child in queue — child should appear as top-level in queue.
+	epic, _ := d.CreateTask("Epic", "", model.StatusBacklog, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+	child, _ := d.CreateTask("Orphan Child", "", model.StatusQueue, epic.ID, "/ws", "")
+
+	tree, err := d.ListTaskTree("/ws", model.StatusQueue, "", "")
+	if err != nil {
+		t.Fatalf("ListTaskTree: %v", err)
+	}
+
+	if len(tree) != 1 {
+		t.Fatalf("expected 1 top-level node, got %d", len(tree))
+	}
+	if tree[0].ID != child.ID {
+		t.Errorf("expected orphaned child %s, got %s", child.ID, tree[0].ID)
+	}
+	if tree[0].EpicID != epic.ID {
+		t.Errorf("orphaned child should still reference epic %s, got %s", epic.ID, tree[0].EpicID)
+	}
+}
+
 func TestGetTaskWithComments(t *testing.T) {
 	d := testDB(t)
 
