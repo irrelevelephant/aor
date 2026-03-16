@@ -47,7 +47,7 @@
                     <a href="/epic/{{.ID}}" class="task-link">{{.Title}}</a>
                     <span class="badge epic-badge">epic</span>
                     {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                    {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                    {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
                 </div>
                 <div class="epic-children sortable" data-epic="{{.ID}}" data-status="queue">
                     {{range .Children}}
@@ -56,7 +56,7 @@
                         <span class="id-badge">{{.ID}}</span>
                         <a href="/task/{{.ID}}" class="task-link">{{.Title}}</a>
                         {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                        {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                        {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
                     </div>
                     {{end}}
                 </div>
@@ -69,7 +69,7 @@
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
                 {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
                 {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
             </div>
             {{end}}
             {{end}}
@@ -88,7 +88,7 @@
                     <a href="/epic/{{.ID}}" class="task-link">{{.Title}}</a>
                     <span class="badge epic-badge">epic</span>
                     {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                    {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                    {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
                 </div>
                 <div class="epic-children sortable" data-epic="{{.ID}}" data-status="backlog">
                     {{range .Children}}
@@ -97,7 +97,7 @@
                         <span class="id-badge">{{.ID}}</span>
                         <a href="/task/{{.ID}}" class="task-link">{{.Title}}</a>
                         {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                        {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                        {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
                     </div>
                     {{end}}
                 </div>
@@ -110,7 +110,7 @@
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
                 {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
                 {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+                {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
             </div>
             {{end}}
             {{end}}
@@ -129,7 +129,7 @@
             {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
             {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
             {{if eq .Status "in_progress"}}{{if .ClaimedPID}}<span class="badge agent-badge">pid:{{.ClaimedPID}}</span>{{end}}{{if .Worktree}}<span class="badge worktree-badge" title="{{.Worktree}}">wt</span>{{end}}{{end}}
-            {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" true)}}
+            {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
         </div>
         {{end}}
     </div>
@@ -147,7 +147,7 @@
             <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="task-link">{{.Title}}</a>
             {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
             {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
-            {{template "task_tags_inline.html" (dict "TaskID" .ID "Tags" (index $.TagMap .ID) "Editable" false)}}
+            {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
         </div>
         {{end}}
     </div>

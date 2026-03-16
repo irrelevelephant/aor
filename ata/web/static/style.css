@@ -449,19 +449,6 @@ button.tag-badge { cursor: pointer; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.75rem; }
 .tag-item { display: inline-flex; align-items: center; gap: 0.15rem; }
 
-/* Inline tag management on task rows */
-.tag-item-inline { display: inline-flex; align-items: center; gap: 0; }
-.tag-remove-inline { display: inline; }
-.tag-remove-btn {
-    font-size: 0.75rem;
-    padding: 0 0.15rem;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-.task-row:hover .tag-remove-btn { opacity: 0.5; }
-.task-row .tag-remove-btn:hover { opacity: 1; }
-
-
 /* Chip input for tags */
 .chip-input-row {
     display: flex;
