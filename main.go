@@ -79,7 +79,7 @@ func main() {
 
 	cfg := &Config{}
 
-	flag.StringVar(&cfg.EpicFilter, "epic", "", "Only work on tasks under this epic")
+	flag.StringVar(&cfg.EpicFilter, "epic", "", "Only work on tasks under this epic (comma-separated for multiple)")
 	flag.StringVar(&cfg.TagFilter, "tag", "", "Only work on tasks with this tag")
 	flag.IntVar(&cfg.MaxTasks, "max-tasks", 0, "Stop after N tasks (0 = unlimited)")
 	flag.IntVar(&cfg.BatchSize, "batch-size", 1, "Tasks per Claude session before fresh context")
@@ -140,7 +140,7 @@ Flags:
 		return
 	}
 
-	epics := collectEpics(cfg.EpicFilter, flag.Args())
+	epics := collectEpics(cfg.EpicFilter)
 	if len(epics) > 1 || *rev {
 		if err := runMultiEpic(cfg, epics, *rev); err != nil {
 			fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
@@ -157,24 +157,22 @@ Flags:
 	}
 }
 
-// collectEpics merges positional args and the -epic flag into a list of epic IDs.
-// Positional args take priority. Returns [""] if no epics specified (no filter).
-func collectEpics(epicFlag string, positionalArgs []string) []string {
-	if len(positionalArgs) > 0 {
-		return positionalArgs
+// collectEpics parses the -epic flag value as comma-separated epic IDs.
+// Returns [""] if no epics specified (no filter).
+func collectEpics(epicFlag string) []string {
+	if epicFlag == "" {
+		return []string{""}
 	}
-	if epicFlag != "" {
-		parts := strings.Split(epicFlag, ",")
-		var epics []string
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				epics = append(epics, p)
-			}
+	parts := strings.Split(epicFlag, ",")
+	var epics []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			epics = append(epics, p)
 		}
-		if len(epics) > 0 {
-			return epics
-		}
+	}
+	if len(epics) > 0 {
+		return epics
 	}
 	return []string{""}
 }
