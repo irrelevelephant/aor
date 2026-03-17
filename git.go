@@ -214,15 +214,26 @@ func createWorktree(taskID string) (string, error) {
 	return wtPath, nil
 }
 
+// worktreeBranch returns the branch checked out in the given worktree path.
+// Returns "" if the worktree is in detached HEAD state or on error.
+func worktreeBranch(wtPath string) string {
+	out, err := exec.Command("git", "-C", wtPath, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	b := strings.TrimSpace(string(out))
+	if b == "HEAD" {
+		return ""
+	}
+	return b
+}
+
 // removeWorktree removes a git worktree and optionally deletes its branch.
 func removeWorktree(wtPath string, deleteBranch bool) error {
 	// Get branch name before removing.
 	var branch string
 	if deleteBranch {
-		cmd := exec.Command("git", "-C", wtPath, "rev-parse", "--abbrev-ref", "HEAD")
-		if out, err := cmd.Output(); err == nil {
-			branch = strings.TrimSpace(string(out))
-		}
+		branch = worktreeBranch(wtPath)
 	}
 
 	cmd := exec.Command("git", "worktree", "remove", wtPath)
@@ -236,6 +247,31 @@ func removeWorktree(wtPath string, deleteBranch bool) error {
 		exec.Command("git", "branch", "-d", branch).Run()
 	}
 	return nil
+}
+
+// mergeWorktreeBranch merges a worktree's branch into the main branch and
+// removes the worktree. Returns nil on success. If the merge fails (e.g.
+// conflicts), the worktree is left in place for manual resolution.
+func mergeWorktreeBranch(wtPath string) error {
+	mainWT := gitMainWorktree()
+	if mainWT == "" {
+		return fmt.Errorf("could not determine main worktree")
+	}
+
+	branch := worktreeBranch(wtPath)
+	if branch == "" {
+		return fmt.Errorf("worktree has no branch (detached HEAD)")
+	}
+
+	// Merge the branch into main. git merge is a no-op if already merged.
+	cmd := exec.Command("git", "-C", mainWT, "merge", "--no-edit", branch)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
+	}
+
+	return removeWorktree(wtPath, true)
 }
 
 // hasUncommittedChanges returns true if the working tree has uncommitted changes.

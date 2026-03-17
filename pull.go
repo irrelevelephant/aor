@@ -174,6 +174,17 @@ Flags:
 		fmt.Printf("\nTask %s closed.\n", task.ID)
 	}
 
+	// Clean up worktree: merge branch back into main and remove.
+	if worktreePath != "" {
+		fmt.Println()
+		if err := mergeWorktreeBranch(worktreePath); err != nil {
+			fmt.Printf("%sWorktree cleanup failed: %v%s\n", cYellow, err, cReset)
+			fmt.Printf("Run 'aor merge' to clean up manually.\n")
+		} else {
+			fmt.Printf("Worktree merged and cleaned up.\n")
+		}
+	}
+
 	return nil
 }
 
