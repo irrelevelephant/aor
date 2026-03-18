@@ -248,7 +248,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	// Each page gets: layout + partials + its own page template.
 	pageFiles := []string{"index.html", "workspace.html", "task.html", "epic.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
-	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html", "templates/partials/epic_group.html"}
+	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html", "templates/partials/epic_group.html", "templates/partials/deps_section.html"}
 	for _, page := range pageFiles {
 		t, err := template.New("").Funcs(funcMap).ParseFS(content, append(sharedFiles, "templates/"+page)...)
 		if err != nil {
@@ -617,12 +617,16 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		"EpicTitle":     epicTitle,
 		"WorkspaceName": wsName,
 		"WorkspaceURL":  workspaceURL(twc.Workspace, wsName),
-		"Blockers":      blockers,
-		"Blocking":      blocking,
 		"IsBlocked":     isBlocked,
 		"Tags":          tags,
 		"AllTags":       allTags,
 		"Attachments":   attachments,
+		"DepsData": map[string]any{
+			"TaskID":   id,
+			"Status":   twc.Status,
+			"Blockers": blockers,
+			"Blocking": blocking,
+		},
 	})
 }
 
@@ -724,9 +728,13 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		"Tags":          epicTags,
 		"AllTags":       allTags,
 		"Attachments":   attachments,
-		"Blockers":      blockers,
-		"Blocking":      blocking,
 		"IsBlocked":     isBlocked,
+		"DepsData": map[string]any{
+			"TaskID":   id,
+			"Status":   task.Status,
+			"Blockers": blockers,
+			"Blocking": blocking,
+		},
 	})
 }
 
@@ -994,7 +1002,11 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
 		s.hub.Broadcast("task_updated", task.Workspace, id)
 	}
 
-	s.hxRedirect(w, r, taskDetailURL(task, id), http.StatusSeeOther)
+	if r.Header.Get("HX-Request") == "true" {
+		s.renderDepsSection(w, id, task)
+		return
+	}
+	http.Redirect(w, r, taskDetailURL(task, id), http.StatusSeeOther)
 }
 
 func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
@@ -1019,7 +1031,32 @@ func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
 		s.hub.Broadcast("task_updated", task.Workspace, id)
 	}
 
-	s.hxRedirect(w, r, taskDetailURL(task, id), http.StatusSeeOther)
+	if r.Header.Get("HX-Request") == "true" {
+		s.renderDepsSection(w, id, task)
+		return
+	}
+	http.Redirect(w, r, taskDetailURL(task, id), http.StatusSeeOther)
+}
+
+func (s *Server) renderDepsSection(w http.ResponseWriter, id string, task *model.Task) {
+	blockers, err := s.db.GetBlockers(id, false)
+	if err != nil {
+		log.Printf("GetBlockers %s: %v", id, err)
+	}
+	blocking, err := s.db.GetBlocking(id)
+	if err != nil {
+		log.Printf("GetBlocking %s: %v", id, err)
+	}
+	status := ""
+	if task != nil {
+		status = task.Status
+	}
+	s.partials.ExecuteTemplate(w, "deps_section.html", map[string]any{
+		"TaskID":   id,
+		"Status":   status,
+		"Blockers": blockers,
+		"Blocking": blocking,
+	})
 }
 
 func (s *Server) handleAddChild(w http.ResponseWriter, r *http.Request) {
