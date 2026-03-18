@@ -85,7 +85,7 @@
             {{range $.Blockers}}
             <div class="dep-row">
                 <span class="id-badge">{{.ID}}</span>
-                <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="dep-link">{{.Title}}</a>
+                <a href="{{taskURL .IsEpic .ID}}" class="dep-link">{{.Title}}</a>
                 <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
                 {{if ne .Status "closed"}}
                 <form action="/task/{{$.Task.ID}}/deps/remove" method="POST" class="dep-remove-form"
@@ -105,7 +105,7 @@
             {{range $.Blocking}}
             <div class="dep-row">
                 <span class="id-badge">{{.ID}}</span>
-                <a href="{{if .IsEpic}}/epic/{{.ID}}{{else}}/task/{{.ID}}{{end}}" class="dep-link">{{.Title}}</a>
+                <a href="{{taskURL .IsEpic .ID}}" class="dep-link">{{.Title}}</a>
                 <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
             </div>
             {{end}}

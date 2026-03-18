@@ -241,6 +241,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 			return setTagQuery(baseURL, "tag", tag)
 		},
 		"formatBytes": db.FormatBytes,
+		"taskURL": taskURL,
 	}
 
 	// Parse each page template separately to avoid "content" block conflicts.
@@ -539,11 +540,15 @@ func workspaceURL(path, name string) string {
 	return "/w?path=" + url.QueryEscape(path)
 }
 
-func taskDetailURL(task *model.Task, id string) string {
-	if task != nil && task.IsEpic {
+func taskURL(isEpic bool, id string) string {
+	if isEpic {
 		return "/epic/" + id
 	}
 	return "/task/" + id
+}
+
+func taskDetailURL(task *model.Task, id string) string {
+	return taskURL(task != nil && task.IsEpic, id)
 }
 
 func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
@@ -559,11 +564,11 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	twc, err := s.db.GetTaskWithComments(id)
+	comments, err := s.db.ListComments(id)
 	if err != nil {
-		http.Error(w, "task not found", 404)
-		return
+		log.Printf("ListComments %s: %v", id, err)
 	}
+	twc := &model.TaskWithComments{Task: *task, Comments: comments}
 
 	var epicTitle string
 	if twc.EpicID != "" {
