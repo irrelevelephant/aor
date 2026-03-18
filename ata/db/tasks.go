@@ -44,6 +44,17 @@ func prefixCols(alias, cols string) string {
 	return strings.Join(parts, ", ")
 }
 
+// epicDescendantSQL returns a SQL fragment and bind arg that matches an epic
+// and all its descendant epic IDs via recursive CTE. A depth limit of 20
+// guards against infinite recursion if the data contains cycles.
+func epicDescendantSQL(epicID string) (string, any) {
+	return `(WITH RECURSIVE epic_tree(id, depth) AS (
+		SELECT ?, 0
+		UNION ALL
+		SELECT t.id, et.depth + 1 FROM tasks t JOIN epic_tree et ON t.epic_id = et.id WHERE t.is_epic = 1 AND et.depth < 20
+	) SELECT id FROM epic_tree)`, epicID
+}
+
 const taskCols = `id, title, body, status, sort_order, epic_id, workspace, worktree, created_in, is_epic, spec, claimed_pid, claimed_at, closed_at, close_reason, created_at, updated_at`
 
 // CreateTask inserts a new task, generating a unique ID.
@@ -122,8 +133,9 @@ func (d *DB) ListTasks(workspace, status, epicID, tag, excludeTag string) ([]mod
 		args = append(args, status)
 	}
 	if epicID != "" {
-		query += ` AND epic_id = ?`
-		args = append(args, epicID)
+		fragment, arg := epicDescendantSQL(epicID)
+		query += ` AND epic_id IN ` + fragment
+		args = append(args, arg)
 	}
 	if tag != "" {
 		tags := SplitComma(tag)
@@ -160,8 +172,9 @@ func (d *DB) ReadyTasks(workspace, epicID, tag string, limit int) ([]model.Task,
 		args = append(args, workspace)
 	}
 	if epicID != "" {
-		query += ` AND epic_id = ?`
-		args = append(args, epicID)
+		fragment, arg := epicDescendantSQL(epicID)
+		query += ` AND epic_id IN ` + fragment
+		args = append(args, arg)
 	}
 	if tag != "" {
 		query += ` AND id IN (SELECT task_id FROM task_tags WHERE tag = ?)`

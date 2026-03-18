@@ -191,6 +191,87 @@ func TestReadyTasksExcludesEpics(t *testing.T) {
 	}
 }
 
+func TestReadyTasksNestedEpics(t *testing.T) {
+	d := testDB(t)
+
+	// Create a root epic with a nested sub-epic.
+	//   root (epic)
+	//     ├── sub (epic)
+	//     │   ├── deep1 (task, queue)
+	//     │   └── deep2 (task, queue)
+	//     └── shallow (task, queue)
+	root, _ := d.CreateTask("Root Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(root.ID, "# Root Spec")
+
+	sub, _ := d.CreateTask("Sub Epic", "", model.StatusQueue, root.ID, "/ws", "")
+	d.PromoteToEpic(sub.ID, "# Sub Spec")
+
+	deep1, _ := d.CreateTask("Deep Task 1", "", model.StatusQueue, sub.ID, "/ws", "")
+	deep2, _ := d.CreateTask("Deep Task 2", "", model.StatusQueue, sub.ID, "/ws", "")
+	shallow, _ := d.CreateTask("Shallow Task", "", model.StatusQueue, root.ID, "/ws", "")
+
+	// Filtering by root epic should return tasks at all nesting levels.
+	ready, err := d.ReadyTasks("/ws", root.ID, "", 0)
+	if err != nil {
+		t.Fatalf("ReadyTasks: %v", err)
+	}
+
+	ids := map[string]bool{}
+	for _, r := range ready {
+		ids[r.ID] = true
+	}
+
+	if !ids[deep1.ID] {
+		t.Errorf("expected deep1 (%s) in ready tasks", deep1.ID)
+	}
+	if !ids[deep2.ID] {
+		t.Errorf("expected deep2 (%s) in ready tasks", deep2.ID)
+	}
+	if !ids[shallow.ID] {
+		t.Errorf("expected shallow (%s) in ready tasks", shallow.ID)
+	}
+	if len(ready) != 3 {
+		t.Errorf("expected 3 ready tasks, got %d", len(ready))
+	}
+
+	// Filtering by sub-epic should only return its children.
+	ready, err = d.ReadyTasks("/ws", sub.ID, "", 0)
+	if err != nil {
+		t.Fatalf("ReadyTasks: %v", err)
+	}
+	if len(ready) != 2 {
+		t.Errorf("expected 2 ready tasks for sub-epic, got %d", len(ready))
+	}
+}
+
+func TestReadyTasksTripleNestedEpics(t *testing.T) {
+	d := testDB(t)
+
+	// Three levels of nesting: root → mid → leaf (epic) → task
+	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(root.ID, "")
+
+	mid, _ := d.CreateTask("Mid", "", model.StatusQueue, root.ID, "/ws", "")
+	d.PromoteToEpic(mid.ID, "")
+
+	leaf, _ := d.CreateTask("Leaf Epic", "", model.StatusQueue, mid.ID, "/ws", "")
+	d.PromoteToEpic(leaf.ID, "")
+
+	task, _ := d.CreateTask("Deep Task", "", model.StatusQueue, leaf.ID, "/ws", "")
+
+	ready, err := d.ReadyTasks("/ws", root.ID, "", 0)
+	if err != nil {
+		t.Fatalf("ReadyTasks: %v", err)
+	}
+
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready task, got %d", len(ready))
+	}
+	if ready[0].ID != task.ID {
+		t.Errorf("expected task %s, got %s", task.ID, ready[0].ID)
+	}
+}
+
 func TestCloseEpicWithOpenSubtasks(t *testing.T) {
 	d := testDB(t)
 
