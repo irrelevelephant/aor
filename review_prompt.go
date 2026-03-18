@@ -82,20 +82,14 @@ After your review, assess the overall severity of issues found:
 `)
 
 	// Sentinel instructions.
-	b.WriteString(`## Output format
-
-When you are done, output EXACTLY this line so the orchestrator can parse it:
-
-REVIEW_STATUS:{"tasks_filed": [{"id": "<id>", "title": "<title>"}], "fixes_applied": ["<description>"], "summary": "<one-line summary>", "severity": "<critical|moderate|minor|trivial>", "error": null}
-
-If no issues were found:
-REVIEW_STATUS:{"tasks_filed": [], "fixes_applied": [], "summary": "No issues found", "severity": "trivial", "error": null}
-
-If you encounter an error:
-REVIEW_STATUS:{"tasks_filed": [], "fixes_applied": [], "summary": "", "severity": "", "error": "<description>"}
-
-Start your review now.
-`)
+	b.WriteString("## Output format\n\n")
+	b.WriteString(sentinelBlock(
+		"REVIEW_STATUS",
+		`{"tasks_filed": [{"id": "<id>", "title": "<title>"}], "fixes_applied": ["<description>"], "summary": "<one-line summary>", "severity": "<critical|moderate|minor|trivial>", "error": null}`,
+		`{"tasks_filed": [], "fixes_applied": [], "summary": "", "severity": "", "error": "<description>"}`,
+		"",
+	))
+	b.WriteString(" Start your review now.\n")
 
 	return b.String()
 }

@@ -200,12 +200,13 @@ func buildTriagePrompt(ev *TriageEvidence) string {
 	b.WriteString("2. Why did it stop without producing structured output?\n")
 	b.WriteString("3. What should the next agent know to continue effectively?\n\n")
 
-	b.WriteString("Output your assessment as a TRIAGE_STATUS sentinel on its own line:\n\n")
-	b.WriteString(`TRIAGE_STATUS:{"outcome": "<complete|partial|no_progress>", "comment": "<markdown summary for next agent>", "error": null}`)
-	b.WriteString("\n\n")
-	b.WriteString("- outcome=complete: the task appears done (code is in place, tests pass)\n")
-	b.WriteString("- outcome=partial: meaningful progress was made\n")
-	b.WriteString("- outcome=no_progress: nothing useful happened\n")
+	b.WriteString(sentinelBlock(
+		"TRIAGE_STATUS",
+		`{"outcome": "<complete|partial|no_progress>", "comment": "<markdown summary for next agent>", "error": null}`,
+		"",
+		"Outcome values:\n- complete: the task appears done (code is in place, tests pass)\n- partial: meaningful progress was made\n- no_progress: nothing useful happened",
+	))
+	b.WriteString("\n")
 
 	return b.String()
 }

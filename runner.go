@@ -104,16 +104,27 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 		JSON:      true,
 	})
 
-	return fmt.Sprintf(`You are working through tasks. Follow the @task-agent protocol in CLAUDE.md exactly.
+	var b strings.Builder
 
-%s%s%s%s%s%s%s
+	b.WriteString("You are working through tasks. Follow the @task-agent protocol in CLAUDE.md exactly.\n\n")
+	b.WriteString(specInstruction)
+	b.WriteString(filterInstruction)
+	b.WriteString(workspaceInstruction)
+	b.WriteString(worktreeInstruction)
+	b.WriteString(claimedInstruction)
+	b.WriteString(additionalTasks)
+	b.WriteString(attachmentsSection)
+
+	b.WriteString(`
 
 For each task:
 1. Implement the work.
 2. Self-review: run git diff to inspect your changes. Look for correctness, bugs, security, error handling, performance, and code quality issues. Fix anything you find.
 3. Run /simplify to check for reuse, quality, and efficiency issues. Fix anything it finds.
 4. Make atomic commits with descriptive messages.
-%s
+`)
+	b.WriteString(discoveredInstruction)
+	b.WriteString(`
 6. Close the task: ata close <id> "reason" --json
 7. Output ATA_RUNNER_STATUS (see below). You MUST complete this step — the orchestrator cannot parse your session without it.
 
@@ -127,19 +138,23 @@ Context management:
 
 Task decomposition:
 - If a task is too complex for this session, break it into subtasks:
-  1. Create child tasks: %s --json
-  2. Commit any progress you've made so far.
+`)
+	fmt.Fprintf(&b, "  1. Create child tasks: %s --json\n", decomposeCmd)
+	b.WriteString(`  2. Commit any progress you've made so far.
   3. Output ATA_RUNNER_STATUS with "decomposed_into": ["<child-ids>"] and "completed": [].
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
-MANDATORY FINAL OUTPUT — After completing %d task(s), if ata ready is empty, or if you are stopping for any reason, your LAST message must contain this line on its own (no markdown fences):
+`)
+	b.WriteString(sentinelBlock(
+		"ATA_RUNNER_STATUS",
+		`{"completed": ["<task-ids>"], "discovered": ["<task-ids>"], "review_tasks": ["<task-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}`,
+		`{"completed": [], "discovered": [], "review_tasks": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}`,
+		fmt.Sprintf("After completing %d task(s), if ata ready is empty, or if you are stopping for any reason:", batchSize),
+	))
+	b.WriteString(" Start now.")
 
-ATA_RUNNER_STATUS:{"completed": ["<task-ids>"], "discovered": ["<task-ids>"], "review_tasks": ["<task-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}
-
-On unrecoverable error use: ATA_RUNNER_STATUS:{"completed": [], "discovered": [], "review_tasks": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}
-
-Do NOT end your session without outputting ATA_RUNNER_STATUS. Start now.`, specInstruction, filterInstruction, workspaceInstruction, worktreeInstruction, claimedInstruction, additionalTasks, attachmentsSection, discoveredInstruction, decomposeCmd, batchSize)
+	return b.String()
 }
 
 // claimTracker keeps track of the currently claimed task so we can

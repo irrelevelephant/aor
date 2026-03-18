@@ -50,20 +50,14 @@ IMPORTANT:
 `)
 
 	// Filing instructions for failed criteria.
-	fmt.Fprintf(&b, `If ALL criteria pass:
-EPIC_VERIFY_STATUS:{"passed": true, "tasks_filed": [], "summary": "<brief summary of verification>", "error": null}
-
-If any criteria FAIL, file a new task for each gap using:
-ata create "<descriptive title>" --status queue --epic "%s" --workspace "%s" --json
-
-Then output:
-EPIC_VERIFY_STATUS:{"passed": false, "tasks_filed": [{"id": "<id>", "title": "<title>"}, ...], "summary": "<what failed and why>", "error": null}
-
-If you encounter an error:
-EPIC_VERIFY_STATUS:{"passed": false, "tasks_filed": [], "summary": "", "error": "<description>"}
-
-The orchestrator CANNOT parse your session without this sentinel. Always output it as your final action.
-`, epic.ID, workspace)
+	fmt.Fprintf(&b, "If any criteria FAIL, file a new task for each gap using:\nata create \"<descriptive title>\" --status queue --epic \"%s\" --workspace \"%s\" --json\n\n", epic.ID, workspace)
+	b.WriteString(sentinelBlock(
+		"EPIC_VERIFY_STATUS",
+		`{"passed": true, "tasks_filed": [], "summary": "<brief summary of verification>", "error": null}`,
+		`{"passed": false, "tasks_filed": [], "summary": "", "error": "<description>"}`,
+		"If criteria fail, include the tasks you filed in tasks_filed.",
+	))
+	b.WriteString("\n")
 
 	return b.String()
 }
