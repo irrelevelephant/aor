@@ -262,6 +262,20 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 		case "complete":
 			if task, err := getTaskStatus(ev.TaskID); err == nil && task.Status == "closed" {
 				outcome = TriageComplete
+			} else if ev.CommitCount > 0 {
+				// Triage agent confirmed work is complete and commits exist.
+				// Close the task on behalf of the agent that forgot to.
+				reason := "completed (closed by triage — agent missed ata close)"
+				if triageStatus.Comment != "" {
+					reason = triageStatus.Comment
+				}
+				if err := closeTask(ev.TaskID, reason); err != nil {
+					log.Log("%sTriage auto-close failed for %s: %v%s", cYellow, ev.TaskID, err, cReset)
+					outcome = TriagePartial
+				} else {
+					log.Log("Triage auto-closed %s (agent confirmed complete, %d commit(s))", ev.TaskID, ev.CommitCount)
+					outcome = TriageComplete
+				}
 			} else {
 				outcome = TriagePartial
 			}
