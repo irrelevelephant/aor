@@ -548,6 +548,17 @@ func taskDetailURL(task *model.Task, id string) string {
 
 func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	task, err := s.db.GetTask(id)
+	if err != nil {
+		http.Error(w, "task not found", 404)
+		return
+	}
+
+	if task.IsEpic {
+		http.Redirect(w, r, "/epic/"+id, http.StatusSeeOther)
+		return
+	}
+
 	twc, err := s.db.GetTaskWithComments(id)
 	if err != nil {
 		http.Error(w, "task not found", 404)
