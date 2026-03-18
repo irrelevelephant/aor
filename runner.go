@@ -115,15 +115,7 @@ For each task:
 4. Make atomic commits with descriptive messages.
 %s
 6. Close the task: ata close <id> "reason" --json
-
-CRITICAL — After completing %d task(s) or if ata ready is empty, you MUST output the following status line EXACTLY on its own line (no markdown fences, no extra text on the same line):
-
-ATA_RUNNER_STATUS:{"completed": ["<task-ids>"], "discovered": ["<task-ids>"], "review_tasks": ["<task-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}
-
-If you encounter an unrecoverable error:
-ATA_RUNNER_STATUS:{"completed": [], "discovered": [], "review_tasks": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}
-
-The orchestrator CANNOT parse your session without this line. Always output it as your final action.
+7. Output ATA_RUNNER_STATUS (see below). You MUST complete this step — the orchestrator cannot parse your session without it.
 
 Context management:
 - Conserve context — delegate exploration to Task subagents, avoid verbose tool output.
@@ -132,7 +124,6 @@ Context management:
 - Make atomic commits as you go — do not accumulate a large uncommitted diff.
 - Do NOT read files speculatively. Search first (grep/glob), then read only what you need.
 - If context feels constrained, output ATA_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.
-- Always output the ATA_RUNNER_STATUS sentinel as your final action, even if you feel the conversation is getting long.
 
 Task decomposition:
 - If a task is too complex for this session, break it into subtasks:
@@ -142,7 +133,13 @@ Task decomposition:
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
-Start now.`, specInstruction, filterInstruction, workspaceInstruction, worktreeInstruction, claimedInstruction, additionalTasks, attachmentsSection, discoveredInstruction, batchSize, decomposeCmd)
+MANDATORY FINAL OUTPUT — After completing %d task(s), if ata ready is empty, or if you are stopping for any reason, your LAST message must contain this line on its own (no markdown fences):
+
+ATA_RUNNER_STATUS:{"completed": ["<task-ids>"], "discovered": ["<task-ids>"], "review_tasks": ["<task-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}
+
+On unrecoverable error use: ATA_RUNNER_STATUS:{"completed": [], "discovered": [], "review_tasks": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}
+
+Do NOT end your session without outputting ATA_RUNNER_STATUS. Start now.`, specInstruction, filterInstruction, workspaceInstruction, worktreeInstruction, claimedInstruction, additionalTasks, attachmentsSection, discoveredInstruction, decomposeCmd, batchSize)
 }
 
 // claimTracker keeps track of the currently claimed task so we can
