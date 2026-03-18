@@ -23,13 +23,17 @@ func buildPrompt(cfg *Config, batchSize int, claimedTask *AtaTask) string {
 		filterInstruction += fmt.Sprintf("Only work on tasks tagged \"%s\". Ignore unrelated ready items.\n\n", cfg.TagFilter)
 	}
 
-	// Inject epic spec if the task belongs to an epic.
+	// Inject epic spec(s) if the task belongs to an epic — walk the full ancestor chain.
 	specInstruction := ""
 	if claimedTask.EpicID != "" {
-		spec := getEpicSpec(claimedTask.EpicID)
-		if spec != "" {
-			specInstruction = fmt.Sprintf("## Epic Spec (epic %s)\n\n%s\n\n---\n\n", claimedTask.EpicID, spec)
-			specInstruction += lockedDecisionsWarning(spec, "epic spec")
+		ancestors := getEpicAncestorSpecs(claimedTask.EpicID)
+		if len(ancestors) > 0 {
+			fullSpec := formatAncestorSpecs(ancestors)
+			specInstruction = fmt.Sprintf("## Epic Spec\n\n%s\n---\n\n", fullSpec)
+			// Check for locked decisions in all ancestor specs.
+			for _, a := range ancestors {
+				specInstruction += lockedDecisionsWarning(a.Spec, fmt.Sprintf("epic %s spec", a.ID))
+			}
 		}
 	}
 

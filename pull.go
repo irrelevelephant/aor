@@ -112,12 +112,13 @@ Flags:
 		fmt.Printf("\n%s\n", task.Body)
 	}
 
-	// Fetch epic spec once (used for display and prompt).
+	// Fetch epic spec chain (used for display and prompt).
 	var epicSpec string
 	if task.EpicID != "" {
-		epicSpec = getEpicSpec(task.EpicID)
-		if epicSpec != "" {
-			fmt.Printf("\n--- Epic Spec (%s) ---\n%s\n", task.EpicID, epicSpec)
+		ancestors := getEpicAncestorSpecs(task.EpicID)
+		epicSpec = formatAncestorSpecs(ancestors)
+		for _, a := range ancestors {
+			fmt.Printf("\n--- Epic Spec (%s) ---\n%s\n", a.ID, a.Spec)
 		}
 	}
 

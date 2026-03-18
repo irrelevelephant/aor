@@ -304,7 +304,7 @@ func formatHumanSize(b int64) string {
 	}
 }
 
-// getEpicSpec retrieves the spec for an epic.
+// getEpicSpec retrieves the spec for an epic (direct parent only, no ancestor traversal).
 func getEpicSpec(epicID string) string {
 	out, err := exec.Command("ata", "spec", epicID, "--json").Output()
 	if err != nil {
@@ -317,5 +317,72 @@ func getEpicSpec(epicID string) string {
 		return ""
 	}
 	return result.Spec
+}
+
+// epicAncestor holds an epic's ID and spec, used when walking the ancestor chain.
+type epicAncestor struct {
+	ID   string
+	Spec string
+}
+
+// getEpicAncestorSpecs walks from epicID up through parent epics, collecting
+// all specs in the chain. Returns ancestors ordered from nearest to farthest
+// (i.e. direct parent first, root epic last). Stops at 10 levels to prevent
+// infinite loops from circular references.
+func getEpicAncestorSpecs(epicID string) []epicAncestor {
+	const maxDepth = 10
+	var ancestors []epicAncestor
+	seen := map[string]bool{}
+	currentID := epicID
+
+	for i := 0; i < maxDepth && currentID != ""; i++ {
+		if seen[currentID] {
+			break // circular reference guard
+		}
+		seen[currentID] = true
+
+		task, err := getTaskStatus(currentID)
+		if err != nil || task == nil {
+			break
+		}
+
+		// task.Spec is already populated by ata show --json; no need for a
+		// separate getEpicSpec call.
+		if task.Spec != "" {
+			ancestors = append(ancestors, epicAncestor{ID: currentID, Spec: task.Spec})
+		}
+
+		currentID = task.EpicID
+	}
+
+	return ancestors
+}
+
+// formatAncestorSpecs formats the full epic ancestor chain into a prompt section.
+// Specs are presented root-first (reversed from the collection order) so that
+// the broadest context appears first and more specific context follows.
+func formatAncestorSpecs(ancestors []epicAncestor) string {
+	if len(ancestors) == 0 {
+		return ""
+	}
+
+	// Present root-first (reversed from collection order) so broadest context comes first.
+	var b strings.Builder
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		a := ancestors[i]
+		var label string
+		switch {
+		case i == len(ancestors)-1 && i == 0:
+			label = "Epic" // sole ancestor
+		case i == len(ancestors)-1:
+			label = "Root Epic"
+		case i == 0:
+			label = "Parent Epic"
+		default:
+			label = "Ancestor Epic"
+		}
+		fmt.Fprintf(&b, "### %s (%s)\n\n%s\n", label, a.ID, a.Spec)
+	}
+	return b.String()
 }
 
