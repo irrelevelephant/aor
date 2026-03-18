@@ -257,29 +257,45 @@ func run(cfg *Config) error {
 	}
 
 	tryCloseEpics := func() {
-		epics, err := getCloseEligibleEpics(cfg.Workspace)
-		if err != nil {
-			log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
-			return
-		}
-		for _, epic := range epics {
-			if epic.Spec != "" {
-				// Has spec — run verification.
-				log.Log("Epic %s children all closed — verifying...", epic.ID)
-				passed, err := verifyEpic(epic.ID, cfg, log, stdinCh, stats)
-				if err != nil {
-					log.Log("Epic %s verification error: %v", epic.ID, err)
-				} else if passed {
-					log.Log("Epic %s verified and closed", epic.ID)
+		// Loop until no more epics become eligible. Closing a sub-epic may
+		// make its parent eligible, so we must re-check after each pass.
+		// Cap iterations to avoid infinite loops from unexpected edge cases.
+		for range 20 {
+			epics, err := getCloseEligibleEpics(cfg.Workspace)
+			if err != nil {
+				log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
+				return
+			}
+			if len(epics) == 0 {
+				return
+			}
+			closedAny := false
+			for _, epic := range epics {
+				if epic.Spec != "" {
+					// Has spec — run verification.
+					log.Log("Epic %s children all closed — verifying...", epic.ID)
+					passed, err := verifyEpic(epic.ID, cfg, log, stdinCh, stats)
+					if err != nil {
+						log.Log("Epic %s verification error: %v", epic.ID, err)
+					} else if passed {
+						log.Log("Epic %s verified and closed", epic.ID)
+						closedAny = true
+					} else {
+						log.Log("Epic %s did not pass verification", epic.ID)
+					}
 				} else {
-					log.Log("Epic %s did not pass verification", epic.ID)
+					// No spec — auto-close like before.
+					if err := closeTask(epic.ID, "all children closed"); err == nil {
+						stats.EpicsClosed++
+						log.Log("Auto-closed epic %s (no spec)", epic.ID)
+						closedAny = true
+					}
 				}
-			} else {
-				// No spec — auto-close like before.
-				if err := closeTask(epic.ID, "all children closed"); err == nil {
-					stats.EpicsClosed++
-					log.Log("Auto-closed epic %s (no spec)", epic.ID)
-				}
+			}
+			// If nothing was closed this pass, no point re-checking —
+			// no parent epic could have become newly eligible.
+			if !closedAny {
+				return
 			}
 		}
 	}

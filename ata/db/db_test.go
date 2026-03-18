@@ -25,6 +25,17 @@ func testDB(t *testing.T) *DB {
 	return d
 }
 
+// makeNestedEpic creates a root epic → sub-epic → leaf task hierarchy for tests.
+func makeNestedEpic(t *testing.T, d *DB) (root, sub, leaf *model.Task) {
+	t.Helper()
+	r, _ := d.CreateTask("Root", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(r.ID, "")
+	s, _ := d.CreateTask("Sub", "", model.StatusQueue, r.ID, "/ws", "")
+	d.PromoteToEpic(s.ID, "")
+	l, _ := d.CreateTask("Leaf", "", model.StatusQueue, s.ID, "/ws", "")
+	return r, s, l
+}
+
 func TestCreateAndGetTask(t *testing.T) {
 	d := testDB(t)
 
@@ -295,6 +306,105 @@ func TestCloseEpicWithOpenSubtasks(t *testing.T) {
 	_, err = d.CloseTask(epic.ID, "done")
 	if err == nil {
 		t.Fatal("expected error closing epic with 1 open subtask")
+	}
+}
+
+func TestEpicCloseEligibleCascadesWithNesting(t *testing.T) {
+	d := testDB(t)
+	root, sub, task := makeNestedEpic(t, d)
+
+	// Nothing eligible yet.
+	eligible, _ := d.EpicCloseEligible("/ws")
+	if len(eligible) != 0 {
+		t.Fatalf("expected 0 eligible, got %d", len(eligible))
+	}
+
+	// Close the leaf task — sub should become eligible, but not root.
+	d.CloseTask(task.ID, "done")
+	eligible, _ = d.EpicCloseEligible("/ws")
+	if len(eligible) != 1 {
+		t.Fatalf("expected 1 eligible, got %d", len(eligible))
+	}
+	if eligible[0].ID != sub.ID {
+		t.Errorf("expected sub %s eligible, got %s", sub.ID, eligible[0].ID)
+	}
+
+	// Close sub — now root should become eligible.
+	d.CloseTask(sub.ID, "done")
+	eligible, _ = d.EpicCloseEligible("/ws")
+	if len(eligible) != 1 {
+		t.Fatalf("expected 1 eligible, got %d", len(eligible))
+	}
+	if eligible[0].ID != root.ID {
+		t.Errorf("expected root %s eligible, got %s", root.ID, eligible[0].ID)
+	}
+}
+
+func TestCloseEpicBlockedByOpenSubEpic(t *testing.T) {
+	d := testDB(t)
+	root, sub, task := makeNestedEpic(t, d)
+
+	d.CloseTask(task.ID, "done")
+
+	// Root still has open direct child (sub), so close should fail.
+	_, err := d.CloseTask(root.ID, "done")
+	if err == nil {
+		t.Fatal("expected error closing root with open sub-epic")
+	}
+
+	// Close sub first, then root should succeed.
+	d.CloseTask(sub.ID, "done")
+	_, err = d.CloseTask(root.ID, "done")
+	if err != nil {
+		t.Fatalf("expected root to close after sub closed: %v", err)
+	}
+}
+
+func TestListTasksNestedEpic(t *testing.T) {
+	d := testDB(t)
+
+	// root (epic) → sub (epic) → deep task
+	//             → shallow task
+	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(root.ID, "")
+
+	sub, _ := d.CreateTask("Sub", "", model.StatusQueue, root.ID, "/ws", "")
+	d.PromoteToEpic(sub.ID, "")
+
+	deep, _ := d.CreateTask("Deep", "", model.StatusQueue, sub.ID, "/ws", "")
+	shallow, _ := d.CreateTask("Shallow", "", model.StatusQueue, root.ID, "/ws", "")
+
+	// ListTasks with root epic should return sub, deep, and shallow.
+	tasks, err := d.ListTasks("/ws", "", root.ID, "", "")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+
+	ids := map[string]bool{}
+	for _, task := range tasks {
+		ids[task.ID] = true
+	}
+
+	if !ids[sub.ID] {
+		t.Errorf("expected sub-epic %s in results", sub.ID)
+	}
+	if !ids[deep.ID] {
+		t.Errorf("expected deep task %s in results", deep.ID)
+	}
+	if !ids[shallow.ID] {
+		t.Errorf("expected shallow task %s in results", shallow.ID)
+	}
+	if len(tasks) != 3 {
+		t.Errorf("expected 3 tasks, got %d", len(tasks))
+	}
+
+	// ListTasks with sub epic should only return deep task.
+	tasks, err = d.ListTasks("/ws", "", sub.ID, "", "")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != deep.ID {
+		t.Errorf("expected only deep task %s, got %d tasks", deep.ID, len(tasks))
 	}
 }
 
