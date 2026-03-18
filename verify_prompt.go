@@ -55,7 +55,7 @@ IMPORTANT:
 	b.WriteString(sentinelBlock(
 		"EPIC_VERIFY_STATUS",
 		`{"passed": true, "tasks_filed": [], "summary": "<brief summary of verification>", "error": null}`,
-		`{"passed": false, "tasks_filed": [], "summary": "", "error": "<description>"}`,
+		`{"passed": false, "tasks_filed": [{"id": "<id>", "title": "<title>"}], "summary": "<what failed and why>", "error": null}`,
 		"If criteria fail, include the tasks you filed in tasks_filed.",
 	))
 	b.WriteString("\n")

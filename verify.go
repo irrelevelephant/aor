@@ -70,7 +70,11 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 		// 5. Parse sentinel.
 		status := parseSentinelJSON[EpicVerifyStatus](result.RawOutput, "EPIC_VERIFY_STATUS:")
 		if status == nil {
-			log.Log("%sWARNING: No EPIC_VERIFY_STATUS sentinel from verification agent%s", cYellow, cReset)
+			snippet := result.RawOutput
+			if len(snippet) > 200 {
+				snippet = snippet[len(snippet)-200:]
+			}
+			log.Log("%sWARNING: No EPIC_VERIFY_STATUS sentinel from verification agent (tail: %s)%s", cYellow, snippet, cReset)
 			return false, nil
 		}
 

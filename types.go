@@ -149,8 +149,28 @@ type ReviewStatus struct {
 
 // FiledTask represents a task filed during review or verification.
 type FiledTask struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// UnmarshalJSON handles both object ({"id": "x", "title": "y"}) and bare
+// string ("x") forms. The bare-string fallback makes us resilient to LLM
+// format drift where only the task ID is emitted.
+func (f *FiledTask) UnmarshalJSON(data []byte) error {
+	// Try bare string first (e.g. "lpy").
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		f.ID = s
+		return nil
+	}
+	// Normal object.
+	type alias FiledTask
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*f = FiledTask(a)
+	return nil
 }
 
 // ReviewRound records the outcome of a single review iteration.
