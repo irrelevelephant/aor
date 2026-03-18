@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
         new Sortable(el, {
             group: 'workspace',
             handle: '.drag-handle',
-            draggable: '.task-row, .epic-group',
+            draggable: '.task-row:not(.epic-row), .epic-group',
             animation: 150,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
         new Sortable(el, {
             group: 'workspace',
             handle: '.drag-handle',
-            draggable: '.child-row, .task-row, .epic-group',
+            draggable: '.child-row, .task-row:not(.epic-row), .epic-group',
             animation: 150,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
