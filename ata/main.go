@@ -119,7 +119,7 @@ Commands:
   comment   Add a comment to a task
   dep       Manage task dependencies
   tag       Manage task tags
-  reorder   Set task position in its list
+  reorder   Reorder a task (--position, --before, --after, --top, --bottom)
   move      Batch move tasks between statuses
   recover   Recover stuck in_progress tasks
   epic-close-eligible  List epics eligible for close (--close to actually close)

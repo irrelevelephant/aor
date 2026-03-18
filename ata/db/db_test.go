@@ -915,6 +915,157 @@ func TestReorderInEpic(t *testing.T) {
 	}
 }
 
+func TestReorderOptBeforeAfter(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
+	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
+	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+
+	// Move t3 before t1 (to the top).
+	if err := d.ReorderOpt(t3.ID, "", ReorderOpts{Position: -1, Before: t1.ID}); err != nil {
+		t.Fatalf("ReorderOpt before: %v", err)
+	}
+	tasks, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3, got %d", len(tasks))
+	}
+	if tasks[0].ID != t3.ID {
+		t.Errorf("pos 0: want %s, got %s", t3.ID, tasks[0].ID)
+	}
+	if tasks[1].ID != t1.ID {
+		t.Errorf("pos 1: want %s, got %s", t1.ID, tasks[1].ID)
+	}
+	if tasks[2].ID != t2.ID {
+		t.Errorf("pos 2: want %s, got %s", t2.ID, tasks[2].ID)
+	}
+
+	// Move t1 after t2 (to the end).
+	if err := d.ReorderOpt(t1.ID, "", ReorderOpts{Position: -1, After: t2.ID}); err != nil {
+		t.Fatalf("ReorderOpt after: %v", err)
+	}
+	tasks, _ = d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	if tasks[0].ID != t3.ID {
+		t.Errorf("pos 0: want %s, got %s", t3.ID, tasks[0].ID)
+	}
+	if tasks[1].ID != t2.ID {
+		t.Errorf("pos 1: want %s, got %s", t2.ID, tasks[1].ID)
+	}
+	if tasks[2].ID != t1.ID {
+		t.Errorf("pos 2: want %s, got %s", t1.ID, tasks[2].ID)
+	}
+}
+
+func TestReorderOptTopBottom(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
+	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
+	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+
+	// Move t3 to top.
+	if err := d.ReorderOpt(t3.ID, "", ReorderOpts{Position: -1, Top: true}); err != nil {
+		t.Fatalf("ReorderOpt top: %v", err)
+	}
+	tasks, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	if tasks[0].ID != t3.ID {
+		t.Errorf("top: pos 0 want %s, got %s", t3.ID, tasks[0].ID)
+	}
+
+	// Move t3 to bottom.
+	if err := d.ReorderOpt(t3.ID, "", ReorderOpts{Position: -1, Bottom: true}); err != nil {
+		t.Fatalf("ReorderOpt bottom: %v", err)
+	}
+	tasks, _ = d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	if tasks[2].ID != t3.ID {
+		t.Errorf("bottom: pos 2 want %s, got %s", t3.ID, tasks[2].ID)
+	}
+
+	_ = t1
+	_ = t2
+}
+
+func TestReorderOptCrossStatus(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("Queue1", "", model.StatusQueue, "", "/ws", "")
+	b1, _ := d.CreateTask("Backlog1", "", model.StatusBacklog, "", "/ws", "")
+
+	// Move t1 to backlog at top.
+	if err := d.ReorderOpt(t1.ID, model.StatusBacklog, ReorderOpts{Position: -1, Top: true}); err != nil {
+		t.Fatalf("ReorderOpt cross-status: %v", err)
+	}
+
+	queue, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	if len(queue) != 0 {
+		t.Errorf("queue should be empty, got %d", len(queue))
+	}
+
+	backlog, _ := d.ListTasks("/ws", model.StatusBacklog, "", "", "")
+	if len(backlog) != 2 {
+		t.Fatalf("expected 2 backlog, got %d", len(backlog))
+	}
+	if backlog[0].ID != t1.ID {
+		t.Errorf("backlog[0]: want %s, got %s", t1.ID, backlog[0].ID)
+	}
+	if backlog[1].ID != b1.ID {
+		t.Errorf("backlog[1]: want %s, got %s", b1.ID, backlog[1].ID)
+	}
+}
+
+func TestReorderInEpicOpts(t *testing.T) {
+	d := testDB(t)
+
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
+	c3, _ := d.CreateTask("Child3", "", model.StatusQueue, epic.ID, "/ws", "")
+
+	// Move c3 before c1.
+	if err := d.ReorderInEpicOpts(c3.ID, epic.ID, ReorderOpts{Position: -1, Before: c1.ID}); err != nil {
+		t.Fatalf("ReorderInEpicOpts before: %v", err)
+	}
+	children, _ := d.ListTasks("", "", epic.ID, "", "")
+	if children[0].ID != c3.ID {
+		t.Errorf("pos 0: want %s, got %s", c3.ID, children[0].ID)
+	}
+	if children[1].ID != c1.ID {
+		t.Errorf("pos 1: want %s, got %s", c1.ID, children[1].ID)
+	}
+	if children[2].ID != c2.ID {
+		t.Errorf("pos 2: want %s, got %s", c2.ID, children[2].ID)
+	}
+
+	// Move c1 after c2.
+	if err := d.ReorderInEpicOpts(c1.ID, epic.ID, ReorderOpts{Position: -1, After: c2.ID}); err != nil {
+		t.Fatalf("ReorderInEpicOpts after: %v", err)
+	}
+	children, _ = d.ListTasks("", "", epic.ID, "", "")
+	if children[0].ID != c3.ID {
+		t.Errorf("pos 0: want %s, got %s", c3.ID, children[0].ID)
+	}
+	if children[1].ID != c2.ID {
+		t.Errorf("pos 1: want %s, got %s", c2.ID, children[1].ID)
+	}
+	if children[2].ID != c1.ID {
+		t.Errorf("pos 2: want %s, got %s", c1.ID, children[2].ID)
+	}
+}
+
+func TestReorderOptBeforeNotFound(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
+	_ = t1
+
+	err := d.ReorderOpt(t1.ID, "", ReorderOpts{Position: -1, Before: "nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent before ID")
+	}
+}
+
 func TestSetEpicID(t *testing.T) {
 	d := testDB(t)
 

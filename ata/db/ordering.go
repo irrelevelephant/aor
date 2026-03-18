@@ -6,6 +6,58 @@ import (
 	"slices"
 )
 
+// ReorderOpts specifies how to determine the target position for a reorder.
+// Exactly one of Position (>= 0), Top, Bottom, Before, or After should be set.
+type ReorderOpts struct {
+	Position int    // Target position (0-based), -1 means unset
+	Top      bool   // Move to position 0
+	Bottom   bool   // Move to end of list
+	Before   string // Place before this task ID
+	After    string // Place after this task ID
+}
+
+// resolvePosition converts ReorderOpts into a numeric position given the ordered
+// list of sibling IDs. The task being reordered (id) should already be in ids
+// (or not, if it's being inserted from another list).
+func resolvePosition(ids []string, id string, opts ReorderOpts) (int, error) {
+	if opts.Top {
+		return 0, nil
+	}
+	if opts.Bottom {
+		return len(ids), nil
+	}
+	if opts.Before != "" {
+		// Find index of the reference task (in the list without the moving task).
+		filtered := withoutID(ids, id)
+		idx := slices.Index(filtered, opts.Before)
+		if idx < 0 {
+			return 0, fmt.Errorf("task %s not found in sibling list", opts.Before)
+		}
+		return idx, nil
+	}
+	if opts.After != "" {
+		filtered := withoutID(ids, id)
+		idx := slices.Index(filtered, opts.After)
+		if idx < 0 {
+			return 0, fmt.Errorf("task %s not found in sibling list", opts.After)
+		}
+		return idx + 1, nil
+	}
+	// opts.Position >= 0
+	return opts.Position, nil
+}
+
+// withoutID returns a copy of ids with the given id removed.
+func withoutID(ids []string, id string) []string {
+	out := make([]string, 0, len(ids))
+	for _, v := range ids {
+		if v != id {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // scanIDs reads a single string column from rows into a slice.
 func scanIDs(rows *sql.Rows) ([]string, error) {
 	var ids []string
@@ -41,28 +93,29 @@ func reorderIDs(tx *sql.Tx, ids []string, id string, position int) error {
 
 // Reorder sets a top-level task's position within its status+workspace group.
 // If newStatus is non-empty and differs from the current status, the task is moved to that status.
-// Uses an array-based approach: read all IDs, remove+insert, reassign 0..n-1.
 func (d *DB) Reorder(id string, position int, newStatus string) error {
+	return d.ReorderOpt(id, newStatus, ReorderOpts{Position: position})
+}
+
+// ReorderOpt is like Reorder but accepts ReorderOpts for flexible positioning.
+func (d *DB) ReorderOpt(id string, newStatus string, opts ReorderOpts) error {
 	tx, err := d.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Get the task's current status and workspace.
 	var status, workspace string
 	err = tx.QueryRow(`SELECT status, workspace FROM tasks WHERE id = ?`, id).Scan(&status, &workspace)
 	if err != nil {
 		return fmt.Errorf("task %s not found", id)
 	}
 
-	// Determine target status.
 	targetStatus := status
 	if newStatus != "" && newStatus != status {
 		targetStatus = newStatus
 	}
 
-	// Query ordered IDs of top-level items in the target status+workspace.
 	rows, err := tx.Query(
 		`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') ORDER BY sort_order ASC, created_at ASC`,
 		targetStatus, workspace)
@@ -74,7 +127,11 @@ func (d *DB) Reorder(id string, position int, newStatus string) error {
 		return fmt.Errorf("scan top-level ids: %w", err)
 	}
 
-	// If changing status, also need to remove from the old status list.
+	position, err := resolvePosition(ids, id, opts)
+	if err != nil {
+		return err
+	}
+
 	if targetStatus != status {
 		oldRows, err := tx.Query(
 			`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') ORDER BY sort_order ASC, created_at ASC`,
@@ -87,7 +144,6 @@ func (d *DB) Reorder(id string, position int, newStatus string) error {
 			return fmt.Errorf("scan old status ids: %w", err)
 		}
 
-		// Remove from old list and reassign.
 		if err := reorderIDs(tx, oldIDs, id, len(oldIDs)); err != nil {
 			return fmt.Errorf("reassign old: %w", err)
 		}
@@ -97,7 +153,6 @@ func (d *DB) Reorder(id string, position int, newStatus string) error {
 		return err
 	}
 
-	// Update the moved task's status if changed.
 	if targetStatus != status {
 		if _, err := tx.Exec(`UPDATE tasks SET status = ? WHERE id = ?`, targetStatus, id); err != nil {
 			return fmt.Errorf("update status: %w", err)
@@ -108,15 +163,18 @@ func (d *DB) Reorder(id string, position int, newStatus string) error {
 }
 
 // ReorderInEpic sets a child task's sort_order within its parent epic's children.
-// Uses an array-based approach: read all IDs, remove+insert, reassign 0..n-1.
 func (d *DB) ReorderInEpic(id string, position int, epicID string) error {
+	return d.ReorderInEpicOpts(id, epicID, ReorderOpts{Position: position})
+}
+
+// ReorderInEpicOpts is like ReorderInEpic but accepts ReorderOpts for flexible positioning.
+func (d *DB) ReorderInEpicOpts(id string, epicID string, opts ReorderOpts) error {
 	tx, err := d.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Query ordered IDs of children for the given epic.
 	rows, err := tx.Query(
 		`SELECT id FROM tasks WHERE epic_id = ? ORDER BY sort_order ASC, created_at ASC`,
 		epicID)
@@ -126,6 +184,11 @@ func (d *DB) ReorderInEpic(id string, position int, epicID string) error {
 	ids, err := scanIDs(rows)
 	if err != nil {
 		return fmt.Errorf("scan epic children: %w", err)
+	}
+
+	position, err := resolvePosition(ids, id, opts)
+	if err != nil {
+		return err
 	}
 
 	if err := reorderIDs(tx, ids, id, position); err != nil {
