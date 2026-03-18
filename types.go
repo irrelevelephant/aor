@@ -17,6 +17,7 @@ type AtaTask struct {
 	IsEpic      bool            `json:"is_epic"`
 	Spec        string          `json:"spec,omitempty"`
 	Tags        []string        `json:"tags,omitempty"`
+	CloseReason string          `json:"close_reason,omitempty"`
 	Attachments []AtaAttachment `json:"attachments,omitempty"`
 	CreatedAt   string          `json:"created_at"`
 }
@@ -113,10 +114,20 @@ type RunStats struct {
 	TriageSkipped       int
 	RecoveredTasks      int
 	EpicsClosed         int
+	EpicsVerified       int
+	VerifySessions      int
 	StartedAt           time.Time
 	TotalCostUSD        float64
 	TotalInput          int
 	TotalOutput         int
+}
+
+// EpicVerifyStatus is the structured output from an epic verification session.
+type EpicVerifyStatus struct {
+	Passed     bool         `json:"passed"`
+	TasksFiled []ReviewTask `json:"tasks_filed"`
+	Summary    string       `json:"summary"`
+	Error      *string      `json:"error"`
 }
 
 // ReviewConfig holds configuration for the rev subcommand.

@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"aor/ata/db"
-	"aor/ata/model"
 )
 
 func EpicCloseEligible(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("epic-close-eligible", flag.ContinueOnError)
 	workspace := fs.String("workspace", "", "Filter by workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
+	doClose := fs.Bool("close", false, "Actually close eligible epics (default: list only)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -22,12 +22,26 @@ func EpicCloseEligible(d *db.DB, args []string) error {
 		return err
 	}
 
-	// Auto-close them.
-	var closed []model.Task
+	if !*doClose {
+		// List-only mode: return eligible epics without closing.
+		if *jsonOut {
+			return outputJSON(epics)
+		}
+		if len(epics) == 0 {
+			fmt.Println("no epics eligible for close")
+			return nil
+		}
+		for _, e := range epics {
+			fmt.Printf("eligible: %s — %s\n", e.ID, e.Title)
+		}
+		return nil
+	}
+
+	// Close mode: close eligible epics and report.
+	var closedIDs []string
 	for _, e := range epics {
-		t, err := d.CloseTask(e.ID, "all children closed")
-		if err == nil {
-			closed = append(closed, *t)
+		if _, err := d.CloseTask(e.ID, "all children closed"); err == nil {
+			closedIDs = append(closedIDs, e.ID)
 		}
 	}
 
@@ -36,10 +50,8 @@ func EpicCloseEligible(d *db.DB, args []string) error {
 			Closed []string `json:"closed"`
 			Count  int      `json:"count"`
 		}{
-			Count: len(closed),
-		}
-		for _, t := range closed {
-			result.Closed = append(result.Closed, t.ID)
+			Closed: closedIDs,
+			Count:  len(closedIDs),
 		}
 		if result.Closed == nil {
 			result.Closed = []string{}
@@ -47,13 +59,13 @@ func EpicCloseEligible(d *db.DB, args []string) error {
 		return outputJSON(result)
 	}
 
-	if len(closed) == 0 {
+	if len(closedIDs) == 0 {
 		fmt.Println("no epics eligible for close")
 		return nil
 	}
 
-	for _, t := range closed {
-		fmt.Printf("closed epic %s: %s\n", t.ID, t.Title)
+	for _, id := range closedIDs {
+		fmt.Printf("closed epic %s\n", id)
 	}
 	return nil
 }

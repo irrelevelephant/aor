@@ -151,7 +151,7 @@ func (d *DB) ListTasks(workspace, status, epicID, tag, excludeTag string) ([]mod
 
 // ReadyTasks returns queue tasks that are not blocked, optionally filtered by workspace, epic, and tag.
 func (d *DB) ReadyTasks(workspace, epicID, tag string, limit int) ([]model.Task, error) {
-	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'queue'`
+	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'queue' AND is_epic = 0`
 	query += ` AND id NOT IN (SELECT td.task_id FROM task_deps td JOIN tasks dep ON dep.id = td.depends_on WHERE dep.status != 'closed')`
 	var args []any
 

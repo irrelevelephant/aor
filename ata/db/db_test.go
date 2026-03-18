@@ -169,6 +169,28 @@ func TestEpicCloseEligible(t *testing.T) {
 	}
 }
 
+func TestReadyTasksExcludesEpics(t *testing.T) {
+	d := testDB(t)
+
+	// Create a regular task and an epic, both in queue.
+	task, _ := d.CreateTask("Regular Task", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "# Spec")
+
+	ready, err := d.ReadyTasks("/ws", "", "", 0)
+	if err != nil {
+		t.Fatalf("ReadyTasks: %v", err)
+	}
+
+	// Should only contain the regular task, not the epic.
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready task, got %d", len(ready))
+	}
+	if ready[0].ID != task.ID {
+		t.Errorf("expected task %s, got %s", task.ID, ready[0].ID)
+	}
+}
+
 func TestCloseEpicWithOpenSubtasks(t *testing.T) {
 	d := testDB(t)
 

@@ -171,8 +171,8 @@ func getTasksCreatedAfter(after time.Time, workspace string) ([]AtaTask, error) 
 	return filtered, nil
 }
 
-// closeEligibleEpics runs ata epic-close-eligible to auto-close epics.
-func closeEligibleEpics(workspace string) ([]string, error) {
+// getCloseEligibleEpics returns epics whose children are all closed, without closing them.
+func getCloseEligibleEpics(workspace string) ([]AtaTask, error) {
 	args := []string{"epic-close-eligible", "--json"}
 	if workspace != "" {
 		args = append(args, "--workspace", workspace)
@@ -183,15 +183,27 @@ func closeEligibleEpics(workspace string) ([]string, error) {
 		return nil, fmt.Errorf("ata epic-close-eligible: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 
-	var result struct {
-		Closed []string `json:"closed"`
-		Count  int      `json:"count"`
-	}
-	if err := json.Unmarshal(out, &result); err != nil {
+	var epics []AtaTask
+	if err := json.Unmarshal(out, &epics); err != nil {
 		return nil, nil // Gracefully handle empty/null
 	}
+	return epics, nil
+}
 
-	return result.Closed, nil
+// getEpicChildren returns all children of an epic (including closed).
+func getEpicChildren(epicID string) ([]AtaTask, error) {
+	args := []string{"list", "--epic", epicID, "--all", "--json"}
+
+	out, err := exec.Command("ata", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("ata list --epic %s: %w", epicID, err)
+	}
+
+	var tasks []AtaTask
+	if err := json.Unmarshal(out, &tasks); err != nil {
+		return nil, fmt.Errorf("parse ata list output: %w", err)
+	}
+	return tasks, nil
 }
 
 // topTask returns the task with the lowest sort_order, breaking ties by creation date.

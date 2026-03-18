@@ -38,12 +38,15 @@ type Config struct {
 	WorkDir         string // actual working directory (worktree path when in a linked worktree)
 	ResumeSessionID string // set internally when resuming an existing session
 
+	MaxRounds int // max rounds for epic verification and review loops
+
 	// Shared resources — set when run() is called as a sub-process (e.g. sweep mode).
 	StdinCh         <-chan string // shared stdin reader (nil = create own)
 	Log             *Logger      // shared logger (nil = create own)
 	Stats           *RunStats    // shared stats (nil = create own)
 	SuppressSummary bool         // skip printSummary
 	SkipRecovery    bool         // skip recoverStuckTasks (caller already ran it)
+	SkipEpicClose   bool         // skip tryCloseEpics (caller handles epic lifecycle)
 }
 
 func main() {
@@ -86,6 +89,7 @@ func main() {
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
 	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to queue and exit")
+	flag.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Max rounds for epic verification / review loops")
 	rev := flag.Bool("rev", false, "Run code review after each epic completes")
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
 
@@ -232,7 +236,7 @@ func runMultiEpic(cfg *Config, epics []string, rev bool) error {
 				log.Log("Running code review for epic %s (base: %s)", label, preSHA)
 				revCfg := &ReviewConfig{
 					Base:      preSHA,
-					MaxRounds: 3,
+					MaxRounds: cfg.MaxRounds,
 					Yolo:      cfg.Yolo,
 					LogDir:    cfg.LogDir,
 					Workspace: cfg.Workspace,

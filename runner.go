@@ -257,11 +257,30 @@ func run(cfg *Config) error {
 	}
 
 	tryCloseEpics := func() {
-		if closed, err := closeEligibleEpics(cfg.Workspace); err != nil {
-			log.Log("%sEpic auto-close failed: %v%s", cYellow, err, cReset)
-		} else if len(closed) > 0 {
-			stats.EpicsClosed += len(closed)
-			log.Log("Auto-closed %d epic(s): %s", len(closed), strings.Join(closed, ", "))
+		epics, err := getCloseEligibleEpics(cfg.Workspace)
+		if err != nil {
+			log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
+			return
+		}
+		for _, epic := range epics {
+			if epic.Spec != "" {
+				// Has spec — run verification.
+				log.Log("Epic %s children all closed — verifying...", epic.ID)
+				passed, err := verifyEpic(epic.ID, cfg, log, stdinCh, stats)
+				if err != nil {
+					log.Log("Epic %s verification error: %v", epic.ID, err)
+				} else if passed {
+					log.Log("Epic %s verified and closed", epic.ID)
+				} else {
+					log.Log("Epic %s did not pass verification", epic.ID)
+				}
+			} else {
+				// No spec — auto-close like before.
+				if err := closeTask(epic.ID, "all children closed"); err == nil {
+					stats.EpicsClosed++
+					log.Log("Auto-closed epic %s (no spec)", epic.ID)
+				}
+			}
 		}
 	}
 
@@ -274,6 +293,13 @@ func run(cfg *Config) error {
 		}
 
 		if len(tasks) == 0 {
+			// Before declaring "all done", check if the filtered epic itself needs verification.
+			if cfg.EpicFilter != "" {
+				if tryVerifyFilteredEpic(cfg.EpicFilter, cfg, log, stdinCh, stats) {
+					// Verification may have filed new tasks — re-check.
+					continue
+				}
+			}
 			log.Log("%sNo ready tasks. All done!%s", cGreen, cReset)
 			break
 		}
@@ -532,7 +558,7 @@ func run(cfg *Config) error {
 		}
 
 		// Auto-close any epics whose children are all complete.
-		if iterCompleted {
+		if iterCompleted && !cfg.SkipEpicClose {
 			tryCloseEpics()
 		}
 
@@ -551,7 +577,9 @@ func run(cfg *Config) error {
 
 	// Final epic auto-close check — the loop may have exited (via break)
 	// before the in-loop auto-close had a chance to run.
-	tryCloseEpics()
+	if !cfg.SkipEpicClose {
+		tryCloseEpics()
+	}
 
 	if !cfg.SuppressSummary {
 		printSummary(log, stats)
@@ -590,6 +618,12 @@ func printSummary(log *Logger, stats *RunStats) {
 	}
 	if stats.EpicsClosed > 0 {
 		log.Log("  Epics closed:      %s%d%s", cGreen, stats.EpicsClosed, cReset)
+	}
+	if stats.EpicsVerified > 0 {
+		log.Log("  Epics verified:    %s%d%s", cGreen, stats.EpicsVerified, cReset)
+	}
+	if stats.VerifySessions > 0 {
+		log.Log("  Verify sessions:   %d", stats.VerifySessions)
 	}
 	log.Log("  Sessions run:      %d", stats.SessionsRun)
 	log.Log("  Errors:            %d", stats.Errors)
