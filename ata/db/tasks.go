@@ -680,6 +680,20 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 	return tasks, nil
 }
 
+// MoveEpicTree moves an epic and all its non-closed descendants to the given status.
+func (d *DB) MoveEpicTree(epicID, toStatus string) error {
+	_, err := d.Exec(`
+		WITH RECURSIVE tree(id) AS (
+			SELECT ?
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN tree tr ON t.epic_id = tr.id WHERE t.status != 'closed'
+		)
+		UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = ''
+		WHERE id IN (SELECT id FROM tree) AND status != 'closed'`,
+		epicID, toStatus)
+	return err
+}
+
 // RecoverStuckTasks finds in_progress tasks with dead PIDs and unclaims them.
 func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 	tx, err := d.Begin()

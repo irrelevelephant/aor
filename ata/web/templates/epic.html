@@ -10,7 +10,21 @@
             hx-post="/task/{{.ID}}" hx-trigger="blur" hx-vals='js:{"title": event.target.innerText}'
             hx-swap="none">{{.Title}}</h1>
         <span class="badge epic-badge">epic</span>
+        {{if eq .Status "queue"}}
+        <form action="/task/{{.ID}}/move" method="POST" style="display:inline">
+            <input type="hidden" name="to" value="backlog">
+            <input type="hidden" name="redirect" value="/epic/{{.ID}}">
+            <button type="submit" class="status-badge status-queue status-toggle" title="Move epic + sub-tasks to backlog">queue</button>
+        </form>
+        {{else if eq .Status "backlog"}}
+        <form action="/task/{{.ID}}/move" method="POST" style="display:inline">
+            <input type="hidden" name="to" value="queue">
+            <input type="hidden" name="redirect" value="/epic/{{.ID}}">
+            <button type="submit" class="status-badge status-backlog status-toggle" title="Move epic + sub-tasks to queue">backlog</button>
+        </form>
+        {{else}}
         <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
+        {{end}}
         {{if $.IsBlocked}}<span class="badge blocked-badge">blocked</span>{{end}}
     </div>
 

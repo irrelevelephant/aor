@@ -287,6 +287,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	// Task mutations.
 	mux.HandleFunc("POST /task", srv.handleCreateTask)
 	mux.HandleFunc("POST /task/{id}", srv.handleUpdateTask)
+	mux.HandleFunc("POST /task/{id}/move", srv.handleMoveTask)
 	mux.HandleFunc("POST /task/{id}/close", srv.handleCloseTask)
 	mux.HandleFunc("POST /task/{id}/reopen", srv.handleReopenTask)
 	mux.HandleFunc("POST /task/{id}/promote", srv.handlePromoteTask)
@@ -825,6 +826,35 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		dest = "/epic/" + id
 	}
 	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+func (s *Server) handleMoveTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	to := r.FormValue("to")
+	if to != model.StatusQueue && to != model.StatusBacklog {
+		http.Error(w, "invalid target status", 400)
+		return
+	}
+	task, err := s.db.GetTask(id)
+	if err != nil || task == nil {
+		http.Error(w, "task not found", 404)
+		return
+	}
+	if task.IsEpic {
+		err = s.db.MoveEpicTree(id, to)
+	} else {
+		_, err = s.db.MoveTasks([]string{id}, "", to, task.Workspace)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	s.hub.Broadcast("task_updated", task.Workspace, id)
+	dest := r.FormValue("redirect")
+	if dest == "" {
+		dest = "/task/" + id
+	}
+	s.hxRedirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (s *Server) handleCloseTask(w http.ResponseWriter, r *http.Request) {

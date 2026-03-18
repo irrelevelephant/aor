@@ -12,7 +12,21 @@
     </div>
 
     <div class="task-meta">
+        {{if eq .Status "queue"}}
+        <form action="/task/{{.ID}}/move" method="POST" style="display:inline">
+            <input type="hidden" name="to" value="backlog">
+            <input type="hidden" name="redirect" value="/task/{{.ID}}">
+            <button type="submit" class="status-badge status-queue status-toggle" title="Move to backlog">queue</button>
+        </form>
+        {{else if eq .Status "backlog"}}
+        <form action="/task/{{.ID}}/move" method="POST" style="display:inline">
+            <input type="hidden" name="to" value="queue">
+            <input type="hidden" name="redirect" value="/task/{{.ID}}">
+            <button type="submit" class="status-badge status-backlog status-toggle" title="Move to queue">backlog</button>
+        </form>
+        {{else}}
         <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
+        {{end}}
         {{if $.IsBlocked}}<span class="badge blocked-badge">blocked</span>{{end}}
         {{if .IsEpic}}<a href="/epic/{{.ID}}" class="badge epic-badge">epic</a>{{end}}
         {{if .EpicID}}<a href="/epic/{{.EpicID}}" class="badge epic-badge">epic:{{.EpicID}}{{if $.EpicTitle}} {{$.EpicTitle}}{{end}}</a>{{end}}
@@ -29,15 +43,6 @@
         <form action="/task/{{.ID}}/promote" method="POST" style="display:inline"
               onsubmit="return confirm('Promote to epic? This makes the task a container for sub-tasks. The task keeps its current status.')">
             <button type="submit" class="btn btn-sm" title="Convert this task into an epic that can contain sub-tasks">Promote to Epic</button>
-        </form>
-        {{end}}
-        {{if eq .Status "queue"}}
-        <form action="/reorder" method="POST" style="display:inline">
-            <input type="hidden" name="id" value="{{.ID}}">
-            <input type="hidden" name="status" value="backlog">
-            <input type="hidden" name="position" value="0">
-            <input type="hidden" name="redirect" value="/task/{{.ID}}">
-            <button type="submit" class="btn btn-sm">Backlog</button>
         </form>
         {{end}}
     </div>
