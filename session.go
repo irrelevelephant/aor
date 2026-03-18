@@ -74,6 +74,7 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 		outputTokens int
 		numTurns     int
 		durationMS   int
+		resultSeen   = make(chan struct{}, 1) // signaled when a "result" message arrives
 	)
 
 	// Signal handler for Ctrl+C — sends SIGINT to the agent and stops the
@@ -165,9 +166,37 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 					durationMS = msg.DurationMS
 				}
 				mu.Unlock()
+
+				// Signal that the session has produced a final result.
+				select {
+				case resultSeen <- struct{}{}:
+				default:
+				}
 			}
 
 			displayStreamMsg(msg)
+		}
+	}()
+
+	// Watchdog: if a "result" message arrived but the process doesn't exit
+	// within a grace period, kill it to prevent the runner from hanging.
+	const stuckProcessGrace = 2 * time.Minute
+	go func() {
+		select {
+		case <-resultSeen:
+			// Got a result — give the process time to exit cleanly.
+			select {
+			case <-outputDone:
+				return // exited normally
+			case <-time.After(stuckProcessGrace):
+				fmt.Printf("\n%s[runner] Claude process still alive %s after result — killing stuck process%s\n",
+					cYellow, stuckProcessGrace, cReset)
+				if cmd.Process != nil {
+					cmd.Process.Kill()
+				}
+			}
+		case <-outputDone:
+			return // exited before result (shouldn't happen, but safe)
 		}
 	}()
 
