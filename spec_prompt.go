@@ -26,7 +26,7 @@ func buildSpecPrompt(specContents []string, workspace string) string {
 	// Workspace context.
 	if workspace != "" {
 		b.WriteString(fmt.Sprintf("Workspace: %s\n", workspace))
-		b.WriteString(fmt.Sprintf("When creating tasks, use: %s%s%s\n\n", bt, buildAtaCreateCmd("title", ataCreateOpts{Workspace: workspace, JSON: true}), bt))
+		b.WriteString(fmt.Sprintf("When creating tasks, use: %s%s%s\n\n", bt, buildAtaCreateCmd("title", ataCmdOpts{Workspace: workspace, JSON: true}), bt))
 	}
 
 	multiSpec := len(specContents) > 1
@@ -126,8 +126,8 @@ Once the plan is approved:
 
 `)
 
-	epicCmd := buildAtaCreateCmd("Epic title", ataCreateOpts{Workspace: workspace, JSON: true})
-	childCmd := buildAtaCreateCmd("Task title", ataCreateOpts{Body: "description", EpicID: "<epic-id>", Workspace: workspace, JSON: true})
+	epicCmd := buildAtaCreateCmd("Epic title", ataCmdOpts{Workspace: workspace, JSON: true})
+	childCmd := buildAtaCreateCmd("Task title", ataCmdOpts{Body: "description", EpicID: "<epic-id>", Workspace: workspace, JSON: true})
 
 	if multiSpec {
 		fmt.Fprintf(&b, `1. For each spec, create an epic:

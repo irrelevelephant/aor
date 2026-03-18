@@ -8,7 +8,7 @@ import (
 const maxInlineDiffChars = 50000
 
 // buildReviewPrompt constructs the prompt for a code review session.
-func buildReviewPrompt(diff, base string, round int, priorTasks []ReviewTask, tag, epicID, workspace string) string {
+func buildReviewPrompt(diff, base string, round int, priorTasks []FiledTask, tag, epicID, workspace string) string {
 	var b strings.Builder
 
 	// Role.
@@ -59,7 +59,7 @@ For each issue you find:
 Do not silently skip issues. If an issue is worth noting, either fix it or file a task. Only omit issues if there is a clear reason not to track them (e.g., intentional trade-off, documented exception).
 
 Use ` + "`ata`" + ` to file tasks:
-- ` + "`" + buildAtaCreateCmd("<issue title>", ataCreateOpts{Workspace: workspace, EpicID: epicID, Tag: tag, JSON: true}) + "`" + `
+- ` + "`" + buildAtaCreateCmd("<issue title>", ataCmdOpts{Workspace: workspace, EpicID: epicID, Tag: tag, JSON: true}) + "`" + `
 - After fixing an issue, close the filed task: ` + "`ata close <id> \"<what you did>\" --json`" + `
 
 ## Review focus (in priority order)

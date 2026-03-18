@@ -22,16 +22,16 @@ type revContext struct {
 
 // reviewCycleResult holds the outcome of one review cycle (inner loop).
 type reviewCycleResult struct {
-	tasksFiled []ReviewTask
+	tasksFiled []FiledTask
 	stopReason string
 	userQuit   bool
 	rounds     []ReviewRound
 }
 
 // runReviewCycle runs the inner review round loop and returns the result.
-func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []ReviewTask) *reviewCycleResult {
+func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []FiledTask) *reviewCycleResult {
 	result := &reviewCycleResult{}
-	allTasks := append([]ReviewTask{}, priorTasks...)
+	allTasks := append([]FiledTask{}, priorTasks...)
 
 	for round := 1; round <= rc.cfg.MaxRounds; round++ {
 		diff, err := diffRange(rc.base)
@@ -190,7 +190,7 @@ func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
 		},
 	}
 
-	var allTasksFiled []ReviewTask
+	var allTasksFiled []FiledTask
 
 	// Outer sweep loop: review → fix tasks → review again.
 	// Convergence checks (no issues, minor severity, repeating issues, HEAD

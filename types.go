@@ -123,7 +123,7 @@ type RunStats struct {
 // EpicVerifyStatus is the structured output from an epic verification session.
 type EpicVerifyStatus struct {
 	Passed     bool         `json:"passed"`
-	TasksFiled []ReviewTask `json:"tasks_filed"`
+	TasksFiled []FiledTask  `json:"tasks_filed"`
 	Summary    string       `json:"summary"`
 	Error      *string      `json:"error"`
 }
@@ -140,15 +140,15 @@ type ReviewConfig struct {
 
 // ReviewStatus is the structured output from a review session.
 type ReviewStatus struct {
-	TasksFiled   []ReviewTask `json:"tasks_filed"`
+	TasksFiled   []FiledTask `json:"tasks_filed"`
 	FixesApplied []string     `json:"fixes_applied"`
 	Summary      string       `json:"summary"`
 	Severity     string       `json:"severity"`
 	Error        *string      `json:"error"`
 }
 
-// ReviewTask represents a task filed during a review round.
-type ReviewTask struct {
+// FiledTask represents a task filed during review or verification.
+type FiledTask struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 }

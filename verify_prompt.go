@@ -50,7 +50,8 @@ IMPORTANT:
 `)
 
 	// Filing instructions for failed criteria.
-	fmt.Fprintf(&b, "If any criteria FAIL, file a new task for each gap using:\nata create \"<descriptive title>\" --status queue --epic \"%s\" --workspace \"%s\" --json\n\n", epic.ID, workspace)
+	createCmd := buildAtaCreateCmd("<descriptive title>", ataCmdOpts{EpicID: epic.ID, Workspace: workspace, JSON: true})
+	fmt.Fprintf(&b, "If any criteria FAIL, file a new task for each gap using:\n%s\n\n", createCmd)
 	b.WriteString(sentinelBlock(
 		"EPIC_VERIFY_STATUS",
 		`{"passed": true, "tasks_filed": [], "summary": "<brief summary of verification>", "error": null}`,

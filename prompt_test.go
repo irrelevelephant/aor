@@ -88,7 +88,7 @@ func TestBuildMergePrompt(t *testing.T) {
 
 func TestBuildReviewPrompt(t *testing.T) {
 	diff := "+func newFunc() {}\n-func oldFunc() {}"
-	priorTasks := []ReviewTask{
+	priorTasks := []FiledTask{
 		{ID: "t1", Title: "Fix bug"},
 	}
 

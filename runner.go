@@ -49,7 +49,7 @@ func buildPrompt(cfg *Config, batchSize int, claimedTask *AtaTask) string {
 	workspaceInstruction := ""
 	if cfg.Workspace != "" {
 		workspaceInstruction = fmt.Sprintf("Workspace: %s\n- When creating tasks, use: %s\n- When creating tasks under an epic, add: --epic EPIC_ID\n\n",
-			cfg.Workspace, buildAtaCreateCmd("title", ataCreateOpts{Workspace: cfg.Workspace, JSON: true}))
+			cfg.Workspace, buildAtaCreateCmd("title", ataCmdOpts{Workspace: cfg.Workspace, JSON: true}))
 	}
 
 	worktreeInstruction := ""
@@ -70,16 +70,12 @@ Work on it immediately. Do not run ata ready or ata claim for this task.`, claim
 
 	additionalTasks := ""
 	if batchSize > 1 {
-		readyCmd := "ata ready --json"
-		if cfg.Workspace != "" {
-			readyCmd = fmt.Sprintf("ata ready --workspace \"%s\" --json", cfg.Workspace)
-		}
-		if cfg.EpicFilter != "" {
-			readyCmd += fmt.Sprintf(" --epic \"%s\"", cfg.EpicFilter)
-		}
-		if cfg.TagFilter != "" {
-			readyCmd += fmt.Sprintf(" --tag \"%s\"", cfg.TagFilter)
-		}
+		readyCmd := buildAtaReadyCmd(ataCmdOpts{
+			Workspace: cfg.Workspace,
+			EpicID:    cfg.EpicFilter,
+			Tag:       cfg.TagFilter,
+			JSON:      true,
+		})
 		additionalTasks = fmt.Sprintf(`
 After completing the claimed task, run %s for up to %d additional task(s).
 For each additional task, claim it with ata claim <id> --json before working on it.
@@ -88,7 +84,7 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	}
 
 	// Build discovered task instruction.
-	createCmd := buildAtaCreateCmd("<issue>", ataCreateOpts{
+	createCmd := buildAtaCreateCmd("<issue>", ataCmdOpts{
 		Workspace: cfg.Workspace,
 		EpicID:    claimedTask.EpicID,
 		Tag:       cfg.TagFilter,
@@ -97,7 +93,7 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 	discoveredInstruction := fmt.Sprintf(`5. File discovered issues for any new problems found outside current scope.
    Use: %s`, createCmd)
 
-	decomposeCmd := buildAtaCreateCmd("Subtask: ...", ataCreateOpts{
+	decomposeCmd := buildAtaCreateCmd("Subtask: ...", ataCmdOpts{
 		Workspace: cfg.Workspace,
 		EpicID:    claimedTask.ID,
 		Tag:       cfg.TagFilter,
@@ -637,7 +633,9 @@ func printSummary(log *Logger, stats *RunStats) {
 	log.Log("%s  Agent ORchestration Summary%s", cBold, cReset)
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 	log.Log("  Tasks completed:   %s%d%s", cGreen, stats.TasksCompleted, cReset)
-	log.Log("  Issues discovered: %d", stats.Discovered)
+	if stats.Discovered > 0 {
+		log.Log("  Issues discovered: %d", stats.Discovered)
+	}
 	if stats.Decomposed > 0 {
 		log.Log("  Decomposed:        %d", stats.Decomposed)
 	}

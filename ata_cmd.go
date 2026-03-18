@@ -2,8 +2,8 @@ package main
 
 import "fmt"
 
-// ataCreateOpts holds optional flags for building an ata create command string.
-type ataCreateOpts struct {
+// ataCmdOpts holds optional flags for building ata command strings.
+type ataCmdOpts struct {
 	Workspace string
 	EpicID    string
 	Tag       string
@@ -14,7 +14,7 @@ type ataCreateOpts struct {
 // buildAtaCreateCmd constructs an `ata create` command string with the given
 // title placeholder and optional flags. Used across prompt builders to avoid
 // duplicating the flag-appending logic.
-func buildAtaCreateCmd(title string, opts ataCreateOpts) string {
+func buildAtaCreateCmd(title string, opts ataCmdOpts) string {
 	cmd := fmt.Sprintf(`ata create "%s" --status queue`, title)
 	if opts.Workspace != "" {
 		cmd += fmt.Sprintf(` --workspace "%s"`, opts.Workspace)
@@ -27,6 +27,25 @@ func buildAtaCreateCmd(title string, opts ataCreateOpts) string {
 	}
 	if opts.Body != "" {
 		cmd += fmt.Sprintf(` --body "%s"`, opts.Body)
+	}
+	if opts.JSON {
+		cmd += " --json"
+	}
+	return cmd
+}
+
+// buildAtaReadyCmd constructs an `ata ready` command string with optional
+// filter flags. Uses the same opts struct as buildAtaCreateCmd.
+func buildAtaReadyCmd(opts ataCmdOpts) string {
+	cmd := "ata ready"
+	if opts.Workspace != "" {
+		cmd += fmt.Sprintf(` --workspace "%s"`, opts.Workspace)
+	}
+	if opts.EpicID != "" {
+		cmd += fmt.Sprintf(` --epic "%s"`, opts.EpicID)
+	}
+	if opts.Tag != "" {
+		cmd += fmt.Sprintf(` --tag "%s"`, opts.Tag)
 	}
 	if opts.JSON {
 		cmd += " --json"
