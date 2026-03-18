@@ -301,6 +301,11 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     padding-left: 1.5rem;
     min-height: 1.5rem;
 }
+/* Lighten border at deeper nesting levels */
+.epic-children .epic-group { border-left-color: rgba(188, 140, 255, 0.5); }
+.epic-children .epic-children .epic-group { border-left-color: rgba(188, 140, 255, 0.3); }
+/* Cap visual indentation at ~3 levels deep */
+.epic-children .epic-children .epic-children .epic-children { padding-left: 0; }
 @media (max-width: 600px) {
     .epic-children { padding-left: 0.5rem; }
 }

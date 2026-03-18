@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -440,49 +439,60 @@ func (d *DB) UpdateTask(id string, title, body, spec *string) (*model.Task, erro
 	return d.GetTask(id)
 }
 
-// ListTaskTree returns tasks as a tree: top-level items (standalone + epics) with children nested.
-// Children whose parent epic is not in this status appear as top-level nodes.
+// ListTaskTree returns tasks as a tree with arbitrary nesting depth.
+// Children whose parent epic is not in the result set appear as top-level (orphan) nodes.
 func (d *DB) ListTaskTree(workspace, status, tag, excludeTag string) ([]model.TaskTreeNode, error) {
 	tasks, err := d.ListTasks(workspace, status, "", tag, excludeTag)
 	if err != nil {
 		return nil, err
 	}
 
-	// Partition into top-level and children.
-	var topLevel []model.Task
+	// Group child tasks by their parent epic ID; track all IDs for orphan detection.
 	childrenByEpic := make(map[string][]model.Task)
+	taskIDs := make(map[string]bool, len(tasks))
 	for _, t := range tasks {
-		if t.EpicID == "" {
-			topLevel = append(topLevel, t)
-		} else {
+		taskIDs[t.ID] = true
+		if t.EpicID != "" {
 			childrenByEpic[t.EpicID] = append(childrenByEpic[t.EpicID], t)
 		}
 	}
 
-	// Build result.
-	var result []model.TaskTreeNode
-	for _, t := range topLevel {
-		node := model.TaskTreeNode{Task: t}
-		if t.IsEpic {
-			node.Children = childrenByEpic[t.ID]
-			delete(childrenByEpic, t.ID)
+	// Recursive builder: assemble a TaskTreeNode slice for a given parent.
+	// visited guards against cycles from data corruption.
+	visited := make(map[string]bool)
+	var build func(parentID string) []model.TaskTreeNode
+	build = func(parentID string) []model.TaskTreeNode {
+		children := childrenByEpic[parentID]
+		if len(children) == 0 {
+			return nil
 		}
-		result = append(result, node)
+		nodes := make([]model.TaskTreeNode, len(children))
+		for i, t := range children {
+			nodes[i] = model.TaskTreeNode{Task: t}
+			if t.IsEpic && !visited[t.ID] {
+				visited[t.ID] = true
+				nodes[i].Children = build(t.ID)
+			}
+		}
+		return nodes
 	}
 
-	// Orphaned children (parent epic not in this status) become top-level.
-	var orphans []model.Task
-	for _, children := range childrenByEpic {
-		orphans = append(orphans, children...)
-	}
-	sort.Slice(orphans, func(i, j int) bool {
-		if orphans[i].SortOrder != orphans[j].SortOrder {
-			return orphans[i].SortOrder < orphans[j].SortOrder
+	// Root nodes: EpicID == "" OR EpicID not in the result set (orphans).
+	var roots []model.Task
+	for _, t := range tasks {
+		if t.EpicID == "" || !taskIDs[t.EpicID] {
+			roots = append(roots, t)
 		}
-		return orphans[i].CreatedAt < orphans[j].CreatedAt
-	})
-	for _, c := range orphans {
-		result = append(result, model.TaskTreeNode{Task: c})
+	}
+
+	// Roots preserve the DB query order (sort_order ASC, created_at ASC)
+	// since we iterate `tasks` in order and append matching items.
+	result := make([]model.TaskTreeNode, len(roots))
+	for i, t := range roots {
+		result[i] = model.TaskTreeNode{Task: t}
+		if t.IsEpic {
+			result[i].Children = build(t.ID)
+		}
 	}
 
 	return result, nil

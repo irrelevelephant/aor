@@ -39,6 +39,22 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Prevent dropping an epic-group into any of its own descendant containers.
+    function isDropIntoOwnDescendant(evt) {
+        if (!evt.dragged.classList.contains('epic-group') || !evt.to.classList.contains('epic-children')) {
+            return false;
+        }
+        var draggedId = evt.dragged.dataset.id;
+        var el = evt.to;
+        while (el) {
+            if (el.dataset && (el.dataset.id === draggedId || el.dataset.epic === draggedId)) {
+                return true;
+            }
+            el = el.parentElement;
+        }
+        return false;
+    }
+
     // Top-level sortable lists (queue, backlog columns).
     document.querySelectorAll('.task-list.sortable').forEach(function(el) {
         new Sortable(el, {
@@ -50,24 +66,24 @@ document.addEventListener('DOMContentLoaded', function() {
             chosenClass: 'sortable-chosen',
             onEnd: onSortEnd,
             onMove: function(evt) {
-                // Don't allow epic groups to be dropped into epic children.
-                if (evt.dragged.classList.contains('epic-group') && evt.to.classList.contains('epic-children')) {
-                    return false;
-                }
+                if (isDropIntoOwnDescendant(evt)) return false;
             }
         });
     });
 
-    // Nested sortable lists (epic children).
+    // Nested sortable lists (epic children), including deeply nested ones.
     document.querySelectorAll('.epic-children.sortable').forEach(function(el) {
         new Sortable(el, {
             group: 'workspace',
             handle: '.drag-handle',
-            draggable: '.child-row, .task-row',
+            draggable: '.child-row, .task-row, .epic-group',
             animation: 150,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
-            onEnd: onSortEnd
+            onEnd: onSortEnd,
+            onMove: function(evt) {
+                if (isDropIntoOwnDescendant(evt)) return false;
+            }
         });
     });
 

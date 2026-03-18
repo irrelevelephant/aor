@@ -115,21 +115,21 @@ func tagsForTasks(tagMap map[string][]string, slices ...[]model.Task) []string {
 	return result
 }
 
-// treeCount returns the total number of tasks in a tree (top-level + all children).
+// treeCount returns the total number of tasks in a tree (all levels).
 func treeCount(nodes []model.TaskTreeNode) int {
 	n := len(nodes)
 	for _, node := range nodes {
-		n += len(node.Children)
+		n += treeCount(node.Children)
 	}
 	return n
 }
 
-// flattenTree extracts all tasks from tree nodes into a flat slice.
+// flattenTree extracts all tasks from tree nodes into a flat slice (all levels).
 func flattenTree(nodes []model.TaskTreeNode) []model.Task {
 	var tasks []model.Task
 	for _, n := range nodes {
 		tasks = append(tasks, n.Task)
-		tasks = append(tasks, n.Children...)
+		tasks = append(tasks, flattenTree(n.Children)...)
 	}
 	return tasks
 }
@@ -248,7 +248,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	// Each page gets: layout + partials + its own page template.
 	pageFiles := []string{"index.html", "workspace.html", "task.html", "epic.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
-	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html"}
+	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html", "templates/partials/epic_group.html"}
 	for _, page := range pageFiles {
 		t, err := template.New("").Funcs(funcMap).ParseFS(content, append(sharedFiles, "templates/"+page)...)
 		if err != nil {

@@ -1,0 +1,28 @@
+{{define "epic_group"}}
+<div class="epic-group" data-id="{{.Node.ID}}" id="task-{{.Node.ID}}">
+    <div class="task-row epic-row{{if index .BlockedIDs .Node.ID}} task-blocked{{end}}">
+        <span class="drag-handle">⠿</span>
+        <span class="id-badge">{{.Node.ID}}</span>
+        <a href="/epic/{{.Node.ID}}" class="task-link">{{.Node.Title}}</a>
+        <span class="badge epic-badge">epic</span>
+        {{if index .BlockedIDs .Node.ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+        {{template "task_tags_inline.html" (dict "Tags" (index .TagMap .Node.ID))}}
+    </div>
+    <div class="epic-children sortable" data-epic="{{.Node.ID}}" data-status="{{.Status}}">
+        {{range .Node.Children}}
+        {{if and .IsEpic (or .Children (not .EpicID))}}
+            {{template "epic_group" (dict "Node" . "BlockedIDs" $.BlockedIDs "TagMap" $.TagMap "Status" $.Status)}}
+        {{else}}
+        <div class="task-row child-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
+            <span class="drag-handle">⠿</span>
+            <span class="id-badge">{{.ID}}</span>
+            <a href="{{taskURL .IsEpic .ID}}" class="task-link">{{.Title}}</a>
+            {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
+            {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
+            {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
+        </div>
+        {{end}}
+        {{end}}
+    </div>
+</div>
+{{end}}
