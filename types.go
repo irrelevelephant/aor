@@ -43,7 +43,6 @@ type GitWorktree struct {
 type RunnerStatus struct {
 	Completed      []string `json:"completed"`
 	Discovered     []string `json:"discovered"`
-	ReviewTasks    []string `json:"review_tasks"`
 	DecomposedInto []string `json:"decomposed_into"`
 	RemainingReady int      `json:"remaining_ready"`
 	Error          *string  `json:"error"`
@@ -106,7 +105,6 @@ type SessionResult struct {
 type RunStats struct {
 	TasksCompleted      int
 	Discovered          int
-	ReviewTasks         int
 	Decomposed          int
 	SessionsRun         int
 	Errors              int

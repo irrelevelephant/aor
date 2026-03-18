@@ -148,8 +148,8 @@ Task decomposition:
 `)
 	b.WriteString(sentinelBlock(
 		"ATA_RUNNER_STATUS",
-		`{"completed": ["<task-ids>"], "discovered": ["<task-ids>"], "review_tasks": ["<task-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}`,
-		`{"completed": [], "discovered": [], "review_tasks": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}`,
+		`{"completed": ["<task-ids>"], "discovered": ["<task-ids>"], "decomposed_into": [], "remaining_ready": <number>, "error": null}`,
+		`{"completed": [], "discovered": [], "decomposed_into": [], "remaining_ready": -1, "error": "<description>"}`,
 		fmt.Sprintf("After completing %d task(s), if ata ready is empty, or if you are stopping for any reason:", batchSize),
 	))
 	b.WriteString(" Start now.")
@@ -538,20 +538,18 @@ func run(cfg *Config) error {
 			s := result.Status
 			completed := len(s.Completed)
 			discovered := len(s.Discovered)
-			review := len(s.ReviewTasks)
 			iterCompleted = completed > 0
 
 			stats.TasksCompleted += completed
 			stats.Discovered += discovered
-			stats.ReviewTasks += review
 
 			completedStr := "none"
-			if len(s.Completed) > 0 {
+			if completed > 0 {
 				completedStr = strings.Join(s.Completed, ", ")
 			}
 
-			log.Log("Session result: %d completed [%s], %d discovered, %d review tasks",
-				completed, completedStr, discovered, review)
+			log.Log("Session result: %d completed [%s], %d discovered",
+				completed, completedStr, discovered)
 
 			if s.Error != nil {
 				log.Log("%sAgent reported error: %s%s", cRed, *s.Error, cReset)
@@ -640,7 +638,6 @@ func printSummary(log *Logger, stats *RunStats) {
 	log.Log("%s════════════════════════════════════════%s", cCyan, cReset)
 	log.Log("  Tasks completed:   %s%d%s", cGreen, stats.TasksCompleted, cReset)
 	log.Log("  Issues discovered: %d", stats.Discovered)
-	log.Log("  Review tasks:      %d", stats.ReviewTasks)
 	if stats.Decomposed > 0 {
 		log.Log("  Decomposed:        %d", stats.Decomposed)
 	}
