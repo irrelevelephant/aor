@@ -122,7 +122,7 @@ Commands:
   reorder   Set task position in its list
   move      Batch move tasks between statuses
   recover   Recover stuck in_progress tasks
-  epic-close-eligible  List epics eligible for auto-close
+  epic-close-eligible  List epics eligible for close (--close to actually close)
   snapshot  Export workspace to a .tar.gz archive
   restore   Import workspace from a snapshot archive
   serve     Start web UI server

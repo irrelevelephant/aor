@@ -174,7 +174,7 @@ Cycle detection prevents circular dependencies. The web UI shows blocked badges 
 
 ### Epics
 
-Any task can be promoted to an epic. Epics have a markdown **spec** (goals, constraints, architecture) that gets injected into the agent's prompt for all child tasks. When all children are closed, the epic auto-closes.
+Any task can be promoted to an epic. Epics have a markdown **spec** (goals, constraints, architecture) that gets injected into the agent's prompt for all child tasks. Epics are excluded from the ready queue — they're containers, not work items. When all children are closed, epics without a spec auto-close. Epics with a spec go through a **verification loop**: a verification agent checks each acceptance criterion against the codebase, files new tasks for any gaps, and the orchestrator works those tasks before re-verifying (up to `--max-rounds` iterations).
 
 ```sh
 ata create "Rewrite auth system"
@@ -309,6 +309,7 @@ Positional `EPIC_ID` arguments are processed serially — all tasks for the firs
 | `--epic ID` | | Only work on tasks under this epic (comma-separated for multiple) |
 | `--tag TAG` | | Only work on tasks with this tag |
 | `--rev` | false | Run code review after each epic completes |
+| `--max-rounds N` | 3 | Max rounds for epic verification / review loops |
 | `--max-tasks N` | 0 (unlimited) | Stop after N tasks |
 | `--batch-size N` | 1 | Tasks per Claude session before fresh context |
 | `--dry-run` | false | Show what would happen without running |

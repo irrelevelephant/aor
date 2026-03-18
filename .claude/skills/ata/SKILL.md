@@ -85,7 +85,8 @@ ata promote ID                          # promote task to epic
 ata promote ID --spec-file arch.md      # promote with spec
 ata spec ID                             # view epic spec (epic-only)
 ata spec ID --set-file spec.md          # set epic spec (epic-only)
-ata epic-close-eligible                 # auto-close epics with all children closed
+ata epic-close-eligible                 # list epics eligible for close (all children closed)
+ata epic-close-eligible --close         # actually close eligible epics
 ```
 
 ## Dependencies

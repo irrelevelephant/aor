@@ -90,7 +90,7 @@ Two scan strategies: per-line (fast path), then concatenated text (handles strea
 │  If completed: update stats, close task  │
 │  If not: triage → unclaim or comment     │
 │         ↓                                │
-│  ata epic-close-eligible → auto-close    │
+│  epic close check → verify or auto-close  │
 │         ↓                                │
 │  ata recover → reclaim dead-PID tasks    │
 │         ↓                                │
@@ -102,9 +102,18 @@ Two scan strategies: per-line (fast path), then concatenated text (handles strea
 
 Tasks track the PID of the aor process that claimed them (`claimed_pid` column). On each loop iteration, `ata recover` checks for in-progress tasks whose PID is no longer alive (via `kill -0`) and resets them to queue.
 
-### Epic Auto-Close
+### Epic Close & Verification
 
-After each task completion, `ata epic-close-eligible` finds epics where all children are closed and closes them automatically.
+After each task completion, `ata epic-close-eligible` finds epics where all children are closed. Epics **without** a spec auto-close immediately. Epics **with** a spec enter a verification loop (`verify.go`):
+
+1. A verification agent examines the codebase against the epic's acceptance criteria
+2. If all criteria pass → close the epic
+3. If criteria fail → the agent files new tasks for gaps, the orchestrator works them, then re-verifies
+4. Loop up to `--max-rounds` (default 3) times
+
+When the runner's queue is empty and `--epic` is set, it also checks whether the filtered epic is eligible for verification (open, has a spec, all children closed) and runs the verification loop directly. The inner orchestration run sets `SkipEpicClose` to prevent recursive verification.
+
+Epics are excluded from `ReadyTasks` (`AND is_epic = 0`) so they never appear in the work queue.
 
 ## Interactive Controls
 
@@ -247,7 +256,7 @@ WITH RECURSIVE chain(id) AS (
 SELECT 1 FROM chain WHERE id = ? -- check if we'd reach the task itself
 ```
 
-Blocked tasks (those with unclosed blockers) are excluded from `ReadyTasks` and rejected by `ClaimTask`.
+Blocked tasks (those with unclosed blockers) and epics (`is_epic = 0`) are excluded from `ReadyTasks`. Blocked tasks are also rejected by `ClaimTask`.
 
 ### Web UI Architecture
 
