@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -470,10 +471,18 @@ func (d *DB) ListTaskTree(workspace, status, tag, excludeTag string) ([]model.Ta
 	}
 
 	// Orphaned children (parent epic not in this status) become top-level.
+	var orphans []model.Task
 	for _, children := range childrenByEpic {
-		for _, c := range children {
-			result = append(result, model.TaskTreeNode{Task: c})
+		orphans = append(orphans, children...)
+	}
+	sort.Slice(orphans, func(i, j int) bool {
+		if orphans[i].SortOrder != orphans[j].SortOrder {
+			return orphans[i].SortOrder < orphans[j].SortOrder
 		}
+		return orphans[i].CreatedAt < orphans[j].CreatedAt
+	})
+	for _, c := range orphans {
+		result = append(result, model.TaskTreeNode{Task: c})
 	}
 
 	return result, nil
