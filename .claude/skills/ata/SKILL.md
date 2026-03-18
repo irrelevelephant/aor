@@ -12,7 +12,7 @@ allowed-tools: Bash
 
 # ata — Agent TAsks
 
-`ata` is a SQLite-backed task manager at `~/.ata/ata.db`. All tasks are scoped to a **workspace** (auto-detected from git root). The CLI binary is at `/home/tjs/aor/ata/`.
+`ata` is a SQLite-backed task manager at `~/.ata/ata.db`. All tasks are scoped to a **workspace** (auto-detected from git root). The `ata` binary should be on $PATH. If not, check `~/aor/ata/`.
 
 ## Task lifecycle
 
