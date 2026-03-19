@@ -135,8 +135,8 @@ Based on their response:
 Implement the plan:
 - Make all necessary code changes
 - Run tests to verify your changes work
-- Commit your changes with clear commit messages
 - Run /simplify to review your changes for code quality, reuse, and efficiency. Fix in-scope issues; file out-of-scope issues as new tasks using ata create.
+- Commit your changes with clear commit messages
 `)
 
 	b.WriteString("- When done, exit the session (/exit or Ctrl+D). The orchestrator will commit any remaining changes, close the task, and clean up.\n\n")
