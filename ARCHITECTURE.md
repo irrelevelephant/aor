@@ -130,7 +130,7 @@ A goroutine reads stdin via a shared channel. While Claude is running:
 
 1. **Research & Plan** — Claude explores the codebase, writes a concrete plan
 2. **Review** — presents the plan and asks the user to choose: execute, decompose, or revise
-3. **Execute** — implements, tests, commits, runs /simplify, closes the task
+3. **Execute** — implements, tests, runs /simplify, commits, closes the task
 4. **Decompose** — creates subtasks with dependencies under the epic, exits for autonomous execution
 
 If no task ID is given, a bubbletea-based fuzzy selector shows ready tasks.

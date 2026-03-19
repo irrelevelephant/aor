@@ -117,7 +117,7 @@ For each task:
 1. Implement the work.
 2. Self-review: run git diff to inspect your changes. Look for correctness, bugs, security, error handling, performance, and code quality issues. Fix anything you find.
 3. Run /simplify to check for reuse, quality, and efficiency issues. Fix in-scope issues. For any issues outside the current task's scope, file them as new tasks (step 5) instead of fixing them.
-4. Make atomic commits with descriptive messages.
+4. AFTER /simplify is done and all fixes are applied, commit your changes with descriptive messages.
 `)
 	b.WriteString(discoveredInstruction)
 	b.WriteString(`
@@ -128,7 +128,7 @@ Context management:
 - Conserve context — delegate exploration to Task subagents, avoid verbose tool output.
 - Prefer targeted file reads over reading entire large files.
 - Do NOT run ata show or ata ready for the claimed task — all context is above.
-- Make atomic commits as you go — do not accumulate a large uncommitted diff.
+- Do not commit until after /simplify has run. Keep changes uncommitted until step 4.
 - Do NOT read files speculatively. Search first (grep/glob), then read only what you need.
 - If context feels constrained, output ATA_RUNNER_STATUS with what you've completed so far and stop. The orchestrator will continue with a fresh session.
 

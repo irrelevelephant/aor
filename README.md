@@ -208,7 +208,7 @@ aor pull --no-yolo f7q      # require permission prompts for each tool call
    - **Execute** — go to phase 3a
    - **Decompose** — go to phase 3b
    - **Anything else** — treated as feedback; Claude revises the plan and asks again
-3. **Execute (3a)** — Claude implements the plan, runs tests, commits changes, and runs `/simplify` for a code quality check. Then asks if you want to resolve the task. If yes, it runs `ata close <id> "done"`.
+3. **Execute (3a)** — Claude implements the plan, runs tests, runs `/simplify` for a code quality check, then commits changes. Then asks if you want to resolve the task. If yes, it runs `ata close <id> "done"`.
 4. **Decompose (3b)** — Claude breaks the work into subtasks, creating each with `ata create --epic <id>`, adding dependencies between them, and ordering by priority. After you confirm the breakdown, exit and run `aor --epic <id>` to execute the subtasks autonomously.
 
 **After the session exits**, aor checks the task status and tells you what to do next:
