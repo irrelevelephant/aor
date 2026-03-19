@@ -15,6 +15,7 @@ func Reorder(d *db.DB, args []string) error {
 	top := fs.Bool("top", false, "Move to top of list")
 	bottom := fs.Bool("bottom", false, "Move to bottom of list")
 	status := fs.String("status", "", "Move to a different status (top-level only)")
+	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
 		"position": true,
@@ -88,6 +89,13 @@ func Reorder(d *db.DB, args []string) error {
 		}
 	}
 
+	if *jsonOut {
+		updated, err := d.GetTask(id)
+		if err != nil {
+			return err
+		}
+		return outputJSON(updated)
+	}
 	fmt.Printf("reordered %s\n", id)
 	return nil
 }
