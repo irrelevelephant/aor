@@ -116,7 +116,7 @@ You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSiz
 For each task:
 1. Implement the work.
 2. Self-review: run git diff to inspect your changes. Look for correctness, bugs, security, error handling, performance, and code quality issues. Fix anything you find.
-3. Run /simplify to check for reuse, quality, and efficiency issues. Fix anything it finds.
+3. Run /simplify to check for reuse, quality, and efficiency issues. Fix in-scope issues. For any issues outside the current task's scope, file them as new tasks (step 5) instead of fixing them.
 4. Make atomic commits with descriptive messages.
 `)
 	b.WriteString(discoveredInstruction)
