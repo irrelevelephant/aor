@@ -129,8 +129,8 @@ func TestCloseAndReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReopenTask: %v", err)
 	}
-	if reopened.Status != model.StatusBacklog {
-		t.Errorf("status = %q, want backlog", reopened.Status)
+	if reopened.Status != model.StatusQueue {
+		t.Errorf("status = %q, want queue", reopened.Status)
 	}
 }
 

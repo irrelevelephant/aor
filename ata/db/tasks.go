@@ -352,7 +352,7 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 
 // ReopenTask reopens a closed task back to backlog.
 func (d *DB) ReopenTask(id string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET status = 'backlog', closed_at = NULL, close_reason = '' WHERE id = ? AND status = 'closed'`, id)
+	res, err := d.Exec(`UPDATE tasks SET status = 'queue', closed_at = NULL, close_reason = '' WHERE id = ? AND status = 'closed'`, id)
 	if err != nil {
 		return nil, fmt.Errorf("reopen task: %w", err)
 	}
