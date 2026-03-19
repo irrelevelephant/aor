@@ -277,6 +277,21 @@ func run(cfg *Config) error {
 			if len(epics) == 0 {
 				return
 			}
+
+			// When filtering by epic, only process epics within the
+			// filtered tree — don't close or verify unrelated epics.
+			if cfg.EpicFilter != "" {
+				var filtered []AtaTask
+				for _, epic := range epics {
+					if isUnderEpic(epic.ID, epic.EpicID, cfg.EpicFilter) {
+						filtered = append(filtered, epic)
+					}
+				}
+				epics = filtered
+				if len(epics) == 0 {
+					return
+				}
+			}
 			closedAny := false
 			for _, epic := range epics {
 				if epic.Spec != "" {

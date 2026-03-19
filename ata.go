@@ -86,6 +86,36 @@ func unclaimTask(id string) error {
 	return nil
 }
 
+// isUnderEpic reports whether epicID equals ancestorID or is a descendant
+// of it (walking up the epic_id chain). parentID is the already-known
+// EpicID of epicID, avoiding a subprocess call for the first hop.
+// Depth-limited to 20 with a cycle guard.
+func isUnderEpic(epicID, parentID, ancestorID string) bool {
+	if epicID == ancestorID {
+		return true
+	}
+	seen := map[string]bool{epicID: true}
+	current := parentID
+	for range 20 {
+		if current == "" {
+			return false
+		}
+		if current == ancestorID {
+			return true
+		}
+		if seen[current] {
+			return false // circular reference
+		}
+		seen[current] = true
+		task, err := getTaskStatus(current)
+		if err != nil || task == nil {
+			return false
+		}
+		current = task.EpicID
+	}
+	return false
+}
+
 // getTaskStatus fetches the current state of a single task.
 func getTaskStatus(id string) (*AtaTask, error) {
 	out, err := exec.Command("ata", "show", id, "--json").Output()
