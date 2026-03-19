@@ -103,13 +103,13 @@ Each task runs in a fresh Claude Code context window. Output streams in real tim
 Tasks are managed by ata (SQLite-backed, workspace-scoped).
 
 Usage:
-  aor [flags] [EPIC_ID...]       Run task orchestration loop
+  aor [flags]                    Run task orchestration loop
   aor pull [flags] [TASK_ID]     Interactive task planning and execution
   aor merge [flags] [NAME|BRANCH] Merge worktrees back into main branch
   aor rev [flags] [<ref>]        Iterative code review (see: aor rev --help)
   aor spec [flags] <file.md>...  Spec-driven task planning and execution
 
-Positional EPIC_IDs are processed serially. Use --rev to review after each epic.
+Use -epic ID1,ID2 to process multiple epics serially. Use --rev to review after each.
 
 Controls while running:
   Ctrl+C       Stop agent and exit runner

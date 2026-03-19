@@ -293,14 +293,14 @@ All mutation commands support `--json` for structured output, making ata scripta
 ## aor CLI Reference
 
 ```
-aor [flags] [EPIC_ID...]       Run the task orchestration loop
+aor [flags]                    Run the task orchestration loop
 aor pull [flags] [TASK_ID]     Interactive task planning and execution
 aor merge [flags] [WORKTREE…]  Merge worktrees back into main branch
 aor rev [flags] [<ref>]        Iterative code review with sweep mode
 aor spec [flags] <file.md…>   Spec-driven task planning and execution
 ```
 
-Positional `EPIC_ID` arguments are processed serially — all tasks for the first epic, then the second, etc. Use `--rev` to automatically run code review after each epic completes.
+Use `-epic ID1,ID2` to process multiple epics serially — all tasks for the first epic, then the second, etc. Use `--rev` to automatically run code review after each epic completes.
 
 ### Flags
 
@@ -322,10 +322,9 @@ Positional `EPIC_ID` arguments are processed serially — all tasks for the firs
 **Multi-epic examples:**
 
 ```sh
-aor abc def ghi          # process epics abc, def, ghi serially
-aor --rev abc def        # process each epic, review commits after each
-aor -epic abc,def --rev  # comma-separated via flag (same result)
-aor --rev                # process all tasks, review all commits at end
+aor -epic abc,def,ghi          # process epics abc, def, ghi serially
+aor -epic abc,def --rev        # process each epic, review commits after each
+aor --rev                      # process all tasks, review all commits at end
 ```
 
 ### `aor rev` — Iterative Code Review with Sweep Mode

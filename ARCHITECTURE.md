@@ -169,7 +169,7 @@ The review logic lives in `runRevDirect()`, which accepts a pre-initialized logg
 
 ## Multi-Epic Processing
 
-`runMultiEpic()` in `main.go` processes multiple epics serially. Positional args or comma-separated `-epic` values are collected by `collectEpics()` and looped over:
+`runMultiEpic()` in `main.go` processes multiple epics serially. Comma-separated `-epic` values are collected by `collectEpics()` and looped over:
 
 1. Record pre-epic HEAD SHA
 2. Run the orchestration loop (`run()`) for this epic
