@@ -43,9 +43,19 @@ func gitMainWorktree() string {
 	return ""
 }
 
+// envAtaWorkspace is the environment variable that overrides workspace detection.
+// Set by aor on child Claude processes so tasks created from worktrees use the
+// main repo's registered workspace.
+const envAtaWorkspace = "ATA_WORKSPACE"
+
 // detectWorkspace auto-detects the workspace path, resolving worktrees
 // to their registered main repo when possible.
+// If ATA_WORKSPACE is set, it is used directly.
 func detectWorkspace(d *db.DB) string {
+	if ws := os.Getenv(envAtaWorkspace); ws != "" {
+		return ws
+	}
+
 	toplevel := gitToplevel()
 	if toplevel == "" {
 		cwd, err := os.Getwd()

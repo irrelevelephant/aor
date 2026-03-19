@@ -142,7 +142,7 @@ Flags:
 	prompt := buildPullPrompt(task, worktreePath, epicSpec, depth)
 
 	fmt.Println("\nLaunching interactive planning session...")
-	runInteractiveClaude([]string{prompt}, !*noYolo, worktreePath)
+	runInteractiveClaude([]string{prompt}, !*noYolo, worktreePath, ws)
 
 	// Check what happened to the task.
 	task, err := getTaskStatus(task.ID)
@@ -166,7 +166,7 @@ Flags:
 		if hasUncommittedChangesIn(checkDir) {
 			fmt.Printf("\n%sUncommitted changes detected — running commit sweep...%s\n", cYellow, cReset)
 			commitPrompt := buildCommitSweepPrompt("", "a clear, descriptive commit message")
-			runInteractiveClaude([]string{commitPrompt}, !*noYolo, checkDir)
+			runInteractiveClaude([]string{commitPrompt}, !*noYolo, checkDir, ws)
 		}
 
 		if err := closeTask(task.ID, "done"); err != nil {

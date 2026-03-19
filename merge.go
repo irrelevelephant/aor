@@ -134,7 +134,7 @@ Flags:
 	prompt := buildMergePrompt(infos, mainWT)
 
 	fmt.Println("Launching interactive merge session...")
-	runInteractiveClaude([]string{"-p", prompt}, !*noYolo, mainWT.Path)
+	runInteractiveClaude([]string{"-p", prompt}, !*noYolo, mainWT.Path, "")
 
 	return nil
 }

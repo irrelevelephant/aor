@@ -85,7 +85,7 @@ Flags:
 	fmt.Printf("%s(Three phases: Research → Refine Spec → Propose Tasks)%s\n\n", cGray, cReset)
 
 	yolo := !*noYolo
-	runInteractiveClaude([]string{prompt}, yolo, workDir)
+	runInteractiveClaude([]string{prompt}, yolo, workDir, ws)
 
 	// After session ends, check if any epics were created and offer to execute.
 	fmt.Println()

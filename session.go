@@ -50,6 +50,9 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 	if cfg.WorkDir != "" {
 		cmd.Dir = cfg.WorkDir
 	}
+	if cfg.Workspace != "" {
+		cmd.Env = envWithWorkspace(cfg.Workspace)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -265,7 +268,7 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 			mu.Unlock()
 
 			if sid != "" {
-				runInteractive(sid, cfg.Yolo, cfg.WorkDir)
+				runInteractive(sid, cfg.Yolo, cfg.WorkDir, cfg.Workspace)
 			} else {
 				fmt.Printf("%s[runner] No session ID captured, can't resume interactively.%s\n", cRed, cReset)
 			}
@@ -309,6 +312,16 @@ func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) 
 	}
 
 	return result
+}
+
+// envAtaWorkspace is the environment variable that overrides workspace
+// detection in ata commands. Set on child Claude processes so tasks created
+// from worktrees resolve to the main repo's registered workspace.
+const envAtaWorkspace = "ATA_WORKSPACE"
+
+// envWithWorkspace returns the current environment with ATA_WORKSPACE set.
+func envWithWorkspace(workspace string) []string {
+	return append(os.Environ(), envAtaWorkspace+"="+workspace)
 }
 
 // toolGutter is the left-border prefix for all tool-related output,
@@ -533,22 +546,25 @@ func parseSentinelJSON[T any](output, sentinel string) *T {
 
 // runInteractive drops the user into an interactive Claude Code session
 // that resumes from the given session ID.
-func runInteractive(sessionID string, yolo bool, workDir string) {
+func runInteractive(sessionID string, yolo bool, workDir, workspace string) {
 	fmt.Printf("%s[runner] Launching: claude --resume %s%s\n", cCyan, sessionID, cReset)
 	fmt.Printf("%s[runner] Exit the interactive session (Ctrl+D or /exit) to return to the runner.%s\n", cGray, cReset)
 
-	runInteractiveClaude([]string{"--resume", sessionID}, yolo, workDir)
+	runInteractiveClaude([]string{"--resume", sessionID}, yolo, workDir, workspace)
 }
 
 // runInteractiveClaude launches Claude Code with stdio piped directly to the
 // terminal. Used by pull, merge, and the interject flow.
-func runInteractiveClaude(claudeArgs []string, yolo bool, workDir string) {
+func runInteractiveClaude(claudeArgs []string, yolo bool, workDir, workspace string) {
 	if yolo {
 		claudeArgs = append(claudeArgs, "--dangerously-skip-permissions")
 	}
 	cmd := exec.Command("claude", claudeArgs...)
 	if workDir != "" {
 		cmd.Dir = workDir
+	}
+	if workspace != "" {
+		cmd.Env = envWithWorkspace(workspace)
 	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
