@@ -59,10 +59,6 @@ const taskCols = `id, title, body, status, sort_order, epic_id, workspace, workt
 
 // CreateTask inserts a new task, generating a unique ID.
 func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string) (*model.Task, error) {
-	if status == "" {
-		status = model.StatusQueue
-	}
-
 	id, err := d.generateUniqueID(3)
 	if err != nil {
 		return nil, err
@@ -73,6 +69,20 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+
+	if status == "" {
+		if epicID != "" {
+			var epicStatus string
+			if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, epicID).Scan(&epicStatus); err == nil {
+				if epicStatus == model.StatusQueue || epicStatus == model.StatusBacklog {
+					status = epicStatus
+				}
+			}
+		}
+		if status == "" {
+			status = model.StatusQueue
+		}
+	}
 
 	// Set sort_order to max+1 for the status group.
 	var maxOrder int

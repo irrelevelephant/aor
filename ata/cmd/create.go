@@ -6,13 +6,14 @@ import (
 	"strings"
 
 	"aor/ata/db"
+	"aor/ata/model"
 )
 
 func Create(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	desc := fs.String("description", "", "Task description (markdown)")
 	fs.StringVar(desc, "desc", "", "Task description (markdown)")
-	status := fs.String("status", "queue", "Initial status (backlog|queue)")
+	status := fs.String("status", "", "Initial status (backlog|queue, default: inherit from epic or queue)")
 	epicID := fs.String("epic", "", "Parent epic ID")
 	tagStr := fs.String("tag", "", "Tags (comma-separated)")
 	workspace := fs.String("workspace", "", "Workspace path (default: auto-detect)")
@@ -33,8 +34,8 @@ func Create(d *db.DB, args []string) error {
 		return exitUsage("usage: ata create TITLE [--description TEXT] [--status backlog|queue] [--epic ID] [--workspace PATH] [--json]")
 	}
 
-	if *status != "backlog" && *status != "queue" {
-		return fmt.Errorf("status must be 'backlog' or 'queue', got %q", *status)
+	if *status != "" && *status != model.StatusBacklog && *status != model.StatusQueue {
+		return fmt.Errorf("status must be '%s' or '%s', got %q", model.StatusBacklog, model.StatusQueue, *status)
 	}
 
 	ws := *workspace
