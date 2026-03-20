@@ -91,6 +91,18 @@ func reorderIDs(tx *sql.Tx, ids []string, id string, position int) error {
 	return nil
 }
 
+// nextEpicChildOrder returns the sort_order to assign to a new child of the
+// given epic, placing it after all non-closed siblings.
+func nextEpicChildOrder(tx *sql.Tx, epicID string) (int, error) {
+	var maxOrder int
+	if err := tx.QueryRow(
+		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE epic_id = ? AND status != 'closed'`,
+		epicID).Scan(&maxOrder); err != nil {
+		return 0, fmt.Errorf("query max sort_order: %w", err)
+	}
+	return maxOrder + 1, nil
+}
+
 // Reorder sets a top-level task's position within its status+workspace group.
 // If newStatus is non-empty and differs from the current status, the task is moved to that status.
 func (d *DB) Reorder(id string, position int, newStatus string) error {

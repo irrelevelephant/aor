@@ -84,14 +84,24 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 		}
 	}
 
-	// Set sort_order to max+1 for the status group.
-	var maxOrder int
-	if err := tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE status = ? AND workspace = ?`, status, workspace).Scan(&maxOrder); err != nil {
-		return nil, fmt.Errorf("query max sort_order: %w", err)
+	// Determine sort_order: place at end of the appropriate group.
+	var sortOrder int
+	if epicID != "" {
+		// Scope to the epic's non-closed children so ordering stays compact.
+		sortOrder, err = nextEpicChildOrder(tx, epicID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var maxOrder int
+		if err := tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE status = ? AND workspace = ?`, status, workspace).Scan(&maxOrder); err != nil {
+			return nil, fmt.Errorf("query max sort_order: %w", err)
+		}
+		sortOrder = maxOrder + 1
 	}
 
 	_, err = tx.Exec(`INSERT INTO tasks (id, title, body, status, sort_order, epic_id, workspace, created_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, title, body, status, maxOrder+1, nullStr(epicID), workspace, createdIn)
+		id, title, body, status, sortOrder, nullStr(epicID), workspace, createdIn)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
@@ -537,17 +547,14 @@ func (d *DB) SetEpicID(taskID, newEpicID string) error {
 			return fmt.Errorf("auto-promote epic: %w", err)
 		}
 
-		// Place at end of epic's children in the task's current status.
-		var maxOrder int
-		err := tx.QueryRow(
-			`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE epic_id = ?`,
-			newEpicID).Scan(&maxOrder)
+		// Place at end of epic's non-closed children.
+		sortOrder, err := nextEpicChildOrder(tx, newEpicID)
 		if err != nil {
-			return fmt.Errorf("query max sort_order: %w", err)
+			return err
 		}
 
 		if _, err := tx.Exec(`UPDATE tasks SET epic_id = ?, sort_order = ? WHERE id = ?`,
-			newEpicID, maxOrder+1, taskID); err != nil {
+			newEpicID, sortOrder, taskID); err != nil {
 			return fmt.Errorf("set epic_id: %w", err)
 		}
 	} else {
