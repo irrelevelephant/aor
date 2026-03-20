@@ -362,3 +362,18 @@ function setTagParam(u, key, tags) {
         u.searchParams.delete(key);
     }
 }
+
+// Preserve scroll position across attachment upload (full-page redirect).
+(function() {
+    var SCROLL_KEY = 'ata-upload-scroll';
+    document.querySelectorAll('.attachment-upload').forEach(function(form) {
+        form.addEventListener('submit', function() {
+            sessionStorage.setItem(SCROLL_KEY, window.scrollY);
+        });
+    });
+    var saved = sessionStorage.getItem(SCROLL_KEY);
+    if (saved !== null) {
+        window.scrollTo(0, parseInt(saved, 10));
+        sessionStorage.removeItem(SCROLL_KEY);
+    }
+})();
