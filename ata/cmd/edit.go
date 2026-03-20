@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"aor/ata/db"
+	"aor/ata/model"
 )
 
 func Edit(d *db.DB, args []string) error {
@@ -15,11 +16,12 @@ func Edit(d *db.DB, args []string) error {
 	descFile := fs.String("desc-file", "", "Read description from file (tasks only)")
 	spec := fs.String("spec", "", "New spec (epics only)")
 	specFile := fs.String("spec-file", "", "Read spec from file (epics only)")
+	epic := fs.String("epic", "", "Parent epic ID (use 'none' to remove from epic)")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
 		"title": true, "description": true, "desc": true, "desc-file": true,
-		"spec": true, "spec-file": true,
+		"spec": true, "spec-file": true, "epic": true,
 	})
 
 	if err := fs.Parse(flagArgs); err != nil {
@@ -27,7 +29,7 @@ func Edit(d *db.DB, args []string) error {
 	}
 
 	if len(positional) == 0 {
-		return exitUsage("usage: ata edit ID [--title TITLE] [--description TEXT] [--desc-file PATH] [--spec SPEC] [--spec-file PATH] [--json]")
+		return exitUsage("usage: ata edit ID [--title TITLE] [--description TEXT] [--desc-file PATH] [--spec SPEC] [--spec-file PATH] [--epic EPIC_ID|none] [--json]")
 	}
 
 	id := positional[0]
@@ -44,20 +46,7 @@ func Edit(d *db.DB, args []string) error {
 
 	hasDesc := descFlagSet || descFileSet
 	hasSpec := flagWasSet(fs, "spec") || flagWasSet(fs, "spec-file")
-
-	// Validate epic vs task field usage.
-	if hasDesc || hasSpec {
-		task, err := d.GetTask(id)
-		if err != nil {
-			return err
-		}
-		if task.IsEpic && hasDesc {
-			return fmt.Errorf("use --spec/--spec-file for epics")
-		}
-		if !task.IsEpic && hasSpec {
-			return fmt.Errorf("use --description/--desc-file for tasks")
-		}
-	}
+	epicSet := flagWasSet(fs, "epic")
 
 	// Build update params: nil = don't change.
 	var pTitle, pBody, pSpec *string
@@ -86,13 +75,51 @@ func Edit(d *db.DB, args []string) error {
 		pSpec = &s
 	}
 
-	if pTitle == nil && pBody == nil && pSpec == nil {
-		return exitUsage("at least one of --title, --description, --desc-file, --spec, or --spec-file is required")
+	if pTitle == nil && pBody == nil && pSpec == nil && !epicSet {
+		return exitUsage("at least one of --title, --description, --desc-file, --spec, --spec-file, or --epic is required")
 	}
 
-	task, err := d.UpdateTask(id, pTitle, pBody, pSpec)
-	if err != nil {
-		return err
+	// Fetch once for validation and output.
+	var task *model.Task
+	if hasDesc || hasSpec || epicSet || (pTitle == nil && pBody == nil && pSpec == nil) {
+		t, err := d.GetTask(id)
+		if err != nil {
+			return err
+		}
+		task = t
+	}
+
+	// Validate epic vs task field usage.
+	if task != nil {
+		if task.IsEpic && hasDesc {
+			return fmt.Errorf("use --spec/--spec-file for epics")
+		}
+		if !task.IsEpic && hasSpec {
+			return fmt.Errorf("use --description/--desc-file for tasks")
+		}
+		if epicSet && task.IsEpic {
+			return fmt.Errorf("cannot reparent an epic; only tasks can have a parent epic")
+		}
+	}
+
+	// Apply field updates first (fail fast before reparenting).
+	if pTitle != nil || pBody != nil || pSpec != nil {
+		t, err := d.UpdateTask(id, pTitle, pBody, pSpec)
+		if err != nil {
+			return err
+		}
+		task = t
+	}
+
+	// Handle --epic reparenting.
+	if epicSet {
+		newEpicID := *epic
+		if newEpicID == "none" {
+			newEpicID = ""
+		}
+		if err := d.SetEpicID(id, newEpicID); err != nil {
+			return err
+		}
 	}
 
 	if *jsonOut {
