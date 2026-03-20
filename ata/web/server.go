@@ -1361,6 +1361,21 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 	} else if parentID != "" {
 		err = s.db.ReorderInEpic(id, pos, parentID)
 	} else {
+		// Top-level reorder — if this is an epic moving between columns,
+		// move all children/subchildren with it.
+		if newStatus != "" {
+			task, tErr := s.db.GetTask(id)
+			if tErr != nil {
+				http.Error(w, tErr.Error(), 500)
+				return
+			}
+			if task != nil && task.IsEpic {
+				if mErr := s.db.MoveEpicTree(id, newStatus); mErr != nil {
+					http.Error(w, mErr.Error(), 500)
+					return
+				}
+			}
+		}
 		err = s.db.Reorder(id, pos, newStatus)
 	}
 	if err != nil {

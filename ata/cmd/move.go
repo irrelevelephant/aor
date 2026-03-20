@@ -60,9 +60,41 @@ func Move(d *db.DB, args []string) error {
 		ws = detectWorkspace(d)
 	}
 
-	tasks, err := d.MoveTasks(positional, *from, *to, ws)
-	if err != nil {
-		return err
+	var tasks []model.Task
+
+	if len(positional) > 0 {
+		// When moving specific IDs, check for epics and move their entire tree.
+		var nonEpicIDs []string
+		for _, id := range positional {
+			task, err := d.GetTask(id)
+			if err != nil {
+				return fmt.Errorf("get task %s: %w", id, err)
+			}
+			if task == nil {
+				return fmt.Errorf("task %s not found", id)
+			}
+			if task.IsEpic {
+				if err := d.MoveEpicTree(id, *to); err != nil {
+					return fmt.Errorf("move epic tree %s: %w", id, err)
+				}
+				tasks = append(tasks, *task)
+			} else {
+				nonEpicIDs = append(nonEpicIDs, id)
+			}
+		}
+		if len(nonEpicIDs) > 0 {
+			moved, err := d.MoveTasks(nonEpicIDs, "", *to, ws)
+			if err != nil {
+				return err
+			}
+			tasks = append(tasks, moved...)
+		}
+	} else {
+		var err error
+		tasks, err = d.MoveTasks(nil, *from, *to, ws)
+		if err != nil {
+			return err
+		}
 	}
 
 	if *jsonOut {
@@ -75,7 +107,11 @@ func Move(d *db.DB, args []string) error {
 	}
 
 	for _, t := range tasks {
-		fmt.Printf("moved %s → %s: %s\n", t.ID, *to, t.Title)
+		if t.IsEpic {
+			fmt.Printf("moved %s → %s (with children): %s\n", t.ID, *to, t.Title)
+		} else {
+			fmt.Printf("moved %s → %s: %s\n", t.ID, *to, t.Title)
+		}
 	}
 	fmt.Printf("%d task(s) moved to %s\n", len(tasks), *to)
 	return nil
