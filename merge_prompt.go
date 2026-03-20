@@ -42,8 +42,10 @@ You are working in the main worktree. Follow this process:
 
 2. **Decide merge order**: Choose an intelligent order that minimizes conflicts. Merge simpler/independent changes first.
 
-3. **For each worktree**, merge its branch:
-   - Run ` + "`git merge <branch>`" + ` (or ` + "`git rebase`" + ` if appropriate)
+3. **For each worktree**, integrate its branch (prefer rebase for linear history):
+   - First, try rebasing the branch onto main: ` + "`git -C <worktree-path> rebase <main-branch>`" + `
+   - If the rebase succeeds, fast-forward main: ` + "`git merge --ff-only <branch>`" + `
+   - If the rebase fails (conflicts), abort it (` + "`git -C <worktree-path> rebase --abort`" + `) and fall back to ` + "`git merge <branch>`" + `
    - If there are merge conflicts:
      - Resolve them automatically using your understanding of the code
      - Only use AskUserQuestion if a conflict is genuinely ambiguous and you cannot determine the correct resolution

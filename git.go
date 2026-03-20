@@ -269,9 +269,10 @@ func removeWorktree(wtPath, branch string) error {
 	return nil
 }
 
-// mergeWorktreeBranch merges a worktree's branch into the main branch and
-// removes the worktree. Returns nil on success. If the merge fails (e.g.
-// conflicts), the worktree is left in place for manual resolution.
+// mergeWorktreeBranch rebases a worktree's branch onto the main branch and
+// fast-forwards main to the result. If the rebase fails (e.g. conflicts), it
+// falls back to a regular merge. The worktree is removed on success; on
+// failure it is left in place for manual resolution.
 func mergeWorktreeBranch(wtPath string) error {
 	mainWT := gitMainWorktree()
 	if mainWT == "" {
@@ -283,12 +284,40 @@ func mergeWorktreeBranch(wtPath string) error {
 		return fmt.Errorf("worktree has no branch (detached HEAD)")
 	}
 
-	// Merge the branch into main. git merge is a no-op if already merged.
-	cmd := exec.Command("git", "-C", mainWT, "merge", "--no-edit", branch)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
+	mainBranch := worktreeBranch(mainWT)
+	if mainBranch == "" {
+		return fmt.Errorf("main worktree has no branch (detached HEAD)")
+	}
+
+	// Try rebase first for clean linear history.
+	rebaseCmd := exec.Command("git", "-C", wtPath, "rebase", mainBranch)
+	rebaseCmd.Stdout = os.Stderr
+	rebaseCmd.Stderr = os.Stderr
+	if err := rebaseCmd.Run(); err != nil {
+		// Abort the failed rebase, then fall back to merge.
+		exec.Command("git", "-C", wtPath, "rebase", "--abort").Run()
+
+		mergeCmd := exec.Command("git", "-C", mainWT, "merge", "--no-edit", branch)
+		mergeCmd.Stdout = os.Stderr
+		mergeCmd.Stderr = os.Stderr
+		if err := mergeCmd.Run(); err != nil {
+			return fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
+		}
+		return removeWorktree(wtPath, branch)
+	}
+
+	// Rebase succeeded — fast-forward main. If main advanced between the
+	// rebase and now, --ff-only will fail; fall back to a regular merge.
+	ffCmd := exec.Command("git", "-C", mainWT, "merge", "--ff-only", branch)
+	ffCmd.Stdout = os.Stderr
+	ffCmd.Stderr = os.Stderr
+	if err := ffCmd.Run(); err != nil {
+		fallback := exec.Command("git", "-C", mainWT, "merge", "--no-edit", branch)
+		fallback.Stdout = os.Stderr
+		fallback.Stderr = os.Stderr
+		if err := fallback.Run(); err != nil {
+			return fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
+		}
 	}
 
 	return removeWorktree(wtPath, branch)
