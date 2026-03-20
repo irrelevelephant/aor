@@ -231,6 +231,12 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 		if i > 0 {
 			iterCfg.SkipRecovery = true
 		}
+		// When review is enabled, defer epic closure until after review
+		// tasks have been filed and resolved — otherwise the epic gets
+		// closed before runRevDirect has a chance to file tasks under it.
+		if rev {
+			iterCfg.SkipEpicClose = true
+		}
 
 		// Create worktree for this epic if requested.
 		var wtPath string
@@ -287,6 +293,10 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 			} else {
 				log.Log("No new commits for epic %s — skipping review", label)
 			}
+
+			// Now that review tasks have been filed and resolved,
+			// close the epic if all children are complete.
+			closeEpicsUnder(epic, cfg, log, stdinCh, stats)
 		}
 	}
 

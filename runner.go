@@ -265,62 +265,7 @@ func run(cfg *Config) error {
 	}
 
 	tryCloseEpics := func() {
-		// Loop until no more epics become eligible. Closing a sub-epic may
-		// make its parent eligible, so we must re-check after each pass.
-		// Cap iterations to avoid infinite loops from unexpected edge cases.
-		for range 20 {
-			epics, err := getCloseEligibleEpics(cfg.Workspace)
-			if err != nil {
-				log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
-				return
-			}
-			if len(epics) == 0 {
-				return
-			}
-
-			// When filtering by epic, only process epics within the
-			// filtered tree — don't close or verify unrelated epics.
-			if cfg.EpicFilter != "" {
-				var filtered []AtaTask
-				for _, epic := range epics {
-					if isUnderEpic(epic.ID, epic.EpicID, cfg.EpicFilter) {
-						filtered = append(filtered, epic)
-					}
-				}
-				epics = filtered
-				if len(epics) == 0 {
-					return
-				}
-			}
-			closedAny := false
-			for _, epic := range epics {
-				if epic.Spec != "" {
-					// Has spec — run verification.
-					log.Log("Epic %s children all closed — verifying...", epic.ID)
-					passed, err := verifyEpic(epic.ID, cfg, log, stdinCh, stats)
-					if err != nil {
-						log.Log("Epic %s verification error: %v", epic.ID, err)
-					} else if passed {
-						log.Log("Epic %s verified and closed", epic.ID)
-						closedAny = true
-					} else {
-						log.Log("Epic %s did not pass verification", epic.ID)
-					}
-				} else {
-					// No spec — auto-close like before.
-					if err := closeTask(epic.ID, "all children closed"); err == nil {
-						stats.EpicsClosed++
-						log.Log("Auto-closed epic %s (no spec)", epic.ID)
-						closedAny = true
-					}
-				}
-			}
-			// If nothing was closed this pass, no point re-checking —
-			// no parent epic could have become newly eligible.
-			if !closedAny {
-				return
-			}
-		}
+		closeEpicsUnder(cfg.EpicFilter, cfg, log, stdinCh, stats)
 	}
 
 	for {
@@ -622,6 +567,63 @@ func run(cfg *Config) error {
 		printSummary(log, stats)
 	}
 	return nil
+}
+
+// closeEpicsUnder closes eligible epics, optionally scoped to a given ancestor
+// epic tree. When ancestorID is empty, all eligible epics in the workspace are
+// considered. Closing a sub-epic may make its parent eligible, so the function
+// loops until no more epics can be closed (capped at 20 iterations).
+func closeEpicsUnder(ancestorID string, cfg *Config, log *Logger, stdinCh <-chan string, stats *RunStats) {
+	for range 20 {
+		epics, err := getCloseEligibleEpics(cfg.Workspace)
+		if err != nil {
+			log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
+			return
+		}
+		if len(epics) == 0 {
+			return
+		}
+
+		// When scoped to an ancestor, only process epics within that
+		// tree — don't close or verify unrelated epics.
+		if ancestorID != "" {
+			var filtered []AtaTask
+			for _, epic := range epics {
+				if isUnderEpic(epic.ID, epic.EpicID, ancestorID) {
+					filtered = append(filtered, epic)
+				}
+			}
+			epics = filtered
+			if len(epics) == 0 {
+				return
+			}
+		}
+
+		closedAny := false
+		for _, epic := range epics {
+			if epic.Spec != "" {
+				log.Log("Epic %s children all closed — verifying...", epic.ID)
+				passed, err := verifyEpic(epic.ID, cfg, log, stdinCh, stats)
+				if err != nil {
+					log.Log("Epic %s verification error: %v", epic.ID, err)
+				} else if passed {
+					log.Log("Epic %s verified and closed", epic.ID)
+					closedAny = true
+				} else {
+					log.Log("Epic %s did not pass verification", epic.ID)
+				}
+			} else {
+				if err := closeTask(epic.ID, "all children closed"); err == nil {
+					stats.EpicsClosed++
+					log.Log("Auto-closed epic %s (no spec)", epic.ID)
+					closedAny = true
+				}
+			}
+		}
+		if !closedAny {
+			return
+		}
+	}
 }
 
 // formatTokens formats a token count with thousands separators.
