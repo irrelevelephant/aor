@@ -261,11 +261,11 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 			if runErr != nil {
 				log.Log("%sSkipping merge for epic %s — worktree left at %s (use `aor merge` to resolve)%s",
 					cYellow, label, wtPath, cReset)
-			} else if err := mergeWorktreeBranch(wtPath); err != nil {
+			} else if strategy, err := mergeWorktreeBranch(wtPath); err != nil {
 				log.Log("%sMerge for epic %s failed: %v — worktree left at %s (use `aor merge` to resolve)%s",
 					cYellow, label, err, wtPath, cReset)
 			} else {
-				log.Log("Merged worktree for epic %s back to main", label)
+				log.Log("Worktree for epic %s integrated to main (%s)", label, strategy)
 			}
 		}
 

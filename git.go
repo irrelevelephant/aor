@@ -269,24 +269,49 @@ func removeWorktree(wtPath, branch string) error {
 	return nil
 }
 
+// mergeStrategy describes how a worktree branch was integrated into main.
+type mergeStrategy int
+
+const (
+	mergeRebaseFF    mergeStrategy = iota // rebased onto main, then fast-forwarded
+	mergeRebaseMerge                      // rebased onto main, but ff failed so merged
+	mergeFallback                         // rebase failed, fell back to regular merge
+)
+
+func (s mergeStrategy) String() string {
+	switch s {
+	case mergeRebaseFF:
+		return "fast-forward"
+	case mergeRebaseMerge:
+		return "rebase + merge"
+	case mergeFallback:
+		return "merge fallback"
+	default:
+		return "unknown"
+	}
+}
+
 // mergeWorktreeBranch rebases a worktree's branch onto the main branch and
 // fast-forwards main to the result. If the rebase fails (e.g. conflicts), it
 // falls back to a regular merge. The worktree is removed on success; on
 // failure it is left in place for manual resolution.
-func mergeWorktreeBranch(wtPath string) error {
+//
+// On success the returned mergeStrategy indicates which integration path was
+// taken so callers can log an accurate message.
+func mergeWorktreeBranch(wtPath string) (mergeStrategy, error) {
 	mainWT := gitMainWorktree()
 	if mainWT == "" {
-		return fmt.Errorf("could not determine main worktree")
+		return 0, fmt.Errorf("could not determine main worktree")
 	}
 
 	branch := worktreeBranch(wtPath)
 	if branch == "" {
-		return fmt.Errorf("worktree has no branch (detached HEAD)")
+		return 0, fmt.Errorf("worktree has no branch (detached HEAD)")
 	}
 
 	mainBranch := worktreeBranch(mainWT)
 	if mainBranch == "" {
-		return fmt.Errorf("main worktree has no branch (detached HEAD)")
+		return 0, fmt.Errorf("main worktree has no branch (detached HEAD)")
 	}
 
 	// Try rebase first for clean linear history.
@@ -301,26 +326,28 @@ func mergeWorktreeBranch(wtPath string) error {
 		mergeCmd.Stdout = os.Stderr
 		mergeCmd.Stderr = os.Stderr
 		if err := mergeCmd.Run(); err != nil {
-			return fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
+			return 0, fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
 		}
-		return removeWorktree(wtPath, branch)
+		return mergeFallback, removeWorktree(wtPath, branch)
 	}
 
 	// Rebase succeeded — fast-forward main. If main advanced between the
 	// rebase and now, --ff-only will fail; fall back to a regular merge.
+	strategy := mergeRebaseFF
 	ffCmd := exec.Command("git", "-C", mainWT, "merge", "--ff-only", branch)
 	ffCmd.Stdout = os.Stderr
 	ffCmd.Stderr = os.Stderr
 	if err := ffCmd.Run(); err != nil {
+		strategy = mergeRebaseMerge
 		fallback := exec.Command("git", "-C", mainWT, "merge", "--no-edit", branch)
 		fallback.Stdout = os.Stderr
 		fallback.Stderr = os.Stderr
 		if err := fallback.Run(); err != nil {
-			return fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
+			return 0, fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
 		}
 	}
 
-	return removeWorktree(wtPath, branch)
+	return strategy, removeWorktree(wtPath, branch)
 }
 
 // hasUncommittedChanges returns true if the working tree has uncommitted changes.
