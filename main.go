@@ -200,6 +200,7 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 
 	stdinCh := startStdinReader()
 	stats := &RunStats{StartedAt: time.Now()}
+	rc := &RunContext{Log: log, StdinCh: stdinCh, Stats: stats}
 
 	cfg.Log = log
 	cfg.StdinCh = stdinCh
@@ -287,7 +288,7 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 					Workspace: cfg.Workspace,
 					EpicID:    epic,
 				}
-				if err := runRevDirect(revCfg, log, stdinCh); err != nil {
+				if err := runRevDirect(revCfg, rc); err != nil {
 					log.Log("%sReview for epic %s failed: %v (continuing)%s", cYellow, label, err, cReset)
 				}
 			} else {
@@ -296,7 +297,7 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 
 			// Now that review tasks have been filed and resolved,
 			// close the epic if all children are complete.
-			closeEpicsUnder(epic, cfg, log, stdinCh, stats)
+			closeEpicsUnder(epic, cfg, rc)
 		}
 	}
 

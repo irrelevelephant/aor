@@ -17,7 +17,9 @@ import (
 // runSession launches a Claude Code session with the given prompt and streams
 // output in real time. It supports user controls (interject, skip, quit) and
 // graceful signal handling.
-func runSession(cfg *Config, log *Logger, prompt string, stdinCh <-chan string) *SessionResult {
+func runSession(cfg *Config, rc *RunContext, prompt string) *SessionResult {
+	log := rc.Log
+	stdinCh := rc.StdinCh
 	result := &SessionResult{}
 
 	if err := log.StartSessionLog(); err != nil {

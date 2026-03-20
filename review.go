@@ -16,8 +16,7 @@ type revContext struct {
 	base       string
 	revTag     string
 	workDir    string
-	log        *Logger
-	stdinCh    <-chan string
+	run        *RunContext
 }
 
 // reviewCycleResult holds the outcome of one review cycle (inner loop).
@@ -36,13 +35,13 @@ func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []FiledTask)
 	for round := 1; round <= rc.cfg.MaxRounds; round++ {
 		diff, err := diffRange(rc.base)
 		if err != nil {
-			rc.log.Log("%sError getting diff: %v%s", cRed, err, cReset)
+			rc.run.Log.Log("%sError getting diff: %v%s", cRed, err, cReset)
 			result.stopReason = "diff error"
 			break
 		}
 
 		if strings.TrimSpace(diff) == "" {
-			rc.log.Log("%sNo diff from %s — nothing to review.%s", cGreen, rc.base, cReset)
+			rc.run.Log.Log("%sNo diff from %s — nothing to review.%s", cGreen, rc.base, cReset)
 			result.stopReason = "no diff"
 			break
 		}
@@ -52,11 +51,11 @@ func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []FiledTask)
 		fmt.Printf("\n%s─── Review round %d/%d ──────────────────────────────────%s\n\n",
 			cBlue, round, rc.cfg.MaxRounds, cReset)
 
-		sr := runSession(rc.sessionCfg, rc.log, prompt, rc.stdinCh)
+		sr := runSession(rc.sessionCfg, rc.run, prompt)
 		stats.RoundsRun++
 
 		if sr.Error != nil {
-			rc.log.Log("%sSession error: %v%s", cRed, sr.Error, cReset)
+			rc.run.Log.Log("%sSession error: %v%s", cRed, sr.Error, cReset)
 			result.stopReason = "session error"
 			break
 		}
@@ -94,20 +93,20 @@ func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []FiledTask)
 			}
 
 			if status.Error != nil {
-				rc.log.Log("%sAgent reported error: %s%s", cRed, *status.Error, cReset)
+				rc.run.Log.Log("%sAgent reported error: %s%s", cRed, *status.Error, cReset)
 			}
 
-			rc.log.Log("Round %d: %d tasks filed, %d fixes applied, severity=%s",
+			rc.run.Log.Log("Round %d: %d tasks filed, %d fixes applied, severity=%s",
 				round, len(status.TasksFiled), len(status.FixesApplied), status.Severity)
 		} else {
-			rc.log.Log("%sWARNING: No structured status from review agent. Check session log.%s", cYellow, cReset)
+			rc.run.Log.Log("%sWARNING: No structured status from review agent. Check session log.%s", cYellow, cReset)
 		}
 
 		result.rounds = append(result.rounds, rr)
 
 		if reason := shouldStop(result.rounds); reason != "" {
 			result.stopReason = reason
-			rc.log.Log("Converged: %s", reason)
+			rc.run.Log.Log("Converged: %s", reason)
 			break
 		}
 
@@ -150,13 +149,14 @@ func runRev(args []string) error {
 	defer log.Close()
 
 	stdinCh := startStdinReader()
+	rc := &RunContext{Log: log, StdinCh: stdinCh, Stats: &RunStats{StartedAt: time.Now()}}
 
-	return runRevDirect(cfg, log, stdinCh)
+	return runRevDirect(cfg, rc)
 }
 
 // runRevDirect runs the review logic with an already-initialized logger and stdin channel.
 // It is called by runRev (subcommand entry point) and by runMultiEpic (inline review).
-func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
+func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 	base, err := resolveBase(cfg.Base)
 	if err != nil {
 		return fmt.Errorf("resolve base ref: %w", err)
@@ -172,17 +172,16 @@ func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
 	// Generate rev tag from worktree/directory basename.
 	revTag := "rev-" + filepath.Base(workDir)
 
-	log.Log("Code review starting (base: %s, max_rounds: %d, yolo: %v, tag: %s)",
+	rc.Log.Log("Code review starting (base: %s, max_rounds: %d, yolo: %v, tag: %s)",
 		base, cfg.MaxRounds, cfg.Yolo, revTag)
 	fmt.Println()
 
-	rc := &revContext{
+	rvc := &revContext{
 		cfg:     cfg,
 		base:    base,
 		revTag:  revTag,
 		workDir: workDir,
-		log:     log,
-		stdinCh: stdinCh,
+		run:     rc,
 		sessionCfg: &Config{
 			Yolo:    cfg.Yolo,
 			LogDir:  cfg.LogDir,
@@ -204,7 +203,7 @@ func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
 		}
 
 		// 1. Run review cycle (inner loop).
-		cr := rc.runReviewCycle(stats, allTasksFiled)
+		cr := rvc.runReviewCycle(stats, allTasksFiled)
 		allTasksFiled = append(allTasksFiled, cr.tasksFiled...)
 
 		if cr.userQuit {
@@ -214,50 +213,50 @@ func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
 
 		// 2. Commit sweep.
 		if hasUncommittedChanges() {
-			rc.log.Log("Uncommitted review fixes detected — running commit sweep")
+			rc.Log.Log("Uncommitted review fixes detected — running commit sweep")
 			commitPrompt := buildCommitSweepPrompt("from a code review", "a message summarizing the review fixes")
-			sweepResult := runSession(rc.sessionCfg, rc.log, commitPrompt, rc.stdinCh)
+			sweepResult := runSession(rvc.sessionCfg, rc, commitPrompt)
 			if sweepResult.Error != nil {
-				rc.log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
+				rc.Log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
 			} else {
 				stats.CommitSweep = true
-				rc.log.Log("Commit sweep completed")
+				rc.Log.Log("Commit sweep completed")
 			}
 		} else {
-			rc.log.Log("No uncommitted changes — commit sweep skipped")
+			rc.Log.Log("No uncommitted changes — commit sweep skipped")
 		}
 
 		// 3. Check for open tagged tasks.
-		openTasks, err := getReadyTasks("", rc.revTag, rc.cfg.Workspace)
+		openTasks, err := getReadyTasks("", rvc.revTag, rvc.cfg.Workspace)
 		if err != nil {
-			rc.log.Log("%sError checking tagged tasks: %v%s", cRed, err, cReset)
+			rc.Log.Log("%sError checking tagged tasks: %v%s", cRed, err, cReset)
 			stats.StopReason = "task check error"
 			break
 		}
 
 		if len(openTasks) == 0 {
-			rc.log.Log("%sNo open tagged tasks — review clean.%s", cGreen, cReset)
+			rc.Log.Log("%sNo open tagged tasks — review clean.%s", cGreen, cReset)
 			stats.StopReason = "clean pass"
 			break
 		}
 
-		rc.log.Log("%d open tagged task(s) — running orchestration to fix them", len(openTasks))
+		rc.Log.Log("%d open tagged task(s) — running orchestration to fix them", len(openTasks))
 
 		// 4. Run orchestration loop filtered to the rev tag.
 		runCfg := &Config{
-			TagFilter:       rc.revTag,
-			Workspace:       rc.cfg.Workspace,
-			WorkDir:         rc.workDir,
-			Yolo:            rc.cfg.Yolo,
-			LogDir:          rc.cfg.LogDir,
+			TagFilter:       rvc.revTag,
+			Workspace:       rvc.cfg.Workspace,
+			WorkDir:         rvc.workDir,
+			Yolo:            rvc.cfg.Yolo,
+			LogDir:          rvc.cfg.LogDir,
 			BatchSize:       1,
-			StdinCh:         rc.stdinCh,
-			Log:             rc.log,
+			StdinCh:         rc.StdinCh,
+			Log:             rc.Log,
 			SuppressSummary: true,
 			SkipRecovery:    true,
 		}
 		if err := run(runCfg); err != nil {
-			rc.log.Log("%sOrchestration error: %v%s", cRed, err, cReset)
+			rc.Log.Log("%sOrchestration error: %v%s", cRed, err, cReset)
 			stats.StopReason = "orchestration error"
 			break
 		}
@@ -265,7 +264,7 @@ func runRevDirect(cfg *ReviewConfig, log *Logger, stdinCh <-chan string) error {
 		// Loop back — next review cycle will check if issues remain.
 	}
 
-	printReviewSummary(rc.log, stats)
+	printReviewSummary(rc.Log, stats)
 	return nil
 }
 

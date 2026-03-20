@@ -7,15 +7,15 @@ import (
 
 // verifyEpic runs the epic verification loop: verify spec criteria, file tasks
 // for gaps, run them, and re-verify up to cfg.MaxRounds times.
-func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, stats *RunStats) (bool, error) {
+func verifyEpic(epicID string, cfg *Config, rc *RunContext) (bool, error) {
 	maxRounds := cfg.MaxRounds
 	if maxRounds <= 0 {
 		maxRounds = 3
 	}
 
 	for round := 1; round <= maxRounds; round++ {
-		log.Log("Epic %s verification round %d/%d", epicID, round, maxRounds)
-		stats.VerifySessions++
+		rc.Log.Log("Epic %s verification round %d/%d", epicID, round, maxRounds)
+		rc.Stats.VerifySessions++
 
 		// 1. Get current epic details.
 		epic, err := getTaskStatus(epicID)
@@ -23,7 +23,7 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 			return false, fmt.Errorf("get epic status: %w", err)
 		}
 		if epic.Status == "closed" {
-			log.Log("Epic %s already closed", epicID)
+			rc.Log.Log("Epic %s already closed", epicID)
 			return true, nil
 		}
 
@@ -35,7 +35,7 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 
 		for _, c := range children {
 			if c.Status != "closed" {
-				log.Log("Epic %s has unclosed child %s (%s) — cannot verify yet", epicID, c.ID, c.Status)
+				rc.Log.Log("Epic %s has unclosed child %s (%s) — cannot verify yet", epicID, c.ID, c.Status)
 				return false, nil
 			}
 		}
@@ -52,12 +52,12 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 			LogDir:  cfg.LogDir,
 			WorkDir: cfg.WorkDir,
 		}
-		result := runSession(sessionCfg, log, prompt, stdinCh)
+		result := runSession(sessionCfg, rc, prompt)
 
 		if result.InputTokens > 0 || result.OutputTokens > 0 {
-			stats.TotalCostUSD += result.TotalCostUSD
-			stats.TotalInput += result.InputTokens
-			stats.TotalOutput += result.OutputTokens
+			rc.Stats.TotalCostUSD += result.TotalCostUSD
+			rc.Stats.TotalInput += result.InputTokens
+			rc.Stats.TotalOutput += result.OutputTokens
 		}
 
 		if result.Error != nil {
@@ -74,12 +74,12 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 			if len(snippet) > 200 {
 				snippet = snippet[len(snippet)-200:]
 			}
-			log.Log("%sWARNING: No EPIC_VERIFY_STATUS sentinel from verification agent (tail: %s)%s", cYellow, snippet, cReset)
+			rc.Log.Log("%sWARNING: No EPIC_VERIFY_STATUS sentinel from verification agent (tail: %s)%s", cYellow, snippet, cReset)
 			return false, nil
 		}
 
 		if status.Error != nil {
-			log.Log("%sVerification agent error: %s%s", cRed, *status.Error, cReset)
+			rc.Log.Log("%sVerification agent error: %s%s", cRed, *status.Error, cReset)
 			return false, nil
 		}
 
@@ -92,8 +92,8 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 			if err := closeTask(epicID, reason); err != nil {
 				return false, fmt.Errorf("close epic: %w", err)
 			}
-			stats.EpicsVerified++
-			stats.EpicsClosed++
+			rc.Stats.EpicsVerified++
+			rc.Stats.EpicsClosed++
 			return true, nil
 		}
 
@@ -103,8 +103,8 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 			for _, t := range status.TasksFiled {
 				taskIDs = append(taskIDs, t.ID)
 			}
-			log.Log("Verification filed %d task(s): %s", len(status.TasksFiled), strings.Join(taskIDs, ", "))
-			log.Log("Summary: %s", status.Summary)
+			rc.Log.Log("Verification filed %d task(s): %s", len(status.TasksFiled), strings.Join(taskIDs, ", "))
+			rc.Log.Log("Summary: %s", status.Summary)
 
 			// Run inner orchestration loop to complete the filed tasks.
 			runCfg := &Config{
@@ -114,15 +114,15 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 				Yolo:            cfg.Yolo,
 				LogDir:          cfg.LogDir,
 				BatchSize:       1,
-				StdinCh:         stdinCh,
-				Log:             log,
-				Stats:           stats,
+				StdinCh:         rc.StdinCh,
+				Log:             rc.Log,
+				Stats:           rc.Stats,
 				SuppressSummary: true,
 				SkipRecovery:    true,
 				SkipEpicClose:   true,
 			}
 			if err := run(runCfg); err != nil {
-				log.Log("%sInner orchestration error: %v%s", cRed, err, cReset)
+				rc.Log.Log("%sInner orchestration error: %v%s", cRed, err, cReset)
 			}
 
 			// Loop back to re-verify.
@@ -130,17 +130,17 @@ func verifyEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, 
 		}
 
 		// 8. Failed with no tasks and no error — nothing to do.
-		log.Log("Verification failed but no tasks filed. Summary: %s", status.Summary)
+		rc.Log.Log("Verification failed but no tasks filed. Summary: %s", status.Summary)
 		return false, nil
 	}
 
-	log.Log("Epic %s: max verification rounds (%d) reached", epicID, maxRounds)
+	rc.Log.Log("Epic %s: max verification rounds (%d) reached", epicID, maxRounds)
 	return false, nil
 }
 
 // tryVerifyFilteredEpic checks if the filtered epic is eligible for verification
 // and runs verifyEpic if so. Returns true if verification was attempted.
-func tryVerifyFilteredEpic(epicID string, cfg *Config, log *Logger, stdinCh <-chan string, stats *RunStats) bool {
+func tryVerifyFilteredEpic(epicID string, cfg *Config, rc *RunContext) bool {
 	epic, err := getTaskStatus(epicID)
 	if err != nil || epic == nil {
 		return false
@@ -166,14 +166,14 @@ func tryVerifyFilteredEpic(epicID string, cfg *Config, log *Logger, stdinCh <-ch
 		return false
 	}
 
-	log.Log("Epic %s children all closed — verifying...", epicID)
-	passed, err := verifyEpic(epicID, cfg, log, stdinCh, stats)
+	rc.Log.Log("Epic %s children all closed — verifying...", epicID)
+	passed, err := verifyEpic(epicID, cfg, rc)
 	if err != nil {
-		log.Log("Epic %s verification error: %v", epicID, err)
+		rc.Log.Log("Epic %s verification error: %v", epicID, err)
 	} else if passed {
-		log.Log("Epic %s verified and closed", epicID)
+		rc.Log.Log("Epic %s verified and closed", epicID)
 	} else {
-		log.Log("Epic %s did not pass verification", epicID)
+		rc.Log.Log("Epic %s did not pass verification", epicID)
 	}
 	return true
 }

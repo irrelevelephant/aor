@@ -101,6 +101,15 @@ type SessionResult struct {
 	DurationMS   int
 }
 
+// RunContext bundles the shared runtime resources (logger, stdin, stats)
+// that are threaded through the call chain. Using a struct avoids parameter
+// sprawl as more functions need access to these resources.
+type RunContext struct {
+	Log     *Logger
+	StdinCh <-chan string
+	Stats   *RunStats
+}
+
 // RunStats tracks cumulative stats across the orchestration run.
 type RunStats struct {
 	TasksCompleted      int

@@ -232,6 +232,8 @@ func run(cfg *Config) error {
 	if stats == nil {
 		stats = &RunStats{StartedAt: time.Now()}
 	}
+	rc := &RunContext{Log: log, StdinCh: stdinCh, Stats: stats}
+
 	type taskHistory struct {
 		NoProgressCount int
 	}
@@ -265,7 +267,7 @@ func run(cfg *Config) error {
 	}
 
 	tryCloseEpics := func() {
-		closeEpicsUnder(cfg.EpicFilter, cfg, log, stdinCh, stats)
+		closeEpicsUnder(cfg.EpicFilter, cfg, rc)
 	}
 
 	for {
@@ -279,7 +281,7 @@ func run(cfg *Config) error {
 		if len(tasks) == 0 {
 			// Before declaring "all done", check if the filtered epic itself needs verification.
 			if cfg.EpicFilter != "" {
-				if tryVerifyFilteredEpic(cfg.EpicFilter, cfg, log, stdinCh, stats) {
+				if tryVerifyFilteredEpic(cfg.EpicFilter, cfg, rc) {
 					// Verification may have filed new tasks — re-check.
 					continue
 				}
@@ -376,7 +378,7 @@ func run(cfg *Config) error {
 			cBlue, stats.SessionsRun, cReset)
 
 		sessionStart := time.Now()
-		result := runSession(cfg, log, prompt, stdinCh)
+		result := runSession(cfg, rc, prompt)
 
 		// Log session usage if available.
 		if result.InputTokens > 0 || result.OutputTokens > 0 {
@@ -410,7 +412,7 @@ func run(cfg *Config) error {
 			} else {
 				log.Log("No structured status — running post-session triage for %s", next.ID)
 				ev := gatherTriageEvidence(next.ID, next.Title, preSHA, sessionStart, result, cfg)
-				tr := runTriage(ev, cfg, log, stdinCh)
+				tr := runTriage(ev, cfg, rc)
 				if tr.AgentSpawned {
 					stats.TriageSessions++
 					stats.TotalCostUSD += tr.TotalCostUSD
@@ -573,11 +575,11 @@ func run(cfg *Config) error {
 // epic tree. When ancestorID is empty, all eligible epics in the workspace are
 // considered. Closing a sub-epic may make its parent eligible, so the function
 // loops until no more epics can be closed (capped at 20 iterations).
-func closeEpicsUnder(ancestorID string, cfg *Config, log *Logger, stdinCh <-chan string, stats *RunStats) {
+func closeEpicsUnder(ancestorID string, cfg *Config, rc *RunContext) {
 	for range 20 {
 		epics, err := getCloseEligibleEpics(cfg.Workspace)
 		if err != nil {
-			log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
+			rc.Log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
 			return
 		}
 		if len(epics) == 0 {
@@ -602,20 +604,20 @@ func closeEpicsUnder(ancestorID string, cfg *Config, log *Logger, stdinCh <-chan
 		closedAny := false
 		for _, epic := range epics {
 			if epic.Spec != "" {
-				log.Log("Epic %s children all closed — verifying...", epic.ID)
-				passed, err := verifyEpic(epic.ID, cfg, log, stdinCh, stats)
+				rc.Log.Log("Epic %s children all closed — verifying...", epic.ID)
+				passed, err := verifyEpic(epic.ID, cfg, rc)
 				if err != nil {
-					log.Log("Epic %s verification error: %v", epic.ID, err)
+					rc.Log.Log("Epic %s verification error: %v", epic.ID, err)
 				} else if passed {
-					log.Log("Epic %s verified and closed", epic.ID)
+					rc.Log.Log("Epic %s verified and closed", epic.ID)
 					closedAny = true
 				} else {
-					log.Log("Epic %s did not pass verification", epic.ID)
+					rc.Log.Log("Epic %s did not pass verification", epic.ID)
 				}
 			} else {
 				if err := closeTask(epic.ID, "all children closed"); err == nil {
-					stats.EpicsClosed++
-					log.Log("Auto-closed epic %s (no spec)", epic.ID)
+					rc.Stats.EpicsClosed++
+					rc.Log.Log("Auto-closed epic %s (no spec)", epic.ID)
 					closedAny = true
 				}
 			}

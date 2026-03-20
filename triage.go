@@ -212,11 +212,9 @@ func buildTriagePrompt(ev *TriageEvidence) string {
 }
 
 // runTriage orchestrates both layers: heuristic first, agent if needed.
-func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
-	stdinCh <-chan string) *TriageResult {
-
+func runTriage(ev *TriageEvidence, cfg *Config, rc *RunContext) *TriageResult {
 	result := triageHeuristic(ev)
-	log.Log("Triage heuristic: %s — %s", result.Outcome, result.Reason)
+	rc.Log.Log("Triage heuristic: %s — %s", result.Outcome, result.Reason)
 
 	if result.Outcome != TriageNeedsAgent {
 		if result.Outcome == TriagePartial {
@@ -226,7 +224,7 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 	}
 
 	// Layer 2: spawn triage agent.
-	log.Log("Triage heuristic inconclusive — spawning triage agent...")
+	rc.Log.Log("Triage heuristic inconclusive — spawning triage agent...")
 
 	triagePrompt := buildTriagePrompt(ev)
 	triageCfg := &Config{
@@ -238,11 +236,11 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 	fmt.Printf("\n%s─── Triage: %s ──────────────────────────────────────%s\n\n",
 		cYellow, ev.TaskID, cReset)
 
-	triageResult := runSession(triageCfg, log, triagePrompt, stdinCh)
+	triageResult := runSession(triageCfg, rc, triagePrompt)
 
 	// Log triage session costs.
 	if triageResult.InputTokens > 0 || triageResult.OutputTokens > 0 {
-		log.Log("Triage usage: %s input + %s output tokens, $%.4f",
+		rc.Log.Log("Triage usage: %s input + %s output tokens, $%.4f",
 			formatTokens(triageResult.InputTokens), formatTokens(triageResult.OutputTokens),
 			triageResult.TotalCostUSD)
 	}
@@ -270,10 +268,10 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 					reason = triageStatus.Comment
 				}
 				if err := closeTask(ev.TaskID, reason); err != nil {
-					log.Log("%sTriage auto-close failed for %s: %v%s", cYellow, ev.TaskID, err, cReset)
+					rc.Log.Log("%sTriage auto-close failed for %s: %v%s", cYellow, ev.TaskID, err, cReset)
 					outcome = TriagePartial
 				} else {
-					log.Log("Triage auto-closed %s (agent confirmed complete, %d commit(s))", ev.TaskID, ev.CommitCount)
+					rc.Log.Log("Triage auto-closed %s (agent confirmed complete, %d commit(s))", ev.TaskID, ev.CommitCount)
 					outcome = TriageComplete
 				}
 			} else {
@@ -301,7 +299,7 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 	}
 
 	// Triage agent also failed to produce sentinel — fall back to partial.
-	log.Log("%sTriage agent did not produce TRIAGE_STATUS sentinel — defaulting to partial%s", cYellow, cReset)
+	rc.Log.Log("%sTriage agent did not produce TRIAGE_STATUS sentinel — defaulting to partial%s", cYellow, cReset)
 	fallback := &TriageResult{
 		Outcome:      TriagePartial,
 		Reason:       "triage agent failed to produce sentinel",
