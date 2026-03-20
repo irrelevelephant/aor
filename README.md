@@ -263,7 +263,7 @@ ata clean [--workspace NAME|PATH] [--closed] [--older-than Nd] [--force] [--json
 ata create TITLE [--body TEXT] [--status backlog|queue] [--epic ID] [--tag a,b] [--workspace PATH] [--json]
 ata list [--workspace PATH] [--status STATUS] [--epic ID] [--tag TAG] [--all] [--json]
 ata show ID [--json]
-ata edit ID [--title TITLE] [--body BODY] [--body-file PATH] [--spec SPEC] [--spec-file PATH] [--json]
+ata edit ID [--title TITLE] [--body BODY] [--body-file PATH] [--spec SPEC] [--spec-file PATH] [--epic EPIC_ID|none] [--json]
 ata close ID [REASON] [--json]
 ata reopen ID [--json]                                              Reopen a closed task (back to backlog)
 ata ready [--workspace PATH] [--epic ID] [--tag TAG] [--limit N] [--json]

@@ -54,6 +54,8 @@ ata edit ID --description "Updated desc"        # tasks only (--desc alias)
 ata edit ID --desc-file path/to/file.md         # tasks only
 ata edit ID --spec "Epic spec content"          # epics only
 ata edit ID --spec-file path/to/spec.md         # epics only
+ata edit ID --epic EPIC_ID                      # reparent task to epic
+ata edit ID --epic none                         # remove from epic
 ```
 
 ### Closing tasks
