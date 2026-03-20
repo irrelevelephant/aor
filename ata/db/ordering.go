@@ -103,6 +103,49 @@ func nextEpicChildOrder(tx *sql.Tx, epicID string) (int, error) {
 	return maxOrder + 1, nil
 }
 
+// nextTopLevelOrder returns the sort_order to assign to a new top-level task
+// in the given status+workspace group, placing it after all existing siblings.
+func nextTopLevelOrder(tx *sql.Tx, status, workspace string) (int, error) {
+	var maxOrder int
+	if err := tx.QueryRow(
+		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '')`,
+		status, workspace).Scan(&maxOrder); err != nil {
+		return 0, fmt.Errorf("query max sort_order: %w", err)
+	}
+	return maxOrder + 1, nil
+}
+
+// recompactSiblings reassigns sort_order 0..n-1 to the siblings of a task
+// that was just removed from a group (e.g. by closing). If epicID is non-null
+// and non-empty, recompacts the epic's non-closed children; otherwise
+// recompacts the top-level tasks in the given status+workspace.
+func recompactSiblings(tx *sql.Tx, epicID sql.NullString, status, workspace string) error {
+	var rows *sql.Rows
+	var err error
+	if epicID.Valid && epicID.String != "" {
+		rows, err = tx.Query(
+			`SELECT id FROM tasks WHERE epic_id = ? AND status != 'closed' ORDER BY sort_order ASC, created_at ASC`,
+			epicID.String)
+	} else {
+		rows, err = tx.Query(
+			`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') ORDER BY sort_order ASC, created_at ASC`,
+			status, workspace)
+	}
+	if err != nil {
+		return fmt.Errorf("recompact query: %w", err)
+	}
+	ids, err := scanIDs(rows)
+	if err != nil {
+		return fmt.Errorf("recompact scan: %w", err)
+	}
+	for i, id := range ids {
+		if _, err := tx.Exec(`UPDATE tasks SET sort_order = ? WHERE id = ?`, i, id); err != nil {
+			return fmt.Errorf("recompact update: %w", err)
+		}
+	}
+	return nil
+}
+
 // Reorder sets a top-level task's position within its status+workspace group.
 // If newStatus is non-empty and differs from the current status, the task is moved to that status.
 func (d *DB) Reorder(id string, position int, newStatus string) error {

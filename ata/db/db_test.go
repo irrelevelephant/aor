@@ -792,14 +792,14 @@ func TestCreateTaskSortOrder(t *testing.T) {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	if t1.SortOrder != 1 {
-		t.Errorf("t1 sort_order = %d, want 1", t1.SortOrder)
+	if t1.SortOrder != 0 {
+		t.Errorf("t1 sort_order = %d, want 0", t1.SortOrder)
 	}
-	if t2.SortOrder != 2 {
-		t.Errorf("t2 sort_order = %d, want 2", t2.SortOrder)
+	if t2.SortOrder != 1 {
+		t.Errorf("t2 sort_order = %d, want 1", t2.SortOrder)
 	}
-	if t3.SortOrder != 3 {
-		t.Errorf("t3 sort_order = %d, want 3", t3.SortOrder)
+	if t3.SortOrder != 2 {
+		t.Errorf("t3 sort_order = %d, want 2", t3.SortOrder)
 	}
 }
 
@@ -1210,4 +1210,94 @@ func TestGetTaskWithComments(t *testing.T) {
 	if len(twc.Comments) != 1 {
 		t.Errorf("comments = %d, want 1", len(twc.Comments))
 	}
+}
+
+func TestReopenTaskSortOrder(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
+	t2, _ := d.CreateTask("B", "", model.StatusQueue, "", "/ws", "")
+	t3, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+
+	// Close t1, then reopen — it should land at the end, after t2 and t3.
+	d.CloseTask(t1.ID, "done")
+	reopened, err := d.ReopenTask(t1.ID)
+	if err != nil {
+		t.Fatalf("ReopenTask: %v", err)
+	}
+
+	// Refresh t2, t3 to get their current sort_order.
+	t2, _ = d.GetTask(t2.ID)
+	t3, _ = d.GetTask(t3.ID)
+
+	if reopened.SortOrder <= t2.SortOrder || reopened.SortOrder <= t3.SortOrder {
+		t.Errorf("reopened sort_order = %d, want > t2(%d) and t3(%d)",
+			reopened.SortOrder, t2.SortOrder, t3.SortOrder)
+	}
+}
+
+func TestReopenEpicChildSortOrder(t *testing.T) {
+	d := testDB(t)
+
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
+
+	d.CloseTask(c1.ID, "done")
+	reopened, err := d.ReopenTask(c1.ID)
+	if err != nil {
+		t.Fatalf("ReopenTask: %v", err)
+	}
+
+	c2, _ = d.GetTask(c2.ID)
+	if reopened.SortOrder <= c2.SortOrder {
+		t.Errorf("reopened sort_order = %d, want > c2(%d)", reopened.SortOrder, c2.SortOrder)
+	}
+}
+
+func TestCloseTaskRecompactsSiblings(t *testing.T) {
+	d := testDB(t)
+
+	t1, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
+	t2, _ := d.CreateTask("B", "", model.StatusQueue, "", "/ws", "")
+	t3, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+
+	// Close the middle task — siblings should be recompacted to 0, 1.
+	d.CloseTask(t2.ID, "done")
+
+	t1, _ = d.GetTask(t1.ID)
+	t3, _ = d.GetTask(t3.ID)
+
+	if t1.SortOrder != 0 {
+		t.Errorf("t1 sort_order = %d, want 0", t1.SortOrder)
+	}
+	if t3.SortOrder != 1 {
+		t.Errorf("t3 sort_order = %d, want 1", t3.SortOrder)
+	}
+}
+
+func TestMoveTasksPlacedAtEnd(t *testing.T) {
+	d := testDB(t)
+
+	// Create tasks in queue and backlog.
+	q1, _ := d.CreateTask("Q1", "", model.StatusQueue, "", "/ws", "")
+	q2, _ := d.CreateTask("Q2", "", model.StatusQueue, "", "/ws", "")
+	b1, _ := d.CreateTask("B1", "", model.StatusBacklog, "", "/ws", "")
+
+	// Move q1 to backlog — it should land after b1.
+	_, err := d.MoveTasks([]string{q1.ID}, "", model.StatusBacklog, "/ws")
+	if err != nil {
+		t.Fatalf("MoveTasks: %v", err)
+	}
+
+	q1, _ = d.GetTask(q1.ID)
+	b1, _ = d.GetTask(b1.ID)
+	q2, _ = d.GetTask(q2.ID)
+
+	if q1.SortOrder <= b1.SortOrder {
+		t.Errorf("moved q1 sort_order = %d, want > b1(%d)", q1.SortOrder, b1.SortOrder)
+	}
+	// q2 stays in queue, unaffected.
+	_ = q2
 }

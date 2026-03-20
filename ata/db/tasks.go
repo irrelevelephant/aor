@@ -93,11 +93,10 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 			return nil, err
 		}
 	} else {
-		var maxOrder int
-		if err := tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE status = ? AND workspace = ?`, status, workspace).Scan(&maxOrder); err != nil {
-			return nil, fmt.Errorf("query max sort_order: %w", err)
+		sortOrder, err = nextTopLevelOrder(tx, status, workspace)
+		if err != nil {
+			return nil, err
 		}
-		sortOrder = maxOrder + 1
 	}
 
 	_, err = tx.Exec(`INSERT INTO tasks (id, title, body, status, sort_order, epic_id, workspace, created_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -331,11 +330,30 @@ func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
 	return tasks, nil
 }
 
-// CloseTask closes a task with a reason.
+// CloseTask closes a task with a reason and recompacts the sort_order of
+// remaining siblings so no gaps accumulate.
 // Epics cannot be closed while they have open subtasks.
 func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
+	tx, err := d.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("close task: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Read the task's group info before closing so we know which siblings to recompact.
+	var epicID sql.NullString
+	var oldStatus, workspace string
+	var isEpic bool
+	err = tx.QueryRow(`SELECT epic_id, status, workspace, is_epic FROM tasks WHERE id = ?`, id).Scan(&epicID, &oldStatus, &workspace, &isEpic)
+	if err != nil {
+		return nil, fmt.Errorf("task %s not found", id)
+	}
+	if oldStatus == model.StatusClosed {
+		return nil, fmt.Errorf("task %s is already closed", id)
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := d.Exec(`UPDATE tasks SET status = 'closed', close_reason = ?, closed_at = ?, claimed_pid = NULL, claimed_at = NULL, worktree = ''
+	res, err := tx.Exec(`UPDATE tasks SET status = 'closed', close_reason = ?, closed_at = ?, claimed_pid = NULL, claimed_at = NULL, worktree = ''
 		WHERE id = ? AND status != 'closed'
 		AND NOT (is_epic = 1 AND EXISTS (
 			SELECT 1 FROM tasks AS sub WHERE sub.epic_id = tasks.id AND sub.status != 'closed'
@@ -349,39 +367,71 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 		return nil, fmt.Errorf("rows affected: %w", err)
 	}
 	if n == 0 {
-		task, err := d.GetTask(id)
-		if err != nil {
-			return nil, fmt.Errorf("task %s not found", id)
-		}
-		if task.Status == model.StatusClosed {
-			return nil, fmt.Errorf("task %s is already closed", id)
-		}
-		if task.IsEpic {
+		// The UPDATE matched nothing — only possible cause is open subtasks on an epic.
+		if isEpic {
 			var openCount int
-			if err := d.QueryRow(`SELECT COUNT(*) FROM tasks WHERE epic_id = ? AND status != 'closed'`, id).Scan(&openCount); err != nil {
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE epic_id = ? AND status != 'closed'`, id).Scan(&openCount); err != nil {
 				return nil, fmt.Errorf("count open subtasks: %w", err)
 			}
 			if openCount > 0 {
 				return nil, fmt.Errorf("cannot close epic %s: %d subtask(s) still open", id, openCount)
 			}
 		}
-		return nil, fmt.Errorf("cannot close task %s (status: %s)", id, task.Status)
+		return nil, fmt.Errorf("cannot close task %s (status: %s)", id, oldStatus)
+	}
+
+	// Recompact siblings to eliminate sort_order gaps.
+	if err := recompactSiblings(tx, epicID, oldStatus, workspace); err != nil {
+		return nil, fmt.Errorf("recompact after close: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("close task commit: %w", err)
 	}
 	return d.GetTask(id)
 }
 
-// ReopenTask reopens a closed task back to backlog.
+// ReopenTask reopens a closed task back to queue, placing it at the end of
+// its destination group (epic children or top-level queue).
 func (d *DB) ReopenTask(id string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET status = 'queue', closed_at = NULL, close_reason = '' WHERE id = ? AND status = 'closed'`, id)
+	tx, err := d.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("reopen task: %w", err)
 	}
-	n, err := res.RowsAffected()
+	defer tx.Rollback()
+
+	var epicID sql.NullString
+	var workspace, status string
+	err = tx.QueryRow(`SELECT epic_id, workspace, status FROM tasks WHERE id = ?`, id).Scan(&epicID, &workspace, &status)
 	if err != nil {
-		return nil, fmt.Errorf("rows affected: %w", err)
+		return nil, fmt.Errorf("task %s not found", id)
 	}
-	if n == 0 {
+	if status != model.StatusClosed {
 		return nil, fmt.Errorf("task %s is not closed", id)
+	}
+
+	// Determine sort_order: place at end of destination group.
+	var sortOrder int
+	if epicID.Valid && epicID.String != "" {
+		sortOrder, err = nextEpicChildOrder(tx, epicID.String)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		sortOrder, err = nextTopLevelOrder(tx, "queue", workspace)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	_, err = tx.Exec(`UPDATE tasks SET status = 'queue', closed_at = NULL, close_reason = '', sort_order = ? WHERE id = ? AND status = 'closed'`,
+		sortOrder, id)
+	if err != nil {
+		return nil, fmt.Errorf("reopen task: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("reopen task commit: %w", err)
 	}
 	return d.GetTask(id)
 }
@@ -564,16 +614,13 @@ func (d *DB) SetEpicID(taskID, newEpicID string) error {
 			return fmt.Errorf("task %s not found", taskID)
 		}
 
-		var maxOrder int
-		err := tx.QueryRow(
-			`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '')`,
-			status, workspace).Scan(&maxOrder)
+		nextOrder, err := nextTopLevelOrder(tx, status, workspace)
 		if err != nil {
-			return fmt.Errorf("query max sort_order: %w", err)
+			return err
 		}
 
 		if _, err := tx.Exec(`UPDATE tasks SET epic_id = NULL, sort_order = ? WHERE id = ?`,
-			maxOrder+1, taskID); err != nil {
+			nextOrder, taskID); err != nil {
 			return fmt.Errorf("clear epic_id: %w", err)
 		}
 	}
@@ -688,6 +735,31 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 
 	if err != nil {
 		return nil, fmt.Errorf("move tasks: %w", err)
+	}
+
+	// Assign moved tasks sequential sort_order at end of destination group,
+	// preserving their relative order (they were queried ORDER BY sort_order).
+	movedIDs := make([]string, len(tasks))
+	for i := range tasks {
+		movedIDs[i] = tasks[i].ID
+	}
+	ph, phArgs := inPlaceholders(movedIDs)
+
+	// Find max sort_order in destination group excluding the moved tasks.
+	var destMax int
+	destArgs := []any{toStatus, workspace}
+	destArgs = append(destArgs, phArgs...)
+	err = tx.QueryRow(
+		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') AND id NOT IN (`+ph+`)`,
+		destArgs...).Scan(&destMax)
+	if err != nil {
+		return nil, fmt.Errorf("move tasks dest max: %w", err)
+	}
+
+	for i, task := range tasks {
+		if _, err := tx.Exec(`UPDATE tasks SET sort_order = ? WHERE id = ?`, destMax+1+i, task.ID); err != nil {
+			return nil, fmt.Errorf("move tasks reorder: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
