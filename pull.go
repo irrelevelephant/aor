@@ -154,6 +154,9 @@ Flags:
 	case task.Status == statusClosed:
 		fmt.Printf("\nTask %s resolved.\n", task.ID)
 	case task.IsEpic:
+		if err := unclaimTask(task.ID); err != nil {
+			return fmt.Errorf("unclaim epic: %w", err)
+		}
 		fmt.Printf("\nTask %s promoted to epic.\n", task.ID)
 		fmt.Printf("Run `aor --epic %s` to orchestrate execution.\n", task.ID)
 	default:
