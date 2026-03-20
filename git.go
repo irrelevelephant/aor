@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // detectWorkDir returns the actual git toplevel for the current directory,
@@ -122,7 +123,19 @@ func worktreeName(gitDir, commonDir string) string {
 
 // gitMainWorktree returns the main worktree path from `git worktree list --porcelain`.
 // The main worktree is always the first entry. Returns "" on error.
+// A successful result is cached since the main worktree path is stable for
+// the process lifetime. Failed lookups are not cached and will retry.
+var gitMainWorktreeMu sync.Mutex
+var gitMainWorktreeVal string
+
 func gitMainWorktree() string {
+	gitMainWorktreeMu.Lock()
+	defer gitMainWorktreeMu.Unlock()
+
+	if gitMainWorktreeVal != "" {
+		return gitMainWorktreeVal
+	}
+
 	out, err := exec.Command("git", "worktree", "list", "--porcelain").Output()
 	if err != nil {
 		return ""
@@ -131,7 +144,8 @@ func gitMainWorktree() string {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "worktree ") {
-			return strings.TrimPrefix(line, "worktree ")
+			gitMainWorktreeVal = strings.TrimPrefix(line, "worktree ")
+			return gitMainWorktreeVal
 		}
 	}
 	return ""
@@ -214,9 +228,9 @@ func createWorktreeNamed(suffix, branch string) (string, error) {
 }
 
 // createWorktree creates (or reuses) a git worktree for the given task ID.
-// Returns the absolute path to the worktree directory.
+// Directory: <repo>-task-<taskID>, Branch: task/<taskID>.
 func createWorktree(taskID string) (string, error) {
-	return createWorktreeNamed(taskID, "task/"+taskID)
+	return createWorktreeNamed("task-"+taskID, "task/"+taskID)
 }
 
 // createEpicWorktree creates (or reuses) a git worktree for the given epic ID.
@@ -239,14 +253,9 @@ func worktreeBranch(wtPath string) string {
 	return b
 }
 
-// removeWorktree removes a git worktree and optionally deletes its branch.
-func removeWorktree(wtPath string, deleteBranch bool) error {
-	// Get branch name before removing.
-	var branch string
-	if deleteBranch {
-		branch = worktreeBranch(wtPath)
-	}
-
+// removeWorktree removes a git worktree. If branch is non-empty, it is
+// deleted after the worktree is removed.
+func removeWorktree(wtPath, branch string) error {
 	cmd := exec.Command("git", "worktree", "remove", wtPath)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -254,7 +263,7 @@ func removeWorktree(wtPath string, deleteBranch bool) error {
 		return fmt.Errorf("git worktree remove %s: %w", wtPath, err)
 	}
 
-	if branch != "" && branch != "HEAD" {
+	if branch != "" {
 		exec.Command("git", "branch", "-d", branch).Run()
 	}
 	return nil
@@ -282,7 +291,7 @@ func mergeWorktreeBranch(wtPath string) error {
 		return fmt.Errorf("merge %s failed: %w (resolve conflicts manually)", branch, err)
 	}
 
-	return removeWorktree(wtPath, true)
+	return removeWorktree(wtPath, branch)
 }
 
 // hasUncommittedChanges returns true if the working tree has uncommitted changes.
