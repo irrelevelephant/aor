@@ -245,6 +245,23 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 
 .worktree-badge { background: var(--border); color: var(--text-dim); font-family: monospace; font-size: 0.75rem; }
 
+.column-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.column-collapse-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: var(--radius);
+    transition: color 0.15s;
+}
+.column-collapse-btn:hover { color: var(--text); }
+
 .column {
     background: var(--surface);
     border: 1px solid var(--border);

@@ -48,6 +48,44 @@ function toggleEpicCollapse(epicId, event) {
         wrap.classList.add('collapsed');
     }
     setCollapsedEpics(collapsed);
+    updateColumnCollapseBtns();
+}
+
+function toggleColumnEpics(btn) {
+    var column = btn.closest('.column');
+    if (!column) return;
+    var wraps = column.querySelectorAll('.epic-children-wrap[data-epic-id]');
+    if (!wraps.length) return;
+    var collapsed = getCollapsedEpics();
+    // If any are expanded, collapse all; otherwise expand all.
+    var shouldCollapse = Array.prototype.some.call(wraps, function(w) {
+        return !w.classList.contains('collapsed');
+    });
+    wraps.forEach(function(w) {
+        var epicId = w.dataset.epicId;
+        var idx = collapsed.indexOf(epicId);
+        if (shouldCollapse) {
+            w.classList.add('collapsed');
+            if (idx < 0) collapsed.push(epicId);
+        } else {
+            w.classList.remove('collapsed');
+            if (idx >= 0) collapsed.splice(idx, 1);
+        }
+    });
+    setCollapsedEpics(collapsed);
+    btn.textContent = shouldCollapse ? '▶' : '▼';
+}
+
+function updateColumnCollapseBtns() {
+    document.querySelectorAll('.column-collapse-btn').forEach(function(btn) {
+        var column = btn.closest('.column');
+        if (!column) return;
+        var wraps = column.querySelectorAll('.epic-children-wrap[data-epic-id]');
+        var anyExpanded = !wraps.length || Array.prototype.some.call(wraps, function(w) {
+            return !w.classList.contains('collapsed');
+        });
+        btn.textContent = anyExpanded ? '▼' : '▶';
+    });
 }
 
 function restoreCollapsedEpics() {
@@ -71,6 +109,7 @@ function restoreCollapsedEpics() {
     requestAnimationFrame(function() {
         document.documentElement.classList.remove('no-epic-transitions');
     });
+    updateColumnCollapseBtns();
 }
 
 document.addEventListener('DOMContentLoaded', function() {

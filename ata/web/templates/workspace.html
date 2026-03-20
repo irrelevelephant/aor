@@ -54,7 +54,10 @@
 <div class="columns" data-sse-workspace="{{.Path}}">
 
     <div class="column">
-        <h2>Queue <span class="count">{{.QueueCount}}</span></h2>
+        <div class="column-header">
+            <h2>Queue <span class="count">{{.QueueCount}}</span></h2>
+            <button class="column-collapse-btn" onclick="toggleColumnEpics(this)" title="Collapse/expand all epics">▼</button>
+        </div>
         <div class="task-list sortable" id="queue-list" data-status="queue">
             {{range .Queue}}
             {{if and .IsEpic (or .Children (not .EpicID))}}
@@ -75,7 +78,10 @@
     </div>
 
     <div class="column">
-        <h2>Backlog <span class="count">{{.BacklogCount}}</span></h2>
+        <div class="column-header">
+            <h2>Backlog <span class="count">{{.BacklogCount}}</span></h2>
+            <button class="column-collapse-btn" onclick="toggleColumnEpics(this)" title="Collapse/expand all epics">▼</button>
+        </div>
         <div class="task-list sortable" id="backlog-list" data-status="backlog">
             {{range .Backlog}}
             {{if and .IsEpic (or .Children (not .EpicID))}}
