@@ -307,9 +307,34 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     background: rgba(188, 140, 255, 0.06);
 }
 
+.epic-toggle {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    user-select: none;
+    padding: 0.25rem 0.1rem;
+    transition: color 0.15s;
+}
+.epic-toggle::before { content: '▼'; }
+.epic-group:has(> .epic-children-wrap.collapsed) > .epic-row .epic-toggle::before { content: '▶'; }
+.epic-toggle:hover { color: var(--text); }
+.epic-child-count { font-size: 0.8rem; color: var(--text-dim); }
+
+.epic-children-wrap {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.2s ease;
+}
+.epic-children-wrap.collapsed {
+    grid-template-rows: 0fr;
+}
+.no-epic-transitions .epic-children-wrap {
+    transition: none;
+}
 .epic-children {
     padding-left: 1.5rem;
-    min-height: 1.5rem;
+    min-height: 0;
+    overflow: hidden;
 }
 /* Lighten border at deeper nesting levels */
 .epic-children .epic-group { border-left-color: rgba(188, 140, 255, 0.5); }

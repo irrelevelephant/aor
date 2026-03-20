@@ -23,7 +23,58 @@ function sendReorder(id, position, opts) {
     updateColumnCounts();
 }
 
+var COLLAPSED_EPICS_KEY = 'ata-collapsed-epics';
+
+function getCollapsedEpics() {
+    try { return JSON.parse(localStorage.getItem(COLLAPSED_EPICS_KEY)) || []; }
+    catch(e) { return []; }
+}
+
+function setCollapsedEpics(ids) {
+    localStorage.setItem(COLLAPSED_EPICS_KEY, JSON.stringify(ids));
+}
+
+function toggleEpicCollapse(epicId, event) {
+    if (event) event.stopPropagation();
+    var wrap = document.querySelector('.epic-children-wrap[data-epic-id="' + epicId + '"]');
+    if (!wrap) return;
+    var collapsed = getCollapsedEpics();
+    var idx = collapsed.indexOf(epicId);
+    if (idx >= 0) {
+        collapsed.splice(idx, 1);
+        wrap.classList.remove('collapsed');
+    } else {
+        collapsed.push(epicId);
+        wrap.classList.add('collapsed');
+    }
+    setCollapsedEpics(collapsed);
+}
+
+function restoreCollapsedEpics() {
+    var collapsed = getCollapsedEpics();
+    if (!collapsed.length) return;
+    // Suppress transitions while syncing class state with the inline <style>.
+    document.documentElement.classList.add('no-epic-transitions');
+    // Build a lookup map from all wraps to avoid per-ID querySelector.
+    var wrapMap = {};
+    document.querySelectorAll('.epic-children-wrap[data-epic-id]').forEach(function(w) {
+        wrapMap[w.dataset.epicId] = w;
+    });
+    collapsed.forEach(function(epicId) {
+        var wrap = wrapMap[epicId];
+        if (wrap) wrap.classList.add('collapsed');
+    });
+    // Remove the blocking init style — the .collapsed class now handles it.
+    var initStyle = document.getElementById('epic-collapse-init');
+    if (initStyle) initStyle.remove();
+    // Re-enable transitions after a frame.
+    requestAnimationFrame(function() {
+        document.documentElement.classList.remove('no-epic-transitions');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    restoreCollapsedEpics();
     // Suppress SSE reloads briefly after local actions to avoid self-triggered reloads.
     window._localActionUntil = 0;
 

@@ -2,12 +2,15 @@
 <div class="epic-group" data-id="{{.Node.ID}}" id="task-{{.Node.ID}}">
     <div class="task-row epic-row{{if index .BlockedIDs .Node.ID}} task-blocked{{end}}">
         <span class="drag-handle">⠿</span>
+        <span class="epic-toggle" onclick="toggleEpicCollapse('{{.Node.ID}}', event)"></span>
         <span class="id-badge">{{.Node.ID}}</span>
         <a href="/epic/{{.Node.ID}}" class="task-link">{{.Node.Title}}</a>
+        <span class="count epic-child-count">({{len .Node.Children}})</span>
         <span class="badge epic-badge">epic</span>
         {{if index .BlockedIDs .Node.ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
         {{template "task_tags_inline.html" (dict "Tags" (index .TagMap .Node.ID))}}
     </div>
+    <div class="epic-children-wrap" data-epic-id="{{.Node.ID}}">
     <div class="epic-children sortable" data-epic="{{.Node.ID}}" data-status="{{.Status}}">
         {{range .Node.Children}}
         {{if and .IsEpic (or .Children (not .EpicID))}}
@@ -23,6 +26,7 @@
         </div>
         {{end}}
         {{end}}
+    </div>
     </div>
 </div>
 {{end}}

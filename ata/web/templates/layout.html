@@ -11,6 +11,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+    <script>
+    // Apply collapsed epic state before first paint to prevent flash.
+    (function(){try{var c=JSON.parse(localStorage.getItem('ata-collapsed-epics'));if(c&&c.length){var s=c.filter(function(id){return/^[a-zA-Z0-9_-]+$/.test(id)}).map(function(id){return'.epic-children-wrap[data-epic-id="'+id+'"]{grid-template-rows:0fr}'}).join('');if(s){var el=document.createElement('style');el.id='epic-collapse-init';el.textContent=s;document.head.appendChild(el)}}}catch(e){}})();
+    </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 </head>
