@@ -110,7 +110,7 @@ func buildTriageComment(ev *TriageEvidence, outcome *TriageResult) string {
 	var b strings.Builder
 
 	b.WriteString("## Post-Session Triage\n\n")
-	b.WriteString(fmt.Sprintf("**Outcome:** %s\n", triageOutcomeName(outcome.Outcome)))
+	b.WriteString(fmt.Sprintf("**Outcome:** %s\n", outcome.Outcome))
 	b.WriteString(fmt.Sprintf("**Reason:** %s\n\n", outcome.Reason))
 
 	b.WriteString("### Evidence\n\n")
@@ -216,7 +216,7 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 	stdinCh <-chan string) *TriageResult {
 
 	result := triageHeuristic(ev)
-	log.Log("Triage heuristic: %s — %s", triageOutcomeName(result.Outcome), result.Reason)
+	log.Log("Triage heuristic: %s — %s", result.Outcome, result.Reason)
 
 	if result.Outcome != TriageNeedsAgent {
 		if result.Outcome == TriagePartial {
@@ -312,8 +312,8 @@ func runTriage(ev *TriageEvidence, cfg *Config, log *Logger,
 	return fallback
 }
 
-// triageOutcomeName returns a human-readable name for a TriageOutcome.
-func triageOutcomeName(o TriageOutcome) string {
+// String returns a human-readable name for a TriageOutcome.
+func (o TriageOutcome) String() string {
 	switch o {
 	case TriageComplete:
 		return "complete"

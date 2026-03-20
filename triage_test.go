@@ -72,13 +72,13 @@ func TestTriageHeuristic(t *testing.T) {
 			got := triageHeuristic(&tt.evidence)
 			if got.Outcome != tt.want {
 				t.Errorf("triageHeuristic() outcome = %s, want %s (reason: %s)",
-					triageOutcomeName(got.Outcome), triageOutcomeName(tt.want), got.Reason)
+					got.Outcome, tt.want, got.Reason)
 			}
 		})
 	}
 }
 
-func TestTriageOutcomeName(t *testing.T) {
+func TestTriageOutcomeString(t *testing.T) {
 	tests := []struct {
 		outcome TriageOutcome
 		want    string
@@ -91,9 +91,9 @@ func TestTriageOutcomeName(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := triageOutcomeName(tt.outcome)
+		got := tt.outcome.String()
 		if got != tt.want {
-			t.Errorf("triageOutcomeName(%d) = %q, want %q", tt.outcome, got, tt.want)
+			t.Errorf("TriageOutcome(%d).String() = %q, want %q", tt.outcome, got, tt.want)
 		}
 	}
 }
