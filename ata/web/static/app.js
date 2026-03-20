@@ -34,21 +34,26 @@ function setCollapsedEpics(ids) {
     localStorage.setItem(COLLAPSED_EPICS_KEY, JSON.stringify(ids));
 }
 
+function syncCollapsedEpics(collapsed) {
+    var lookup = {};
+    collapsed.forEach(function(id) { lookup[id] = true; });
+    document.querySelectorAll('.epic-children-wrap[data-epic-id]').forEach(function(w) {
+        w.classList.toggle('collapsed', !!lookup[w.dataset.epicId]);
+    });
+    updateColumnCollapseBtns(lookup);
+}
+
 function toggleEpicCollapse(epicId, event) {
     if (event) event.stopPropagation();
-    var wrap = document.querySelector('.epic-children-wrap[data-epic-id="' + epicId + '"]');
-    if (!wrap) return;
     var collapsed = getCollapsedEpics();
     var idx = collapsed.indexOf(epicId);
     if (idx >= 0) {
         collapsed.splice(idx, 1);
-        wrap.classList.remove('collapsed');
     } else {
         collapsed.push(epicId);
-        wrap.classList.add('collapsed');
     }
     setCollapsedEpics(collapsed);
-    updateColumnCollapseBtns();
+    syncCollapsedEpics(collapsed);
 }
 
 function toggleColumnEpics(btn) {
@@ -57,32 +62,31 @@ function toggleColumnEpics(btn) {
     var wraps = column.querySelectorAll('.epic-children-wrap[data-epic-id]');
     if (!wraps.length) return;
     var collapsed = getCollapsedEpics();
-    // If any are expanded, collapse all; otherwise expand all.
+    var lookup = {};
+    collapsed.forEach(function(id) { lookup[id] = true; });
+    // If any column epic is expanded, collapse all; otherwise expand all.
     var shouldCollapse = Array.prototype.some.call(wraps, function(w) {
-        return !w.classList.contains('collapsed');
+        return !lookup[w.dataset.epicId];
     });
     wraps.forEach(function(w) {
         var epicId = w.dataset.epicId;
-        var idx = collapsed.indexOf(epicId);
         if (shouldCollapse) {
-            w.classList.add('collapsed');
-            if (idx < 0) collapsed.push(epicId);
-        } else {
-            w.classList.remove('collapsed');
-            if (idx >= 0) collapsed.splice(idx, 1);
+            if (!lookup[epicId]) collapsed.push(epicId);
+        } else if (lookup[epicId]) {
+            collapsed.splice(collapsed.indexOf(epicId), 1);
         }
     });
     setCollapsedEpics(collapsed);
-    btn.textContent = shouldCollapse ? '▶' : '▼';
+    syncCollapsedEpics(collapsed);
 }
 
-function updateColumnCollapseBtns() {
+function updateColumnCollapseBtns(lookup) {
     document.querySelectorAll('.column-collapse-btn').forEach(function(btn) {
         var column = btn.closest('.column');
         if (!column) return;
         var wraps = column.querySelectorAll('.epic-children-wrap[data-epic-id]');
         var anyExpanded = !wraps.length || Array.prototype.some.call(wraps, function(w) {
-            return !w.classList.contains('collapsed');
+            return !lookup[w.dataset.epicId];
         });
         btn.textContent = anyExpanded ? '▼' : '▶';
     });
@@ -93,15 +97,7 @@ function restoreCollapsedEpics() {
     if (!collapsed.length) return;
     // Suppress transitions while syncing class state with the inline <style>.
     document.documentElement.classList.add('no-epic-transitions');
-    // Build a lookup map from all wraps to avoid per-ID querySelector.
-    var wrapMap = {};
-    document.querySelectorAll('.epic-children-wrap[data-epic-id]').forEach(function(w) {
-        wrapMap[w.dataset.epicId] = w;
-    });
-    collapsed.forEach(function(epicId) {
-        var wrap = wrapMap[epicId];
-        if (wrap) wrap.classList.add('collapsed');
-    });
+    syncCollapsedEpics(collapsed);
     // Remove the blocking init style — the .collapsed class now handles it.
     var initStyle = document.getElementById('epic-collapse-init');
     if (initStyle) initStyle.remove();
@@ -109,7 +105,6 @@ function restoreCollapsedEpics() {
     requestAnimationFrame(function() {
         document.documentElement.classList.remove('no-epic-transitions');
     });
-    updateColumnCollapseBtns();
 }
 
 document.addEventListener('DOMContentLoaded', function() {
