@@ -175,17 +175,16 @@ func listWorktrees() ([]GitWorktree, error) {
 	return worktrees, nil
 }
 
-// createWorktree creates (or reuses) a git worktree for the given task ID.
-// Returns the absolute path to the worktree directory.
-func createWorktree(taskID string) (string, error) {
+// createWorktreeNamed creates (or reuses) a git worktree with the given
+// directory suffix and branch name. Returns the absolute path to the worktree.
+func createWorktreeNamed(suffix, branch string) (string, error) {
 	mainWT := gitMainWorktree()
 	if mainWT == "" {
 		return "", fmt.Errorf("could not determine main worktree (not in a git repo?)")
 	}
 
 	repoBase := filepath.Base(mainWT)
-	wtPath := filepath.Join(filepath.Dir(mainWT), repoBase+"-"+taskID)
-	branch := "task/" + taskID
+	wtPath := filepath.Join(filepath.Dir(mainWT), repoBase+"-"+suffix)
 
 	// If the worktree directory already exists, reuse it.
 	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
@@ -212,6 +211,18 @@ func createWorktree(taskID string) (string, error) {
 	}
 
 	return wtPath, nil
+}
+
+// createWorktree creates (or reuses) a git worktree for the given task ID.
+// Returns the absolute path to the worktree directory.
+func createWorktree(taskID string) (string, error) {
+	return createWorktreeNamed(taskID, "task/"+taskID)
+}
+
+// createEpicWorktree creates (or reuses) a git worktree for the given epic ID.
+// Directory: <repo>-epic-<epicID>, Branch: epic/<epicID>.
+func createEpicWorktree(epicID string) (string, error) {
+	return createWorktreeNamed("epic-"+epicID, "epic/"+epicID)
 }
 
 // worktreeBranch returns the branch checked out in the given worktree path.

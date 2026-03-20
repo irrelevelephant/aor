@@ -91,6 +91,7 @@ func main() {
 	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to queue and exit")
 	flag.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Max rounds for epic verification / review loops")
 	rev := flag.Bool("rev", false, "Run code review after each epic completes")
+	worktree := flag.Bool("worktree", false, "Run each epic in an isolated git worktree")
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
 
 	flag.StringVar(&cfg.LogDir, "log-dir", "", "Log directory (default: ~/.ata/runner-logs)")
@@ -110,6 +111,7 @@ Usage:
   aor spec [flags] <file.md>...  Spec-driven task planning and execution
 
 Use -epic ID1,ID2 to process multiple epics serially. Use --rev to review after each.
+Use --worktree with --epic to run each epic in an isolated git worktree.
 
 Controls while running:
   Ctrl+C       Stop agent and exit runner
@@ -126,6 +128,11 @@ Flags:
 	flag.Parse()
 
 	cfg.Yolo = !*noYolo
+
+	if *worktree && cfg.EpicFilter == "" {
+		fmt.Fprintf(os.Stderr, "%serror: --worktree requires --epic%s\n", cRed, cReset)
+		os.Exit(1)
+	}
 
 	if cfg.Workspace == "" {
 		cfg.Workspace = detectWorkspaceFromGit()
@@ -145,8 +152,8 @@ Flags:
 	}
 
 	epics := collectEpics(cfg.EpicFilter)
-	if len(epics) > 1 || *rev {
-		if err := runMultiEpic(cfg, epics, *rev); err != nil {
+	if len(epics) > 1 || *rev || *worktree {
+		if err := runMultiEpic(cfg, epics, *rev, *worktree); err != nil {
 			fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
 			os.Exit(1)
 		}
@@ -182,8 +189,9 @@ func collectEpics(epicFlag string) []string {
 }
 
 // runMultiEpic processes multiple epics serially, optionally running code review
-// after each epic's work completes.
-func runMultiEpic(cfg *Config, epics []string, rev bool) error {
+// after each epic's work completes. When useWorktree is true, each epic runs
+// in an isolated git worktree that is merged back to main on completion.
+func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 	log, err := NewLogger(cfg.LogDir)
 	if err != nil {
 		return err
@@ -206,7 +214,7 @@ func runMultiEpic(cfg *Config, epics []string, rev bool) error {
 			epicLabels[i] = e
 		}
 	}
-	log.Log("Multi-epic run: %s (rev=%v)", strings.Join(epicLabels, ", "), rev)
+	log.Log("Multi-epic run: %s (rev=%v, worktree=%v)", strings.Join(epicLabels, ", "), rev, useWorktree)
 	fmt.Println()
 
 	for i, epic := range epics {
@@ -217,8 +225,6 @@ func runMultiEpic(cfg *Config, epics []string, rev bool) error {
 				cCyan, label, i+1, len(epics), cReset)
 		}
 
-		preSHA, _ := headSHA()
-
 		// Shallow-copy cfg so the loop doesn't mutate the caller's original.
 		iterCfg := *cfg
 		iterCfg.EpicFilter = epic
@@ -226,8 +232,41 @@ func runMultiEpic(cfg *Config, epics []string, rev bool) error {
 			iterCfg.SkipRecovery = true
 		}
 
-		if err := run(&iterCfg); err != nil {
-			log.Log("%sEpic %s failed: %v%s", cRed, label, err, cReset)
+		// Create worktree for this epic if requested.
+		var wtPath string
+		if useWorktree {
+			wt, err := createEpicWorktree(epic)
+			if err != nil {
+				log.Log("%sFailed to create worktree for epic %s: %v%s", cRed, label, err, cReset)
+				continue
+			}
+			wtPath = wt
+			iterCfg.WorkDir = wtPath
+			log.Log("Created worktree for epic %s at %s", label, wtPath)
+		}
+
+		var preSHA string
+		if rev {
+			preSHA, _ = headSHA()
+		}
+
+		runErr := run(&iterCfg)
+		if runErr != nil {
+			log.Log("%sEpic %s failed: %v%s", cRed, label, runErr, cReset)
+		}
+
+		// Merge worktree back to main and clean up. Skip merge if the run
+		// failed — leave the worktree intact for inspection.
+		if wtPath != "" {
+			if runErr != nil {
+				log.Log("%sSkipping merge for epic %s — worktree left at %s (use `aor merge` to resolve)%s",
+					cYellow, label, wtPath, cReset)
+			} else if err := mergeWorktreeBranch(wtPath); err != nil {
+				log.Log("%sMerge for epic %s failed: %v — worktree left at %s (use `aor merge` to resolve)%s",
+					cYellow, label, err, wtPath, cReset)
+			} else {
+				log.Log("Merged worktree for epic %s back to main", label)
+			}
 		}
 
 		if rev {
