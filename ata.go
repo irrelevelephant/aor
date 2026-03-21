@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,25 @@ import (
 
 // Author values for task comments (mirrors ata/model constants).
 const authorHuman = "human"
+
+// ataError returns a user-friendly error from a failed ata CLI call.
+// If the output mentions a missing task, it returns "task ID not found".
+func ataError(cmd, id string, out []byte, err error) error {
+	msg := strings.TrimSpace(string(out))
+	if strings.Contains(msg, "task") && strings.Contains(msg, "not found") {
+		return fmt.Errorf("task %q not found", id)
+	}
+	return fmt.Errorf("ata %s %s failed: %w (%s)", cmd, id, err, msg)
+}
+
+// ataStderr extracts stderr from an exec.ExitError, or returns "".
+func ataStderr(err error) []byte {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.Stderr
+	}
+	return nil
+}
 
 // findAta verifies that the ata CLI is available in PATH.
 func findAta() error {
@@ -63,7 +83,7 @@ func claimTask(id string) error {
 	pid := strconv.Itoa(os.Getpid())
 	out, err := exec.Command("ata", "claim", id, "--json", "--pid", pid).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ata claim failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return ataError("claim", id, out, err)
 	}
 	return nil
 }
@@ -72,7 +92,7 @@ func claimTask(id string) error {
 func closeTask(id, reason string) error {
 	out, err := exec.Command("ata", "close", id, reason, "--json").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ata close failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return ataError("close", id, out, err)
 	}
 	return nil
 }
@@ -81,7 +101,7 @@ func closeTask(id, reason string) error {
 func unclaimTask(id string) error {
 	out, err := exec.Command("ata", "unclaim", id, "--json").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ata unclaim failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return ataError("unclaim", id, out, err)
 	}
 	return nil
 }
@@ -120,7 +140,7 @@ func isUnderEpic(epicID, parentID, ancestorID string) bool {
 func getTaskStatus(id string) (*AtaTask, error) {
 	out, err := exec.Command("ata", "show", id, "--json").Output()
 	if err != nil {
-		return nil, fmt.Errorf("ata show failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return nil, ataError("show", id, ataStderr(err), err)
 	}
 	// ata show --json returns a TaskWithComments; we parse just the task fields.
 	var task AtaTask
@@ -134,7 +154,7 @@ func getTaskStatus(id string) (*AtaTask, error) {
 func addComment(id, body, author string) error {
 	out, err := exec.Command("ata", "comment", id, body, "--author", author, "--json").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ata comment failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return ataError("comment", id, out, err)
 	}
 	return nil
 }
@@ -144,7 +164,7 @@ func addComment(id, body, author string) error {
 func getTaskComments(id string) (human, system string, err error) {
 	out, err := exec.Command("ata", "show", id, "--json").Output()
 	if err != nil {
-		return "", "", fmt.Errorf("ata show failed: %w", err)
+		return "", "", ataError("show", id, ataStderr(err), err)
 	}
 
 	var twc struct {
@@ -306,7 +326,7 @@ func runUnclaim(cfg *Config) error {
 func addTagToTask(taskID, tag string) error {
 	out, err := exec.Command("ata", "tag", "add", taskID, tag).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ata tag add failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		return ataError("tag add", taskID, out, err)
 	}
 	return nil
 }
