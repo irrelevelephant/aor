@@ -1,2 +1,5 @@
 # Compiled binary
 /aor
+
+# SQLite databases
+*.db
