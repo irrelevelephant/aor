@@ -1301,3 +1301,70 @@ func TestMoveTasksPlacedAtEnd(t *testing.T) {
 	// q2 stays in queue, unaffected.
 	_ = q2
 }
+
+func TestReorderOrphanTaskAboveEpic(t *testing.T) {
+	d := testDB(t)
+
+	// Create an epic with a child, then close the epic — the child becomes an orphan.
+	epic, _ := d.CreateTask("Parent Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic.ID, "")
+	orphan, _ := d.CreateTask("Orphan Child", "", model.StatusQueue, epic.ID, "/ws", "")
+	d.CloseTask(epic.ID, "done")
+
+	// Create a top-level epic (like jg3 in the bug report).
+	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(topEpic.ID, "")
+
+	// Reorder orphan above the top-level epic (position 0).
+	if err := d.Reorder(orphan.ID, 0, ""); err != nil {
+		t.Fatalf("Reorder orphan: %v", err)
+	}
+
+	orphan, _ = d.GetTask(orphan.ID)
+	topEpic, _ = d.GetTask(topEpic.ID)
+
+	if orphan.SortOrder >= topEpic.SortOrder {
+		t.Errorf("orphan sort_order = %d, want < topEpic(%d)", orphan.SortOrder, topEpic.SortOrder)
+	}
+}
+
+func TestReorderTwoOrphansAboveEpic(t *testing.T) {
+	d := testDB(t)
+
+	// Create two orphan tasks (children of closed epics).
+	epic1, _ := d.CreateTask("Closed Epic 1", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic1.ID, "")
+	orphan1, _ := d.CreateTask("Orphan 1", "", model.StatusQueue, epic1.ID, "/ws", "")
+	d.CloseTask(epic1.ID, "done")
+
+	epic2, _ := d.CreateTask("Closed Epic 2", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(epic2.ID, "")
+	orphan2, _ := d.CreateTask("Orphan 2", "", model.StatusQueue, epic2.ID, "/ws", "")
+	d.CloseTask(epic2.ID, "done")
+
+	// Create a top-level epic.
+	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "/ws", "")
+	d.PromoteToEpic(topEpic.ID, "")
+
+	// Move orphan1 above topEpic (position 0).
+	if err := d.Reorder(orphan1.ID, 0, ""); err != nil {
+		t.Fatalf("Reorder orphan1: %v", err)
+	}
+
+	// Move orphan2 above topEpic (position 1 — after orphan1, before topEpic).
+	if err := d.Reorder(orphan2.ID, 1, ""); err != nil {
+		t.Fatalf("Reorder orphan2: %v", err)
+	}
+
+	orphan1, _ = d.GetTask(orphan1.ID)
+	orphan2, _ = d.GetTask(orphan2.ID)
+	topEpic, _ = d.GetTask(topEpic.ID)
+
+	// Verify order: orphan1 < orphan2 < topEpic.
+	if orphan1.SortOrder >= orphan2.SortOrder {
+		t.Errorf("orphan1(%d) should be before orphan2(%d)", orphan1.SortOrder, orphan2.SortOrder)
+	}
+	if orphan2.SortOrder >= topEpic.SortOrder {
+		t.Errorf("orphan2(%d) should be before topEpic(%d)", orphan2.SortOrder, topEpic.SortOrder)
+	}
+}

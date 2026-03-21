@@ -746,11 +746,13 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 	ph, phArgs := inPlaceholders(movedIDs)
 
 	// Find max sort_order in destination group excluding the moved tasks.
+	frag, fArgs := topLevelFilter(toStatus, workspace)
 	var destMax int
 	destArgs := []any{toStatus, workspace}
+	destArgs = append(destArgs, fArgs...)
 	destArgs = append(destArgs, phArgs...)
 	err = tx.QueryRow(
-		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') AND id NOT IN (`+ph+`)`,
+		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND `+frag+` AND id NOT IN (`+ph+`)`,
 		destArgs...).Scan(&destMax)
 	if err != nil {
 		return nil, fmt.Errorf("move tasks dest max: %w", err)

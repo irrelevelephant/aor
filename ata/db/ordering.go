@@ -6,6 +6,31 @@ import (
 	"slices"
 )
 
+// topLevelFilter returns a SQL WHERE fragment (and bind args) that matches
+// tasks considered "top-level roots" in the given status+workspace — those
+// with no epic_id, or whose epic_id references a parent not present in the
+// same status+workspace (i.e. orphans whose parent was closed/moved).
+// This matches the logic in ListTaskTree that determines root nodes.
+func topLevelFilter(status, workspace string) (string, []any) {
+	return `(epic_id IS NULL OR epic_id = '' OR NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = tasks.epic_id AND p.status = ? AND p.workspace = ?))`,
+		[]any{status, workspace}
+}
+
+// queryTopLevelIDs returns the ordered IDs of top-level root tasks (including
+// orphans) in the given status+workspace.
+func queryTopLevelIDs(tx *sql.Tx, status, workspace string) ([]string, error) {
+	frag, fArgs := topLevelFilter(status, workspace)
+	args := []any{status, workspace}
+	args = append(args, fArgs...)
+	rows, err := tx.Query(
+		`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND `+frag+` ORDER BY sort_order ASC, created_at ASC`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanIDs(rows)
+}
+
 // ReorderOpts specifies how to determine the target position for a reorder.
 // Exactly one of Position (>= 0), Top, Bottom, Before, or After should be set.
 type ReorderOpts struct {
@@ -106,10 +131,13 @@ func nextEpicChildOrder(tx *sql.Tx, epicID string) (int, error) {
 // nextTopLevelOrder returns the sort_order to assign to a new top-level task
 // in the given status+workspace group, placing it after all existing siblings.
 func nextTopLevelOrder(tx *sql.Tx, status, workspace string) (int, error) {
+	frag, fArgs := topLevelFilter(status, workspace)
 	var maxOrder int
+	args := []any{status, workspace}
+	args = append(args, fArgs...)
 	if err := tx.QueryRow(
-		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '')`,
-		status, workspace).Scan(&maxOrder); err != nil {
+		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND `+frag,
+		args...).Scan(&maxOrder); err != nil {
 		return 0, fmt.Errorf("query max sort_order: %w", err)
 	}
 	return maxOrder + 1, nil
@@ -120,23 +148,22 @@ func nextTopLevelOrder(tx *sql.Tx, status, workspace string) (int, error) {
 // and non-empty, recompacts the epic's non-closed children; otherwise
 // recompacts the top-level tasks in the given status+workspace.
 func recompactSiblings(tx *sql.Tx, epicID sql.NullString, status, workspace string) error {
-	var rows *sql.Rows
+	var ids []string
 	var err error
 	if epicID.Valid && epicID.String != "" {
+		var rows *sql.Rows
 		rows, err = tx.Query(
 			`SELECT id FROM tasks WHERE epic_id = ? AND status != 'closed' ORDER BY sort_order ASC, created_at ASC`,
 			epicID.String)
+		if err != nil {
+			return fmt.Errorf("recompact query: %w", err)
+		}
+		ids, err = scanIDs(rows)
 	} else {
-		rows, err = tx.Query(
-			`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') ORDER BY sort_order ASC, created_at ASC`,
-			status, workspace)
+		ids, err = queryTopLevelIDs(tx, status, workspace)
 	}
 	if err != nil {
 		return fmt.Errorf("recompact query: %w", err)
-	}
-	ids, err := scanIDs(rows)
-	if err != nil {
-		return fmt.Errorf("recompact scan: %w", err)
 	}
 	for i, id := range ids {
 		if _, err := tx.Exec(`UPDATE tasks SET sort_order = ? WHERE id = ?`, i, id); err != nil {
@@ -171,15 +198,9 @@ func (d *DB) ReorderOpt(id string, newStatus string, opts ReorderOpts) error {
 		targetStatus = newStatus
 	}
 
-	rows, err := tx.Query(
-		`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') ORDER BY sort_order ASC, created_at ASC`,
-		targetStatus, workspace)
+	ids, err := queryTopLevelIDs(tx, targetStatus, workspace)
 	if err != nil {
 		return fmt.Errorf("query top-level ids: %w", err)
-	}
-	ids, err := scanIDs(rows)
-	if err != nil {
-		return fmt.Errorf("scan top-level ids: %w", err)
 	}
 
 	position, err := resolvePosition(ids, id, opts)
@@ -188,15 +209,9 @@ func (d *DB) ReorderOpt(id string, newStatus string, opts ReorderOpts) error {
 	}
 
 	if targetStatus != status {
-		oldRows, err := tx.Query(
-			`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND (epic_id IS NULL OR epic_id = '') ORDER BY sort_order ASC, created_at ASC`,
-			status, workspace)
+		oldIDs, err := queryTopLevelIDs(tx, status, workspace)
 		if err != nil {
 			return fmt.Errorf("query old status ids: %w", err)
-		}
-		oldIDs, err := scanIDs(oldRows)
-		if err != nil {
-			return fmt.Errorf("scan old status ids: %w", err)
 		}
 
 		if err := reorderIDs(tx, oldIDs, id, len(oldIDs)); err != nil {
