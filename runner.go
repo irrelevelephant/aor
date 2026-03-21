@@ -121,7 +121,7 @@ For each task:
 `)
 	b.WriteString(discoveredInstruction)
 	b.WriteString(`
-6. Close the task: ata close <id> "reason" --json
+6. Close the task: ata close <id> "reason" --json (skip this step if you decomposed the task into subtasks)
 7. Output ATA_RUNNER_STATUS (see below). You MUST complete this step — the orchestrator cannot parse your session without it.
 
 Context management:
@@ -137,7 +137,8 @@ Task decomposition:
 `)
 	fmt.Fprintf(&b, "  1. Create child tasks: %s --json\n", decomposeCmd)
 	b.WriteString(`  2. Commit any progress you've made so far.
-  3. Output ATA_RUNNER_STATUS with "decomposed_into": ["<child-ids>"] and "completed": [].
+  3. Do NOT close the parent task — it will close automatically when all subtasks are done.
+  4. Output ATA_RUNNER_STATUS with "decomposed_into": ["<child-ids>"] and "completed": [].
 - The orchestrator will work the subtasks in subsequent sessions, then return to the parent.
 - Only decompose when genuinely necessary — most tasks should complete in one session.
 
