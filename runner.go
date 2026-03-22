@@ -281,7 +281,7 @@ func run(cfg *Config) error {
 
 		if len(tasks) == 0 {
 			// Before declaring "all done", check if the filtered epic itself needs verification.
-			if cfg.EpicFilter != "" {
+			if cfg.EpicFilter != "" && !cfg.SkipEpicClose {
 				if tryVerifyFilteredEpic(cfg.EpicFilter, cfg, rc) {
 					// Verification may have filed new tasks — re-check.
 					continue
