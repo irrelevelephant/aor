@@ -7,7 +7,7 @@ type ataCmdOpts struct {
 	Workspace string
 	EpicID    string
 	Tag       string
-	Body      string
+	Desc      string
 	JSON      bool
 }
 
@@ -30,8 +30,8 @@ func buildAtaCreateCmd(title string, opts ataCmdOpts) string {
 	if opts.Tag != "" {
 		cmd += fmt.Sprintf(` --tag "%s"`, opts.Tag)
 	}
-	if opts.Body != "" {
-		cmd += fmt.Sprintf(` --body "%s"`, opts.Body)
+	if opts.Desc != "" {
+		cmd += fmt.Sprintf(` --description "%s"`, opts.Desc)
 	}
 	if opts.JSON {
 		cmd += " --json"

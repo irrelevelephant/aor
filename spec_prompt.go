@@ -127,7 +127,7 @@ Once the plan is approved:
 `)
 
 	epicCmd := buildAtaCreateCmd("Epic title", ataCmdOpts{Workspace: workspace, JSON: true})
-	childCmd := buildAtaCreateCmd("Task title", ataCmdOpts{Body: "description", EpicID: "<epic-id>", Workspace: workspace, JSON: true})
+	childCmd := buildAtaCreateCmd("Task title", ataCmdOpts{Desc: "description", EpicID: "<epic-id>", Workspace: workspace, JSON: true})
 
 	if multiSpec {
 		fmt.Fprintf(&b, `1. For each spec, create an epic:

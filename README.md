@@ -260,10 +260,10 @@ The archive is a portable `.tar.gz` containing JSONL files — human-inspectable
 ata init [--workspace PATH] [--name NAME]                  Register workspace
 ata uninit [WORKSPACE] [--clean] [--force]                 Unregister a workspace
 ata clean [--workspace NAME|PATH] [--closed] [--older-than Nd] [--force] [--json]  Delete tasks (all or closed-only)
-ata create TITLE [--body TEXT] [--status backlog|queue] [--epic ID] [--tag a,b] [--workspace PATH] [--json]
+ata create TITLE [--description TEXT] [--status backlog|queue] [--epic ID] [--tag a,b] [--workspace PATH] [--json]
 ata list [--workspace PATH] [--status STATUS] [--epic ID] [--tag TAG] [--all] [--json]
 ata show ID [--json]
-ata edit ID [--title TITLE] [--body BODY] [--body-file PATH] [--spec SPEC] [--spec-file PATH] [--epic EPIC_ID|none] [--json]
+ata edit ID [--title TITLE] [--description TEXT] [--desc-file PATH] [--spec SPEC] [--spec-file PATH] [--epic EPIC_ID|none] [--json]
 ata close ID [REASON] [--json]
 ata reopen ID [--json]                                              Reopen a closed task (back to backlog)
 ata ready [--workspace PATH] [--epic ID] [--tag TAG] [--limit N] [--json]
