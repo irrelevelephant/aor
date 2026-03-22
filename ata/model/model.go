@@ -8,6 +8,12 @@ const (
 	StatusClosed     = "closed"
 )
 
+// IsPlaceStatus reports whether s is a "place" status (queue or backlog)
+// from which child tasks inherit their parent epic's status.
+func IsPlaceStatus(s string) bool {
+	return s == StatusQueue || s == StatusBacklog
+}
+
 // Author constants for comments.
 const (
 	AuthorHuman  = "human"

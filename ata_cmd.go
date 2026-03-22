@@ -15,7 +15,12 @@ type ataCmdOpts struct {
 // title placeholder and optional flags. Used across prompt builders to avoid
 // duplicating the flag-appending logic.
 func buildAtaCreateCmd(title string, opts ataCmdOpts) string {
-	cmd := fmt.Sprintf(`ata create "%s" --status queue`, title)
+	var cmd string
+	if opts.EpicID != "" {
+		cmd = fmt.Sprintf(`ata create "%s"`, title)
+	} else {
+		cmd = fmt.Sprintf(`ata create "%s" --status queue`, title)
+	}
 	if opts.Workspace != "" {
 		cmd += fmt.Sprintf(` --workspace "%s"`, opts.Workspace)
 	}

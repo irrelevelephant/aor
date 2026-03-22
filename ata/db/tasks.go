@@ -70,18 +70,19 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 	}
 	defer tx.Rollback()
 
-	if status == "" {
-		if epicID != "" {
-			var epicStatus string
-			if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, epicID).Scan(&epicStatus); err == nil {
-				if epicStatus == model.StatusQueue || epicStatus == model.StatusBacklog {
-					status = epicStatus
+	if epicID != "" {
+		var epicStatus string
+		if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, epicID).Scan(&epicStatus); err == nil {
+			if model.IsPlaceStatus(epicStatus) {
+				if status != "" && status != epicStatus {
+					return nil, fmt.Errorf("status %q conflicts with parent epic %s (status %s)", status, epicID, epicStatus)
 				}
+				status = epicStatus
 			}
 		}
-		if status == "" {
-			status = model.StatusQueue
-		}
+	}
+	if status == "" {
+		status = model.StatusQueue
 	}
 
 	// Determine sort_order: place at end of the appropriate group.
@@ -410,6 +411,17 @@ func (d *DB) ReopenTask(id string) (*model.Task, error) {
 		return nil, fmt.Errorf("task %s is not closed", id)
 	}
 
+	// Determine reopen status: inherit from parent epic if it's in queue/backlog.
+	reopenStatus := model.StatusQueue
+	if epicID.Valid && epicID.String != "" {
+		var epicStatus string
+		if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, epicID.String).Scan(&epicStatus); err == nil {
+			if model.IsPlaceStatus(epicStatus) {
+				reopenStatus = epicStatus
+			}
+		}
+	}
+
 	// Determine sort_order: place at end of destination group.
 	var sortOrder int
 	if epicID.Valid && epicID.String != "" {
@@ -418,14 +430,14 @@ func (d *DB) ReopenTask(id string) (*model.Task, error) {
 			return nil, err
 		}
 	} else {
-		sortOrder, err = nextTopLevelOrder(tx, "queue", workspace)
+		sortOrder, err = nextTopLevelOrder(tx, reopenStatus, workspace)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	_, err = tx.Exec(`UPDATE tasks SET status = 'queue', closed_at = NULL, close_reason = '', sort_order = ? WHERE id = ? AND status = 'closed'`,
-		sortOrder, id)
+	_, err = tx.Exec(`UPDATE tasks SET status = ?, closed_at = NULL, close_reason = '', sort_order = ? WHERE id = ? AND status = 'closed'`,
+		reopenStatus, sortOrder, id)
 	if err != nil {
 		return nil, fmt.Errorf("reopen task: %w", err)
 	}
@@ -710,27 +722,77 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 		if len(tasks) == 0 {
 			return nil, nil
 		}
+		// Reject moving a child task to a status that conflicts with its parent epic.
+		epicStatusCache := map[string]string{}
+		for _, t := range tasks {
+			if t.EpicID == "" {
+				continue
+			}
+			es, ok := epicStatusCache[t.EpicID]
+			if !ok {
+				if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, t.EpicID).Scan(&es); err != nil {
+					es = ""
+				}
+				epicStatusCache[t.EpicID] = es
+			}
+			if model.IsPlaceStatus(es) && toStatus != es {
+				return nil, fmt.Errorf("cannot move task %s to %s: parent epic %s is in %s (move the epic instead)", t.ID, toStatus, t.EpicID, es)
+			}
+		}
 		// Update using the same ID set, re-checking status to avoid reopening closed tasks.
 		args := []any{toStatus}
 		args = append(args, phArgs...)
 		_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id IN (`+ph+`) AND status != 'closed'`, args...)
 	} else if fromStatus != "" {
 		// Read and update within the same transaction.
+		// Skip children whose parent epic is in a different place (queue/backlog).
 		query := `SELECT ` + taskCols + ` FROM tasks WHERE status = ? AND workspace = ? ORDER BY sort_order ASC, created_at ASC`
 		fromRows, qErr := tx.Query(query, fromStatus, workspace)
 		if qErr != nil {
 			return nil, fmt.Errorf("move tasks: %w", qErr)
 		}
 		defer fromRows.Close()
-		tasks, err = scanTaskRows(fromRows)
-		if err != nil {
-			return nil, err
+		allTasks, scanErr := scanTaskRows(fromRows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		if len(allTasks) == 0 {
+			return nil, nil
+		}
+		// Filter out children whose parent epic status conflicts with toStatus.
+		epicStatusCache := map[string]string{}
+		var skipIDs []string
+		for _, t := range allTasks {
+			if t.EpicID == "" {
+				tasks = append(tasks, t)
+				continue
+			}
+			es, ok := epicStatusCache[t.EpicID]
+			if !ok {
+				if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, t.EpicID).Scan(&es); err != nil {
+					es = ""
+				}
+				epicStatusCache[t.EpicID] = es
+			}
+			if model.IsPlaceStatus(es) && toStatus != es {
+				skipIDs = append(skipIDs, t.ID)
+			} else {
+				tasks = append(tasks, t)
+			}
 		}
 		if len(tasks) == 0 {
 			return nil, nil
 		}
-		_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE workspace = ? AND status = ?`,
-			toStatus, workspace, fromStatus)
+		if len(skipIDs) == 0 {
+			_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE workspace = ? AND status = ?`,
+				toStatus, workspace, fromStatus)
+		} else {
+			skipPH, skipArgs := inPlaceholders(skipIDs)
+			args := []any{toStatus, workspace, fromStatus}
+			args = append(args, skipArgs...)
+			_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE workspace = ? AND status = ? AND id NOT IN (`+skipPH+`)`,
+				args...)
+		}
 	}
 
 	if err != nil {
