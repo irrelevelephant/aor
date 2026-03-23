@@ -322,6 +322,22 @@ func runUnclaim(cfg *Config) error {
 	return nil
 }
 
+// propagateDeps calls `ata dep propagate` to copy sourceID's dependents to
+// also depend on newID. Returns the number of dependencies added.
+func propagateDeps(sourceID, newID string) (int, error) {
+	out, err := exec.Command("ata", "dep", "propagate", sourceID, newID).CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("dep propagate %s %s: %w (%s)",
+			sourceID, newID, err, strings.TrimSpace(string(out)))
+	}
+	// Parse "propagated N dependency(ies) from X to Y"
+	var n int
+	if _, err := fmt.Sscanf(string(out), "propagated %d", &n); err != nil {
+		return 0, nil // unexpected format, treat as 0
+	}
+	return n, nil
+}
+
 // addTagToTask adds a tag to a task (safety net for prompt-based tagging).
 func addTagToTask(taskID, tag string) error {
 	out, err := exec.Command("ata", "tag", "add", taskID, tag).CombinedOutput()

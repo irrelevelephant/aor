@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"strings"
 
 	"aor/ata/model"
 )
@@ -92,6 +93,31 @@ func (d *DB) GetBlocking(taskID string) ([]model.Task, error) {
 	}
 	defer rows.Close()
 	return d.scanTasks(rows)
+}
+
+// PropagateDeps copies blocking relationships: for every task T that depends
+// on sourceID, T is made to also depend on newID. Cycles and duplicates are
+// silently skipped. Returns the number of dependencies added.
+func (d *DB) PropagateDeps(sourceID, newID string) (int, error) {
+	blocking, err := d.GetBlocking(sourceID)
+	if err != nil {
+		return 0, fmt.Errorf("get blocking for %s: %w", sourceID, err)
+	}
+
+	added := 0
+	for _, t := range blocking {
+		if err := d.AddDep(t.ID, newID); err != nil {
+			// Cycles and self-deps are expected — skip.
+			// Real errors (missing task, DB failure) should propagate.
+			msg := err.Error()
+			if strings.Contains(msg, "cycle") || strings.Contains(msg, "depend on itself") {
+				continue
+			}
+			return added, fmt.Errorf("propagate dep %s→%s: %w", t.ID, newID, err)
+		}
+		added++
+	}
+	return added, nil
 }
 
 // BlockedTaskIDs returns a set of task IDs that have unclosed dependencies.

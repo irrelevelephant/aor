@@ -97,13 +97,17 @@ func verifyEpic(epicID string, cfg *Config, rc *RunContext) (bool, error) {
 			return true, nil
 		}
 
-		// 7. Failed with tasks filed — run inner orchestration, then re-verify.
+		// 7. Failed with tasks filed — propagate deps, run inner orchestration, then re-verify.
 		if len(status.TasksFiled) > 0 {
 			var taskIDs []string
 			for _, t := range status.TasksFiled {
 				taskIDs = append(taskIDs, t.ID)
 			}
 			rc.Log.Log("Verification filed %d task(s): %s", len(status.TasksFiled), strings.Join(taskIDs, ", "))
+
+			// Propagate: anything that depends on the epic should also
+			// depend on each newly filed verification task.
+			propagateDiscoveredDeps(rc.Log, epicID, taskIDs)
 			rc.Log.Log("Summary: %s", status.Summary)
 
 			// Run inner orchestration loop to complete the filed tasks.

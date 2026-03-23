@@ -11,6 +11,23 @@ import (
 	"time"
 )
 
+// propagateDiscoveredDeps propagates dependency relationships from the claimed
+// task to each discovered task. For every task T that depends on claimedTaskID,
+// T is made to also depend on each discovered task.
+func propagateDiscoveredDeps(log *Logger, claimedTaskID string, discoveredIDs []string) {
+	for _, newID := range discoveredIDs {
+		n, err := propagateDeps(claimedTaskID, newID)
+		if err != nil {
+			log.Log("%sdep propagate %s → %s: %v%s",
+				cYellow, claimedTaskID, newID, err, cReset)
+			continue
+		}
+		if n > 0 {
+			log.Log("Propagated %d dep(s) from %s to %s", n, claimedTaskID, newID)
+		}
+	}
+}
+
 // buildPrompt constructs the system prompt for a Claude Code session.
 // batchSize may differ from cfg.BatchSize due to adaptive sizing.
 // claimedTask is the task already claimed by the runner before launching the session.
@@ -509,6 +526,10 @@ func run(cfg *Config) error {
 
 			log.Log("Session result: %d completed [%s], %d discovered",
 				completed, completedStr, discovered)
+
+			if discovered > 0 {
+				propagateDiscoveredDeps(log, next.ID, s.Discovered)
+			}
 
 			if s.Error != nil {
 				log.Log("%sAgent reported error: %s%s", cRed, *s.Error, cReset)

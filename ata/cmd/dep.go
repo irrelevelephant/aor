@@ -12,9 +12,10 @@ func Dep(d *db.DB, args []string) error {
 		return exitUsage(`usage: ata dep <subcommand> [args]
 
 Subcommands:
-  add TASK DEPENDS_ON   Add a dependency (TASK is blocked by DEPENDS_ON)
-  rm  TASK DEPENDS_ON   Remove a dependency
-  list TASK             Show dependencies for a task`)
+  add TASK DEPENDS_ON        Add a dependency (TASK is blocked by DEPENDS_ON)
+  rm  TASK DEPENDS_ON        Remove a dependency
+  list TASK                  Show dependencies for a task
+  propagate SOURCE NEW_TASK  Copy SOURCE's dependents to also depend on NEW_TASK`)
 	}
 
 	sub := args[0]
@@ -27,6 +28,8 @@ Subcommands:
 		return depRemove(d, rest)
 	case "list", "ls":
 		return depList(d, rest)
+	case "propagate":
+		return depPropagate(d, rest)
 	default:
 		return fmt.Errorf("unknown dep subcommand: %s", sub)
 	}
@@ -63,6 +66,23 @@ func depRemove(d *db.DB, args []string) error {
 	}
 
 	fmt.Printf("removed dependency: %s -> %s\n", taskID, dependsOnID)
+	return nil
+}
+
+func depPropagate(d *db.DB, args []string) error {
+	if len(args) < 2 {
+		return exitUsage("usage: ata dep propagate SOURCE NEW_TASK")
+	}
+
+	sourceID := args[0]
+	newID := args[1]
+
+	added, err := d.PropagateDeps(sourceID, newID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("propagated %d dependency(ies) from %s to %s\n", added, sourceID, newID)
 	return nil
 }
 
