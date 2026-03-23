@@ -26,6 +26,7 @@
         <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
         {{end}}
         {{if $.IsBlocked}}<span class="badge blocked-badge">blocked</span>{{end}}
+        {{if .EpicID}}<a href="/epic/{{.EpicID}}" class="badge epic-badge">epic:{{.EpicID}}{{if $.EpicTitle}} {{$.EpicTitle}}{{end}}</a>{{end}}
     </div>
 
     <div class="tags-section">

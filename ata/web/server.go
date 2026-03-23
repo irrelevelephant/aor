@@ -372,6 +372,18 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 	}
 }
 
+func (s *Server) parentEpicTitle(epicID string) string {
+	if epicID == "" {
+		return ""
+	}
+	parent, err := s.db.GetTask(epicID)
+	if err != nil {
+		log.Printf("GetTask parent epic %s: %v", epicID, err)
+		return ""
+	}
+	return parent.Title
+}
+
 // --- Page handlers ---
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -571,12 +583,7 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	twc := &model.TaskWithComments{Task: *task, Comments: comments}
 
-	var epicTitle string
-	if twc.EpicID != "" {
-		if epic, err := s.db.GetTask(twc.EpicID); err == nil {
-			epicTitle = epic.Title
-		}
-	}
+	epicTitle := s.parentEpicTitle(twc.EpicID)
 
 	var wsName string
 	if ws, err := s.db.GetWorkspace(twc.Workspace); err == nil && ws != nil {
@@ -714,6 +721,8 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	epicTitle := s.parentEpicTitle(task.EpicID)
+
 	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
 		"Epic":          task,
@@ -728,6 +737,7 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		"Tags":          epicTags,
 		"AllTags":       allTags,
 		"Attachments":   attachments,
+		"EpicTitle":     epicTitle,
 		"IsBlocked":     isBlocked,
 		"DepsData": map[string]any{
 			"TaskID":   id,
