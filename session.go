@@ -639,6 +639,17 @@ func parseRateLimitReset(output string) *time.Time {
 	return &reset
 }
 
+// runCommitSweep builds a commit sweep prompt and runs it as a session,
+// retrying on rate limits. Returns the session result.
+func runCommitSweep(cfg *Config, rc *RunContext, context, msgGuidance string) *SessionResult {
+	prompt := buildCommitSweepPrompt(context, msgGuidance)
+	result := runSession(cfg, rc, prompt)
+	for waitForRateLimit(result.RateLimitReset, rc) {
+		result = runSession(cfg, rc, prompt)
+	}
+	return result
+}
+
 // waitForRateLimit logs a message and sleeps until the rate limit resets.
 // The wait is interruptible: typing "q" or "quit" on stdin cancels the pause
 // and returns false so the caller can treat it as a quit signal.

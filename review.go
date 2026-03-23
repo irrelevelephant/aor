@@ -221,11 +221,7 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 		// 2. Commit sweep.
 		if hasUncommittedChanges() {
 			rc.Log.Log("Uncommitted review fixes detected — running commit sweep")
-			commitPrompt := buildCommitSweepPrompt("from a code review", "a message summarizing the review fixes")
-			sweepResult := runSession(rvc.sessionCfg, rc, commitPrompt)
-			for waitForRateLimit(sweepResult.RateLimitReset, rc) {
-				sweepResult = runSession(rvc.sessionCfg, rc, commitPrompt)
-			}
+			sweepResult := runCommitSweep(rvc.sessionCfg, rc, "from a code review", "a message summarizing the review fixes")
 			if sweepResult.Error != nil {
 				rc.Log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
 			} else {

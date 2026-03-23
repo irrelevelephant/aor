@@ -465,14 +465,10 @@ func run(cfg *Config) error {
 					// Commit any uncommitted work so it's not lost on unclaim.
 					if ev.HasUncommitted {
 						log.Log("Uncommitted changes detected — running commit sweep for %s", next.ID)
-						commitPrompt := buildCommitSweepPrompt(
+						sweepResult := runCommitSweep(cfg, rc,
 							fmt.Sprintf("from task %s (%s)", next.ID, next.Title),
 							"a descriptive commit message summarizing the partial work",
 						)
-						sweepResult := runSession(cfg, rc, commitPrompt)
-						for waitForRateLimit(sweepResult.RateLimitReset, rc) {
-							sweepResult = runSession(cfg, rc, commitPrompt)
-						}
 						if sweepResult.Error != nil {
 							log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
 						} else {
