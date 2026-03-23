@@ -135,7 +135,7 @@ Based on their response:
 Implement the plan:
 - Make all necessary code changes
 - Run tests to verify your changes work
-- Run /simplify to review your changes for code quality, reuse, and efficiency. Fix in-scope issues; file out-of-scope issues as new tasks using ` + buildAtaCreateCmd("<issue>", ataCmdOpts{Workspace: task.Workspace}) + `.
+- Run /simplify to review your changes for code quality, reuse, and efficiency. Fix in-scope issues; file every out-of-scope or pre-existing issue as a new task using ` + buildAtaCreateCmd("<issue>", ataCmdOpts{Workspace: task.Workspace}) + `. Do not just note them — actually run the command.
 - Commit your changes with clear commit messages
 `)
 

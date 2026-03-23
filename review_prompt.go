@@ -54,9 +54,9 @@ func buildReviewPrompt(diff, base string, round int, priorTasks []FiledTask, tag
 For each issue you find:
 
 1. **Small/medium issues in the current diff**: Fix the code directly. Make a commit. Then file a task noting the fix.
-2. **Large issues or pre-existing issues** (not introduced in this diff): File a task only. Do NOT attempt to fix these.
+2. **Large issues or pre-existing issues** (not introduced in this diff): File a task only. Do NOT attempt to fix these. Do NOT merely note them in prose — you MUST run the ata create command for each one.
 
-Do not silently skip issues. If an issue is worth noting, either fix it or file a task. Only omit issues if there is a clear reason not to track them (e.g., intentional trade-off, documented exception).
+Do not silently skip issues. If an issue is worth noting, either fix it or file a task. Labeling something as "out of scope" or "pre-existing" without filing a task is NOT acceptable — those labels mean "file a task", not "skip it".
 
 Use ` + "`ata`" + ` to file tasks:
 - ` + "`" + buildAtaCreateCmd("<issue title>", ataCmdOpts{Workspace: workspace, EpicID: epicID, Tag: tag, JSON: true}) + "`" + `
