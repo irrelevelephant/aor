@@ -18,7 +18,7 @@ func Init(d *db.DB, args []string) error {
 
 	ws := *workspace
 	if ws == "" {
-		ws = gitToplevel()
+		ws = GitToplevel()
 		if ws == "" {
 			ws = rawWorkingDir()
 		}

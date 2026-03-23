@@ -24,10 +24,11 @@ func Serve(d *db.DB, args []string) error {
 	}
 
 	listen := fmt.Sprintf("%s:%d", *addr, *port)
+	scheme := "http"
 	if *tlsCert != "" {
-		fmt.Printf("ata web UI: https://localhost:%d\n", *port)
-	} else {
-		fmt.Printf("ata web UI: http://localhost:%d\n", *port)
+		scheme = "https"
 	}
-	return web.Serve(d, listen, *tlsCert, *tlsKey)
+	fmt.Printf("ata web UI: %s://localhost:%d\n", scheme, *port)
+	fmt.Printf("ata API:    %s://localhost:%d/api/v1/exec\n", scheme, *port)
+	return web.Serve(d, listen, *tlsCert, *tlsKey, web.WithDispatch(Dispatch))
 }

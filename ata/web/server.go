@@ -71,9 +71,21 @@ func (h *Hub) Broadcast(event, workspace, data string) {
 	}
 }
 
+// DispatchFunc runs an ata command in-process. Matches cmd.Dispatch signature.
+type DispatchFunc func(d *db.DB, subcmd string, args []string) error
+
+// Option configures the web server.
+type Option func(*Server)
+
+// WithDispatch sets the command dispatch function for the exec API.
+func WithDispatch(fn DispatchFunc) Option {
+	return func(s *Server) { s.dispatch = fn }
+}
+
 type Server struct {
 	db             *db.DB
 	hub            *Hub
+	dispatch       DispatchFunc
 	pages          map[string]*template.Template
 	partials       *template.Template
 	md             goldmark.Markdown
@@ -182,7 +194,7 @@ func setTagQuery(baseURL, key, value string) string {
 	return u.String()
 }
 
-func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
+func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithRendererOptions(goldhtml.WithHardWraps()),
@@ -274,6 +286,9 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 		md:             md,
 		attachmentsDir: attDir,
 	}
+	for _, o := range opts {
+		o(srv)
+	}
 
 	mux := http.NewServeMux()
 
@@ -303,6 +318,9 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string) error {
 	mux.HandleFunc("POST /epic/{id}/children", srv.handleAddChild)
 	mux.HandleFunc("GET /attachments/{taskID}/{filename}", srv.handleServeAttachment)
 	mux.HandleFunc("POST /reorder", srv.handleReorder)
+
+	// API.
+	mux.HandleFunc("POST /api/v1/exec", srv.handleAPIExec)
 
 	// SSE.
 	mux.HandleFunc("GET /events", srv.handleSSE)

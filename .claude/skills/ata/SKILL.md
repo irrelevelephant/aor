@@ -163,7 +163,21 @@ ata serve --port 8080           # custom port
 ata serve --addr 0.0.0.0       # bind to all interfaces
 ```
 
-htmx-powered dashboard with drag-to-reorder, inline editing, tag autocomplete, dependency editor, and live SSE updates.
+htmx-powered dashboard with drag-to-reorder, inline editing, tag autocomplete, dependency editor, and live SSE updates. Also exposes `POST /api/v1/exec` for remote CLI access.
+
+## Remote servers
+
+Configure a workspace to proxy all CLI commands to a remote `ata serve`:
+
+```bash
+ata remote add /path/to/repo http://remote:4400         # map workspace to remote
+ata remote add /local http://remote:4400 --workspace /remote  # with path remap
+ata remote add myserver http://remote:4400 --default     # set default remote
+ata remote list                                          # show configured remotes
+ata remote remove /path/to/repo                          # remove a remote
+```
+
+Once configured, `ata` commands in that workspace transparently proxy to the remote. `snapshot`, `restore`, and `serve` always run locally.
 
 ## JSON output
 

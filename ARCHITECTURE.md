@@ -185,6 +185,8 @@ ata is a separate Go module (`aor/ata`) linked via `go.work`. It provides:
 - **SQLite storage** (`~/.ata/ata.db`, WAL mode) — no external services or sync
 - **CLI** — CRUD, claim/unclaim, epic management, dependencies, tags, workspace management, recovery, all with `--json` support (orchestration commands like pull and merge live in aor)
 - **Web UI** — htmx + SSE on `:4400` with drag-to-reorder, cross-list drag, inline editing, tag filter bar, dependency management, live updates
+- **Exec API** — `POST /api/v1/exec` on the `ata serve` server; accepts a command name + args, runs in-process via `cmd.Dispatch`, returns stdout/stderr/exit code as JSON
+- **Remote mode** — CLI transparently proxies to a remote `ata serve` when `~/.ata/config.json` maps the workspace to a remote URL (via `ata remote add`)
 - **Workspace scoping** — tasks are scoped by registered workspace path, with git worktree resolution
 
 ### Data Model
@@ -270,6 +272,14 @@ Key patterns:
 - **Tag filter bar** — workspace view renders all tags as clickable auto-colored pills; clicking filters all status columns by that tag
 - **Tag management** — task detail page has a tag editor with add/remove and `<datalist>` autocomplete from existing workspace tags
 
+### Remote Server Architecture
+
+The `ata serve` server exposes `POST /api/v1/exec` alongside the web UI. The handler (`web/api.go`) calls `cmd.Dispatch` in-process, capturing stdout/stderr via OS pipes with concurrent goroutine readers (needed because child processes like `git` inherit pipe fds). A global mutex serializes exec calls since stdout/stderr are process-global — this aligns with SQLite's single-writer constraint.
+
+The CLI intercept (`main.go:tryRemote`) runs before opening the local DB. It loads `~/.ata/config.json`, resolves the workspace (via `--workspace` flag, `ATA_WORKSPACE` env, or git toplevel), and checks if it maps to a remote. If so, the `client` package sends the command to the remote server and relays stdout/stderr/exit code. Commands `serve`, `snapshot`, and `restore` always run locally.
+
+Config (`config/config.go`) stores a `remotes` map keyed by workspace path or alias, with optional `workspace` field for path remapping and `default_remote` for fallback. Managed via `ata remote add/remove/list`.
+
 ### How aor uses ata
 
-aor shells out to the `ata` CLI binary (not a library import) via `ata.go`. This keeps the two modules loosely coupled — ata can be used standalone, and aor treats it as an external dependency in PATH.
+aor shells out to the `ata` CLI binary (not a library import) via `ata.go`. This keeps the two modules loosely coupled — ata can be used standalone, and aor treats it as an external dependency in PATH. When a workspace is configured for a remote server, the ata CLI transparently proxies commands, so aor gains remote support without any changes to its own code.

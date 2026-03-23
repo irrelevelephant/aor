@@ -18,8 +18,8 @@ func outputJSON(v any) error {
 	return enc.Encode(v)
 }
 
-// gitToplevel returns the git rev-parse --show-toplevel path, or "" if not in a git repo.
-func gitToplevel() string {
+// GitToplevel returns the git rev-parse --show-toplevel path, or "" if not in a git repo.
+func GitToplevel() string {
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		return ""
@@ -27,8 +27,8 @@ func gitToplevel() string {
 	return strings.TrimSpace(string(out))
 }
 
-// gitMainWorktree returns the main worktree path from `git worktree list --porcelain`.
-func gitMainWorktree() string {
+// GitMainWorktree returns the main worktree path from `git worktree list --porcelain`.
+func GitMainWorktree() string {
 	out, err := exec.Command("git", "worktree", "list", "--porcelain").Output()
 	if err != nil {
 		return ""
@@ -56,7 +56,7 @@ func detectWorkspace(d *db.DB) string {
 		return ws
 	}
 
-	toplevel := gitToplevel()
+	toplevel := GitToplevel()
 	if toplevel == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -71,7 +71,7 @@ func detectWorkspace(d *db.DB) string {
 	}
 
 	// Try the main worktree (first entry in `git worktree list`).
-	main := gitMainWorktree()
+	main := GitMainWorktree()
 	if main != "" && main != toplevel {
 		if ok, _ := d.IsRegisteredWorkspace(main); ok {
 			return main
@@ -85,7 +85,7 @@ func detectWorkspace(d *db.DB) string {
 // rawWorkingDir returns the raw git toplevel or cwd (before workspace resolution).
 // Used for created_in to record where the task was actually created.
 func rawWorkingDir() string {
-	toplevel := gitToplevel()
+	toplevel := GitToplevel()
 	if toplevel != "" {
 		return toplevel
 	}

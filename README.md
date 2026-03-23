@@ -286,6 +286,9 @@ ata epic-close-eligible [--workspace PATH] [--json]
 ata snapshot [--workspace WS] [--output FILE] [--json]  Export workspace to .tar.gz
 ata restore FILE [--workspace WS] [--force] [--json]    Import workspace from snapshot
 ata serve [--port 4400] [--addr 0.0.0.0] [--tls-cert FILE] [--tls-key FILE]
+ata remote add NAME URL [--workspace PATH] [--default]   Configure a remote server
+ata remote remove NAME                                    Remove a remote
+ata remote list [--json]                                  List configured remotes
 ```
 
 All mutation commands support `--json` for structured output, making ata scriptable.
@@ -361,6 +364,40 @@ This is the middle step of the standard `pull → rev → merge` workflow.
 - **Epic view** — rendered spec with edit toggle, child task list with progress bar and tag badges, back-link to workspace
 - **Named URLs** — workspaces with short names use `/w/name` instead of `/w?path=...`
 - **Live updates** — SSE pushes changes from CLI/agent activity in real time
+- **Exec API** — `POST /api/v1/exec` accepts `{"command": "...", "args": [...]}` and returns `{"exit_code": N, "stdout": "...", "stderr": "..."}`, enabling remote CLI access (see Remote Servers below)
+
+## Remote Servers
+
+ata can proxy CLI commands to a remote machine running `ata serve`. This lets you run `ata` locally while tasks live on a different server.
+
+**Setup (on the remote):**
+```sh
+ata serve --port 4400 --addr 0.0.0.0
+```
+
+**Setup (locally):**
+```sh
+# Map a local workspace to a remote server
+ata remote add /path/to/local/repo http://remote-host:4400
+
+# Or map with a different workspace path on the remote
+ata remote add /local/path http://remote:4400 --workspace /remote/path
+
+# Set a default remote for all workspaces
+ata remote add myserver http://remote:4400 --default
+```
+
+Once configured, all `ata` commands run from that workspace are transparently proxied to the remote. Since `aor` calls `ata` as a subprocess, orchestration also works against remote task stores.
+
+```sh
+ata list --json                    # fetches from remote
+ata create "task" --status queue   # creates on remote
+aor --dry-run                      # sees remote tasks
+ata remote list                    # show all configured remotes
+ata remote remove /path/to/repo    # remove a remote
+```
+
+Config is stored in `~/.ata/config.json`. The `snapshot`, `restore`, and `serve` commands always run locally.
 
 ## Project Structure
 
@@ -386,8 +423,11 @@ aor/
   highlight.go         Syntax-highlighted terminal output
 
   ata/                 Task management module
-    main.go            CLI entry
+    main.go            CLI entry, remote intercept
     model/             Types (Task, Comment, Workspace, EpicProgress)
+    api/               Shared API types (ExecRequest, ExecResponse)
+    client/            HTTP client for remote exec API
+    config/            Config loading (~/.ata/config.json), remote resolution
     db/                SQLite layer (WAL mode, migrations V1-V5, CRUD)
       migrations.go    Schema versions (tasks, comments, workspaces, task_deps, task_tags)
       tasks.go         Task CRUD, claiming, recovery
@@ -412,6 +452,6 @@ make fmt      # list unformatted files
 
 ## Data Storage
 
-All data lives in `~/.ata/ata.db` (SQLite, WAL mode). Session logs go to `~/.ata/runner-logs/`.
+All data lives in `~/.ata/ata.db` (SQLite, WAL mode). Session logs go to `~/.ata/runner-logs/`. Remote server configuration is stored in `~/.ata/config.json`.
 
 No external services, no sync, no git-backed storage. The database is a single file you can back up, inspect with `sqlite3`, or delete to start fresh. Use `ata snapshot` / `ata restore` for portable workspace-level backups.

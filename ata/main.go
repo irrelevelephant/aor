@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
+	"aor/ata/client"
 	"aor/ata/cmd"
+	"aor/ata/config"
 	"aor/ata/db"
 )
 
@@ -12,6 +15,27 @@ func main() {
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
+	}
+
+	subcmd := os.Args[1]
+	args := os.Args[2:]
+
+	// Commands that don't need a DB connection.
+	switch subcmd {
+	case "help", "--help", "-h":
+		printUsage()
+		return
+	case "remote":
+		if err := cmd.Remote(args); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Check if this workspace is configured for a remote server.
+	if code, ok := tryRemote(subcmd, args); ok {
+		os.Exit(code)
 	}
 
 	dbPath, err := db.DefaultDBPath()
@@ -27,72 +51,89 @@ func main() {
 	}
 	defer d.Close()
 
-	subcmd := os.Args[1]
-	args := os.Args[2:]
+	if err := cmd.Dispatch(d, subcmd, args); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	var cmdErr error
+// tryRemote checks if the current workspace is configured for a remote server.
+// Returns (exitCode, true) if the command was handled remotely, (0, false) otherwise.
+func tryRemote(subcmd string, args []string) (int, bool) {
 	switch subcmd {
-	case "init":
-		cmdErr = cmd.Init(d, args)
-	case "clean":
-		cmdErr = cmd.Clean(d, args)
-	case "uninit":
-		cmdErr = cmd.Uninit(d, args)
-	case "create":
-		cmdErr = cmd.Create(d, args)
-	case "list":
-		cmdErr = cmd.List(d, args)
-	case "show":
-		cmdErr = cmd.Show(d, args)
-	case "edit":
-		cmdErr = cmd.Edit(d, args)
-	case "close":
-		cmdErr = cmd.Close(d, args)
-	case "reopen":
-		cmdErr = cmd.Reopen(d, args)
-	case "ready":
-		cmdErr = cmd.Ready(d, args)
-	case "claim":
-		cmdErr = cmd.Claim(d, args)
-	case "unclaim":
-		cmdErr = cmd.Unclaim(d, args)
-	case "promote":
-		cmdErr = cmd.Promote(d, args)
-	case "spec":
-		cmdErr = cmd.Spec(d, args)
-	case "comment":
-		cmdErr = cmd.Comment(d, args)
-	case "dep":
-		cmdErr = cmd.Dep(d, args)
-	case "tag":
-		cmdErr = cmd.Tag(d, args)
-	case "reorder":
-		cmdErr = cmd.Reorder(d, args)
-	case "move":
-		cmdErr = cmd.Move(d, args)
-	case "recover":
-		cmdErr = cmd.Recover(d, args)
-	case "epic-close-eligible":
-		cmdErr = cmd.EpicCloseEligible(d, args)
-	case "snapshot":
-		cmdErr = cmd.Snapshot(d, args)
-	case "restore":
-		cmdErr = cmd.Restore(d, args)
-	case "serve":
-		cmdErr = cmd.Serve(d, args)
-	case "help", "--help", "-h":
-		printUsage()
-		return
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", subcmd)
-		printUsage()
-		os.Exit(1)
+	case "serve", "snapshot", "restore":
+		return 0, false
 	}
 
-	if cmdErr != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", cmdErr)
-		os.Exit(1)
+	cfg, err := config.Load()
+	if err != nil || (len(cfg.Remotes) == 0 && cfg.DefaultRemote == "") {
+		return 0, false
 	}
+
+	workspace := resolveWorkspaceForRemote(args)
+	remote := cfg.ResolveRemote(workspace)
+	if remote == nil {
+		return 0, false
+	}
+
+	c := client.New(remote.URL)
+
+	execArgs := args
+	if remote.Workspace != "" && !hasFlag(args, "workspace") {
+		execArgs = append([]string{"--workspace", remote.Workspace}, args...)
+	}
+
+	stdout, stderr, exitCode, err := c.Exec(subcmd, execArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "remote error: %v\n", err)
+		return 1, true
+	}
+	if len(stdout) > 0 {
+		os.Stdout.Write(stdout)
+	}
+	if stderr != "" {
+		fmt.Fprint(os.Stderr, stderr)
+	}
+	return exitCode, true
+}
+
+// resolveWorkspaceForRemote determines the workspace without opening the DB.
+// Mirrors detectWorkspace() logic but skips the DB-dependent IsRegisteredWorkspace check.
+func resolveWorkspaceForRemote(args []string) string {
+	for i, a := range args {
+		if a == "--workspace" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(a, "--workspace=") {
+			return strings.TrimPrefix(a, "--workspace=")
+		}
+	}
+
+	if ws := os.Getenv("ATA_WORKSPACE"); ws != "" {
+		return ws
+	}
+
+	toplevel := cmd.GitToplevel()
+	if toplevel == "" {
+		cwd, _ := os.Getwd()
+		return cwd
+	}
+
+	if main := cmd.GitMainWorktree(); main != "" && main != toplevel {
+		return main
+	}
+
+	return toplevel
+}
+
+// hasFlag checks if a flag name appears in args.
+func hasFlag(args []string, name string) bool {
+	for _, a := range args {
+		if a == "--"+name || strings.HasPrefix(a, "--"+name+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func printUsage() {
@@ -126,6 +167,7 @@ Commands:
   snapshot  Export workspace to a .tar.gz archive
   restore   Import workspace from a snapshot archive
   serve     Start web UI server
+  remote    Manage remote server connections
 
 Flags:
   --json    Output JSON (available on most commands)
