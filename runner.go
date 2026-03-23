@@ -461,6 +461,28 @@ func run(cfg *Config) error {
 							log.Log("Added triage comment to %s", next.ID)
 						}
 					}
+
+					// Commit any uncommitted work so it's not lost on unclaim.
+					if ev.HasUncommitted {
+						log.Log("Uncommitted changes detected — running commit sweep for %s", next.ID)
+						commitPrompt := buildCommitSweepPrompt(
+							fmt.Sprintf("from task %s (%s)", next.ID, next.Title),
+							"a descriptive commit message summarizing the partial work",
+						)
+						sweepResult := runSession(cfg, rc, commitPrompt)
+						for waitForRateLimit(sweepResult.RateLimitReset, rc) {
+							sweepResult = runSession(cfg, rc, commitPrompt)
+						}
+						if sweepResult.Error != nil {
+							log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
+						} else {
+							log.Log("Commit sweep completed for %s", next.ID)
+						}
+						stats.TotalCostUSD += sweepResult.TotalCostUSD
+						stats.TotalInput += sweepResult.InputTokens
+						stats.TotalOutput += sweepResult.OutputTokens
+					}
+
 					shouldUnclaim = true
 				}
 			}
