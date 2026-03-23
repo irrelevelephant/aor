@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -307,6 +308,7 @@ func runSession(cfg *Config, rc *RunContext, prompt string) *SessionResult {
 	mu.Unlock()
 
 	result.Status = parseSentinelJSON[RunnerStatus](result.RawOutput, "ATA_RUNNER_STATUS:")
+	result.RateLimitReset = parseRateLimitReset(result.RawOutput)
 
 	// Double Ctrl+C (kill) should stop the entire runner.
 	if ctrlCKill.Load() {
@@ -584,6 +586,99 @@ func runInteractiveClaude(claudeArgs []string, yolo bool, workDir, workspace str
 
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("\nClaude session ended: %v\n", err)
+	}
+}
+
+// rateLimitRe matches messages like:
+//
+//	"You're out of extra usage · resets 10am (America/Los_Angeles)"
+//	"You're out of extra usage · resets 2:30pm (America/New_York)"
+var rateLimitRe = regexp.MustCompile(
+	`(?i)You(?:'|` + "\u2019" + `|')re out of (?:extra )?usage.*resets?\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*\(([^)]+)\)`,
+)
+
+// parseRateLimitReset scans raw session output for a Claude usage-limit
+// message and returns the reset time, or nil if none was found.
+func parseRateLimitReset(output string) *time.Time {
+	m := rateLimitRe.FindStringSubmatch(output)
+	if m == nil {
+		return nil
+	}
+
+	timeStr := strings.TrimSpace(m[1]) // e.g. "10am", "2:30pm"
+	tzName := strings.TrimSpace(m[2])  // e.g. "America/Los_Angeles"
+
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		return nil
+	}
+
+	// Normalize: "10am" → "10:00am", "2:30PM" → "2:30pm", etc.
+	timeStr = strings.ToLower(timeStr)
+	if !strings.Contains(timeStr, ":") {
+		timeStr = strings.Replace(timeStr, "am", ":00am", 1)
+		timeStr = strings.Replace(timeStr, "pm", ":00pm", 1)
+	}
+
+	now := time.Now().In(loc)
+	parsed, err := time.ParseInLocation("3:04pm", timeStr, loc)
+	if err != nil {
+		return nil
+	}
+
+	// Set to today's date.
+	reset := time.Date(now.Year(), now.Month(), now.Day(),
+		parsed.Hour(), parsed.Minute(), 0, 0, loc)
+
+	// If the reset time is in the past, assume it means tomorrow.
+	// Use AddDate to handle DST transitions correctly.
+	if reset.Before(now) {
+		reset = reset.AddDate(0, 0, 1)
+	}
+
+	return &reset
+}
+
+// waitForRateLimit logs a message and sleeps until the rate limit resets.
+// The wait is interruptible: typing "q" or "quit" on stdin cancels the pause
+// and returns false so the caller can treat it as a quit signal.
+// Returns true if it waited and resumed, false if resetAt is nil, already
+// past, or the user interrupted the wait.
+func waitForRateLimit(resetAt *time.Time, rc *RunContext) bool {
+	if resetAt == nil {
+		return false
+	}
+
+	wait := time.Until(*resetAt)
+	if wait <= 0 {
+		return false
+	}
+
+	// Add a small buffer so we don't race with the exact reset second.
+	wait += 30 * time.Second
+
+	rc.Log.Log("%s[rate limit] Claude usage limit reached. Pausing until %s (%s from now). Press q to quit.%s",
+		cYellow, resetAt.Format("3:04pm MST"), wait.Round(time.Second), cReset)
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		rc.Log.Log("%s[rate limit] Resuming after rate limit pause.%s", cGreen, cReset)
+		return true
+	case line, ok := <-rc.StdinCh:
+		if !ok {
+			return false
+		}
+		if line == "q" || line == "quit" {
+			rc.Log.Log("%s[rate limit] Quit requested during rate limit pause.%s", cYellow, cReset)
+			return false
+		}
+		// For any other input, keep waiting — drain into the timer.
+		<-timer.C
+		rc.Log.Log("%s[rate limit] Resuming after rate limit pause.%s", cGreen, cReset)
+		return true
 	}
 }
 

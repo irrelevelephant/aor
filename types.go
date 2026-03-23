@@ -88,17 +88,18 @@ type MessageObj struct {
 
 // SessionResult holds everything collected from a single Claude session.
 type SessionResult struct {
-	SessionID    string
-	Status       *RunnerStatus
-	RawOutput    string
-	Error        error
-	UserQuit     bool
-	UserSkipped  bool
-	TotalCostUSD float64
-	InputTokens  int
-	OutputTokens int
-	NumTurns     int
-	DurationMS   int
+	SessionID      string
+	Status         *RunnerStatus
+	RawOutput      string
+	Error          error
+	UserQuit       bool
+	UserSkipped    bool
+	RateLimitReset *time.Time // non-nil when session hit usage limits
+	TotalCostUSD   float64
+	InputTokens    int
+	OutputTokens   int
+	NumTurns       int
+	DurationMS     int
 }
 
 // RunContext bundles the shared runtime resources (logger, stdin, stats)

@@ -15,7 +15,6 @@ func verifyEpic(epicID string, cfg *Config, rc *RunContext) (bool, error) {
 
 	for round := 1; round <= maxRounds; round++ {
 		rc.Log.Log("Epic %s verification round %d/%d", epicID, round, maxRounds)
-		rc.Stats.VerifySessions++
 
 		// 1. Get current epic details.
 		epic, err := getTaskStatus(epicID)
@@ -53,6 +52,14 @@ func verifyEpic(epicID string, cfg *Config, rc *RunContext) (bool, error) {
 			WorkDir: cfg.WorkDir,
 		}
 		result := runSession(sessionCfg, rc, prompt)
+
+		// Pause and retry this round if rate limited.
+		if waitForRateLimit(result.RateLimitReset, rc) {
+			round--
+			continue
+		}
+
+		rc.Stats.VerifySessions++
 
 		if result.InputTokens > 0 || result.OutputTokens > 0 {
 			rc.Stats.TotalCostUSD += result.TotalCostUSD

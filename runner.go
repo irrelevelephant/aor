@@ -408,6 +408,18 @@ func run(cfg *Config) error {
 			stats.TotalOutput += result.OutputTokens
 		}
 
+		// If Claude hit a rate limit, pause until the reset time before
+		// processing the result — the session likely produced no useful work.
+		if waitForRateLimit(result.RateLimitReset, rc) {
+			// Unclaim the task so it can be retried after the pause.
+			log.Log("Unclaiming %s (rate limited, will retry)", next.ID)
+			if err := unclaimTask(next.ID); err != nil {
+				log.Log("%sFailed to unclaim %s: %v%s", cRed, next.ID, err, cReset)
+			}
+			tracker.clear()
+			continue
+		}
+
 		// Determine whether the claimed task was completed by the agent.
 		shouldUnclaim := false
 		decomposed := false

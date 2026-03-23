@@ -238,6 +238,11 @@ func runTriage(ev *TriageEvidence, cfg *Config, rc *RunContext) *TriageResult {
 
 	triageResult := runSession(triageCfg, rc, triagePrompt)
 
+	// Pause and retry if rate limited.
+	for waitForRateLimit(triageResult.RateLimitReset, rc) {
+		triageResult = runSession(triageCfg, rc, triagePrompt)
+	}
+
 	// Log triage session costs.
 	if triageResult.InputTokens > 0 || triageResult.OutputTokens > 0 {
 		rc.Log.Log("Triage usage: %s input + %s output tokens, $%.4f",

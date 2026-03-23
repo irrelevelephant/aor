@@ -52,6 +52,13 @@ func (rc *revContext) runReviewCycle(stats *ReviewStats, priorTasks []FiledTask)
 			cBlue, round, rc.cfg.MaxRounds, cReset)
 
 		sr := runSession(rc.sessionCfg, rc.run, prompt)
+
+		// Pause and retry this round if we hit a rate limit.
+		if waitForRateLimit(sr.RateLimitReset, rc.run) {
+			round-- // retry this round
+			continue
+		}
+
 		stats.RoundsRun++
 
 		if sr.Error != nil {
@@ -216,6 +223,9 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 			rc.Log.Log("Uncommitted review fixes detected — running commit sweep")
 			commitPrompt := buildCommitSweepPrompt("from a code review", "a message summarizing the review fixes")
 			sweepResult := runSession(rvc.sessionCfg, rc, commitPrompt)
+			for waitForRateLimit(sweepResult.RateLimitReset, rc) {
+				sweepResult = runSession(rvc.sessionCfg, rc, commitPrompt)
+			}
 			if sweepResult.Error != nil {
 				rc.Log.Log("%sCommit sweep failed: %v%s", cRed, sweepResult.Error, cReset)
 			} else {
