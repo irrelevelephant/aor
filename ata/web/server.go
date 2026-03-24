@@ -491,11 +491,12 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	// tags from closed tasks don't clutter the suggestions.
 	openTags := tagsForTasks(tagMap, allOpen)
 
-	// For the filter bar when unfiltered, derive from visible tasks to avoid
-	// showing tags that only appear on closed/hidden tasks.
-	filterBarTags := allTags
-	if tag == "" && xtag == "" {
-		filterBarTags = uniqueSortedTags(tagMap)
+	// Use open-task tags for the filter bar so the list stays consistent
+	// regardless of which filters are active. Expand to all tags when
+	// the user has toggled "Show closed".
+	filterBarTags := openTags
+	if showClosed {
+		filterBarTags = allTags
 	}
 
 	wsURL := workspaceURL(path, wsName)
