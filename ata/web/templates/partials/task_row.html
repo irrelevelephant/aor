@@ -4,6 +4,6 @@
     <a href="{{taskURL .IsEpic .ID}}" class="task-link">{{.Title}}</a>
     {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
     {{if .EpicID}}<span class="badge epic-ref">{{.EpicID}}</span>{{end}}
-    {{if eq .Status "in_progress"}}{{if .ClaimedPID}}<span class="badge agent-badge">pid:{{.ClaimedPID}}</span>{{end}}{{if .Worktree}}<span class="badge worktree-badge" title="{{.Worktree}}">wt</span>{{end}}{{end}}
+    {{if eq .Status "in_progress"}}{{if .ClaimedPID}}<span class="badge agent-badge">pid:{{.ClaimedPID}}{{if .ClaimedHost}}@{{.ClaimedHost}}{{end}}</span>{{end}}{{if .Worktree}}<span class="badge worktree-badge" title="{{.Worktree}}">wt</span>{{end}}{{end}}
 </div>
 {{end}}
