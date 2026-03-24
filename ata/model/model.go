@@ -49,6 +49,36 @@ type TaskTreeNode struct {
 	Children []TaskTreeNode
 }
 
+// BuildTree assembles a flat list of tasks into a tree rooted at rootID.
+// Tasks whose EpicID equals rootID become top-level nodes; sub-epics recurse.
+// A visited set guards against cycles from data corruption.
+func BuildTree(rootID string, tasks []Task) []TaskTreeNode {
+	byEpic := make(map[string][]Task)
+	for _, t := range tasks {
+		byEpic[t.EpicID] = append(byEpic[t.EpicID], t)
+	}
+
+	visited := make(map[string]bool)
+	var build func(parentID string) []TaskTreeNode
+	build = func(parentID string) []TaskTreeNode {
+		kids := byEpic[parentID]
+		if len(kids) == 0 {
+			return nil
+		}
+		nodes := make([]TaskTreeNode, len(kids))
+		for i, t := range kids {
+			nodes[i] = TaskTreeNode{Task: t}
+			if t.IsEpic && !visited[t.ID] {
+				visited[t.ID] = true
+				nodes[i].Children = build(t.ID)
+			}
+		}
+		return nodes
+	}
+
+	return build(rootID)
+}
+
 // Comment represents a comment on a task.
 type Comment struct {
 	ID        int    `json:"id"`

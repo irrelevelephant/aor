@@ -666,10 +666,14 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	children, err := s.db.ListTasks("", "", id, tag, xtag)
+	childTasks, err := s.db.ListTasks("", "", id, tag, xtag)
 	if err != nil {
 		log.Printf("ListTasks epic %s: %v", id, err)
 	}
+
+	// Build tree from flat children list.
+	childrenTree := model.BuildTree(id, childTasks)
+
 	progress, err := s.db.EpicProgress(id)
 	if err != nil {
 		log.Printf("EpicProgress %s: %v", id, err)
@@ -680,8 +684,8 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Batch-load tags for children.
-	childIDs := make([]string, len(children))
-	for i, c := range children {
+	childIDs := make([]string, len(childTasks))
+	for i, c := range childTasks {
 		childIDs[i] = c.ID
 	}
 	tagMap, err := s.db.GetTagsForTasks(childIDs)
@@ -690,6 +694,15 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if tagMap == nil {
 		tagMap = make(map[string][]string)
+	}
+
+	// Compute blocked IDs for tree rendering.
+	blockedIDs, err := s.db.BlockedTaskIDs(childIDs)
+	if err != nil {
+		log.Printf("BlockedTaskIDs epic %s: %v", id, err)
+	}
+	if blockedIDs == nil {
+		blockedIDs = make(map[string]bool)
 	}
 
 	// Build filter bar tags from children (not just filtered subset).
@@ -744,7 +757,8 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
 		"Epic":          task,
-		"Children":      children,
+		"Children":      childrenTree,
+		"BlockedIDs":    blockedIDs,
 		"Progress":      progress,
 		"Comments":      comments,
 		"WorkspaceName": wsName,

@@ -1173,10 +1173,11 @@ func TestListTaskTree(t *testing.T) {
 func TestListTaskTreeOrphanedChildren(t *testing.T) {
 	d := testDB(t)
 
-	// Epic in backlog, child in queue — child should appear as top-level in queue.
+	// Epic in backlog, child moved to queue — child should appear as top-level in queue.
 	epic, _ := d.CreateTask("Epic", "", model.StatusBacklog, "", "/ws", "")
 	d.PromoteToEpic(epic.ID, "")
-	child, _ := d.CreateTask("Orphan Child", "", model.StatusQueue, epic.ID, "/ws", "")
+	child, _ := d.CreateTask("Orphan Child", "", model.StatusBacklog, epic.ID, "/ws", "")
+	d.Exec(`UPDATE tasks SET status = ? WHERE id = ?`, model.StatusQueue, child.ID)
 
 	tree, err := d.ListTaskTree("/ws", model.StatusQueue, "", "")
 	if err != nil {

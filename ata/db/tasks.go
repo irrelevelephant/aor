@@ -536,6 +536,8 @@ func (d *DB) UpdateTask(id string, title, body, spec *string) (*model.Task, erro
 
 // ListTaskTree returns tasks as a tree with arbitrary nesting depth.
 // Children whose parent epic is not in the result set appear as top-level (orphan) nodes.
+// NOTE: This has its own tree-building logic (rather than using model.BuildTree)
+// because it must handle orphan root detection while preserving the original EpicID.
 func (d *DB) ListTaskTree(workspace, status, tag, excludeTag string) ([]model.TaskTreeNode, error) {
 	tasks, err := d.ListTasks(workspace, status, "", tag, excludeTag)
 	if err != nil {

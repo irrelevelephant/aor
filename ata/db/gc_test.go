@@ -200,7 +200,7 @@ func TestGCClosedTasks_EpicRefCleared(t *testing.T) {
 
 	epic, _ := d.CreateTask("epic", "", model.StatusBacklog, "", "/ws", "")
 	d.PromoteToEpic(epic.ID, "")
-	sub, _ := d.CreateTask("open sub", "", model.StatusQueue, epic.ID, "/ws", "")
+	sub, _ := d.CreateTask("open sub", "", model.StatusBacklog, epic.ID, "/ws", "")
 
 	d.CloseTask(epic.ID, "done")
 
