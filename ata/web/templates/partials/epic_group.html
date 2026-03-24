@@ -1,6 +1,6 @@
 {{define "epic_group"}}
 <div class="epic-group" data-id="{{.Node.ID}}" id="task-{{.Node.ID}}">
-    <div class="task-row epic-row{{if index .BlockedIDs .Node.ID}} task-blocked{{end}}">
+    <div class="task-row epic-row{{if index .BlockedIDs .Node.ID}} task-blocked{{end}}" data-id="{{.Node.ID}}">
         <span class="drag-handle">⠿</span>
         <span class="epic-toggle" onclick="toggleEpicCollapse('{{.Node.ID}}', event)"></span>
         <span class="id-badge">{{.Node.ID}}</span>
