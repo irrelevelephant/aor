@@ -34,15 +34,7 @@ func Clean(d *db.DB, args []string) error {
 		*closed = true
 	}
 
-	// Resolve workspace.
-	ws := *workspace
-	if ws == "" {
-		ws = detectWorkspace(d)
-	} else {
-		if resolved, err := d.ResolveWorkspace(ws); err == nil {
-			ws = resolved
-		}
-	}
+	ws := resolveOrDetectWorkspace(d, *workspace)
 
 	if *closed {
 		return cleanClosed(d, ws, *olderThan, *force, *jsonOut)

@@ -82,6 +82,29 @@ func detectWorkspace(d *db.DB) string {
 	return toplevel
 }
 
+// resolveWorkspaceFlag resolves an explicit --workspace name-or-path via the DB.
+// Returns the input unchanged when empty or when resolution fails.
+func resolveWorkspaceFlag(d *db.DB, ws string) string {
+	if ws != "" {
+		if resolved, err := d.ResolveWorkspace(ws); err == nil {
+			return resolved
+		}
+	}
+	return ws
+}
+
+// resolveOrDetectWorkspace resolves an explicit --workspace value, or auto-detects
+// the workspace from the environment when ws is empty.
+func resolveOrDetectWorkspace(d *db.DB, ws string) string {
+	if ws == "" {
+		return detectWorkspace(d)
+	}
+	if resolved, err := d.ResolveWorkspace(ws); err == nil {
+		return resolved
+	}
+	return ws
+}
+
 // rawWorkingDir returns the raw git toplevel or cwd (before workspace resolution).
 // Used for created_in to record where the task was actually created.
 func rawWorkingDir() string {

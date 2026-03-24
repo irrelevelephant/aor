@@ -38,12 +38,7 @@ func Create(d *db.DB, args []string) error {
 		return fmt.Errorf("status must be '%s' or '%s', got %q", model.StatusBacklog, model.StatusQueue, *status)
 	}
 
-	ws := *workspace
-	if ws == "" {
-		ws = detectWorkspace(d)
-	} else if resolved, err := d.ResolveWorkspace(ws); err == nil {
-		ws = resolved
-	}
+	ws := resolveOrDetectWorkspace(d, *workspace)
 
 	createdIn := rawWorkingDir()
 	task, err := d.CreateTask(title, *desc, *status, *epicID, ws, createdIn)

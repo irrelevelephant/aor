@@ -35,12 +35,7 @@ func Unclaim(d *db.DB, args []string) error {
 	}
 
 	// Otherwise, unclaim all in_progress for workspace.
-	ws := *workspace
-	if ws == "" {
-		ws = detectWorkspace(d)
-	} else if resolved, err := d.ResolveWorkspace(ws); err == nil {
-		ws = resolved
-	}
+	ws := resolveOrDetectWorkspace(d, *workspace)
 
 	tasks, err := d.UnclaimByWorkspace(ws)
 	if err != nil {

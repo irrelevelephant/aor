@@ -20,14 +20,7 @@ func Ready(d *db.DB, args []string) error {
 		return err
 	}
 
-	ws := *workspace
-	if ws != "" {
-		if resolved, err := d.ResolveWorkspace(ws); err == nil {
-			ws = resolved
-		}
-	}
-
-	tasks, err := d.ReadyTasks(ws, *epicID, *tag, *limit)
+	tasks, err := d.ReadyTasks(resolveWorkspaceFlag(d, *workspace), *epicID, *tag, *limit)
 	if err != nil {
 		return err
 	}

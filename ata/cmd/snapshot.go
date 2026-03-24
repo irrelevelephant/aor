@@ -26,14 +26,7 @@ func Snapshot(d *db.DB, args []string) error {
 		return err
 	}
 
-	ws := *workspace
-	if ws == "" {
-		ws = detectWorkspace(d)
-	} else {
-		if resolved, err := d.ResolveWorkspace(ws); err == nil {
-			ws = resolved
-		}
-	}
+	ws := resolveOrDetectWorkspace(d, *workspace)
 
 	meta, tasks, comments, deps, tags, attachments, err := d.ExportWorkspace(ws)
 	if err != nil {

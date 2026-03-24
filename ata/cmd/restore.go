@@ -57,15 +57,7 @@ func Restore(d *db.DB, args []string) error {
 			meta.SchemaVersion, db.SchemaVersion())
 	}
 
-	// Resolve target workspace.
-	ws := *workspace
-	if ws == "" {
-		ws = detectWorkspace(d)
-	} else {
-		if resolved, err := d.ResolveWorkspace(ws); err == nil {
-			ws = resolved
-		}
-	}
+	ws := resolveOrDetectWorkspace(d, *workspace)
 
 	// Determine target name: use existing workspace name, or snapshot source name, or "".
 	targetName := ""

@@ -17,14 +17,7 @@ func EpicCloseEligible(d *db.DB, args []string) error {
 		return err
 	}
 
-	ws := *workspace
-	if ws != "" {
-		if resolved, err := d.ResolveWorkspace(ws); err == nil {
-			ws = resolved
-		}
-	}
-
-	epics, err := d.EpicCloseEligible(ws)
+	epics, err := d.EpicCloseEligible(resolveWorkspaceFlag(d, *workspace))
 	if err != nil {
 		return err
 	}

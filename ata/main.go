@@ -79,7 +79,7 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 	c := client.New(remote.URL)
 
 	execArgs := args
-	if remote.Workspace != "" && !hasFlag(args, "workspace") {
+	if remote.Workspace != "" && !hasFlag(args, "workspace") && acceptsWorkspaceFlag(subcmd) {
 		execArgs = append([]string{"--workspace", remote.Workspace}, args...)
 	}
 
@@ -124,6 +124,16 @@ func resolveWorkspaceForRemote(args []string) string {
 	}
 
 	return toplevel
+}
+
+// acceptsWorkspaceFlag returns true for subcommands that define a --workspace flag.
+func acceptsWorkspaceFlag(subcmd string) bool {
+	switch subcmd {
+	case "list", "ready", "create", "move", "clean", "epic-close-eligible",
+		"init", "recover", "snapshot", "restore", "tag", "unclaim":
+		return true
+	}
+	return false
 }
 
 // hasFlag checks if a flag name appears in args.
