@@ -221,6 +221,43 @@ func getTasksCreatedAfter(after time.Time, workspace string) ([]AtaTask, error) 
 	return filtered, nil
 }
 
+// expandSubEpics returns a depth-first ordered list of sub-epic IDs under
+// epicID (children before parent), followed by epicID itself. This ordering
+// ensures that when processing with review, each sub-epic gets its own
+// run → review → close cycle before the parent. Only open sub-epics are
+// included.
+//
+// Uses a single getEpicChildren call (which returns all descendants) and
+// builds the tree in memory to avoid N+1 subprocess calls.
+func expandSubEpics(epicID string) ([]string, error) {
+	descendants, err := getEpicChildren(epicID)
+	if err != nil {
+		return nil, fmt.Errorf("expand sub-epics for %s: %w", epicID, err)
+	}
+
+	// Build parent → direct-child-epics adjacency map.
+	childEpics := map[string][]string{}
+	for _, d := range descendants {
+		if d.IsEpic && d.Status != "closed" {
+			childEpics[d.EpicID] = append(childEpics[d.EpicID], d.ID)
+		}
+	}
+
+	// Depth-first post-order: children before parent.
+	var result []string
+	var walk func(id string, depth int)
+	walk = func(id string, depth int) {
+		if depth < 10 {
+			for _, childID := range childEpics[id] {
+				walk(childID, depth+1)
+			}
+		}
+		result = append(result, id)
+	}
+	walk(epicID, 0)
+	return result, nil
+}
+
 // getCloseEligibleEpics returns epics whose children are all closed, without closing them.
 func getCloseEligibleEpics(workspace string) ([]AtaTask, error) {
 	args := []string{"epic-close-eligible", "--json"}

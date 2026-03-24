@@ -168,6 +168,19 @@ Flags:
 	}
 }
 
+// makeEpicLabels converts epic IDs to display labels, replacing "" with "(all)".
+func makeEpicLabels(epics []string) []string {
+	labels := make([]string, len(epics))
+	for i, e := range epics {
+		if e == "" {
+			labels[i] = "(all)"
+		} else {
+			labels[i] = e
+		}
+	}
+	return labels
+}
+
 // collectEpics parses the -epic flag value as comma-separated epic IDs.
 // Returns [""] if no epics specified (no filter).
 func collectEpics(epicFlag string) []string {
@@ -207,16 +220,33 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 	cfg.Stats = stats
 	cfg.SuppressSummary = true
 
-	epicLabels := make([]string, len(epics))
-	for i, e := range epics {
-		if e == "" {
-			epicLabels[i] = "(all)"
-		} else {
-			epicLabels[i] = e
-		}
-	}
+	epicLabels := makeEpicLabels(epics)
 	log.Log("Multi-epic run: %s (rev=%v, worktree=%v)", strings.Join(epicLabels, ", "), rev, useWorktree)
 	fmt.Println()
+
+	// When review is enabled, expand each epic into its sub-epic tree
+	// (depth-first: children before parent) so each sub-epic gets its own
+	// run → review → close cycle before the parent is processed.
+	if rev {
+		var expanded []string
+		for _, epic := range epics {
+			if epic == "" {
+				expanded = append(expanded, "")
+			} else {
+				subEpics, err := expandSubEpics(epic)
+				if err != nil {
+					log.Log("%sFailed to expand sub-epics for %s: %v — processing as single epic%s",
+						cYellow, epic, err, cReset)
+					expanded = append(expanded, epic)
+				} else {
+					expanded = append(expanded, subEpics...)
+				}
+			}
+		}
+		epics = expanded
+		epicLabels = makeEpicLabels(epics)
+		log.Log("Expanded epic list (with sub-epics): %s", strings.Join(epicLabels, ", "))
+	}
 
 	for i, epic := range epics {
 		label := epicLabels[i]
