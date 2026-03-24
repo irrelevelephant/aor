@@ -52,6 +52,30 @@ func gatherTriageEvidence(taskID, taskTitle, preSHA string,
 	return ev
 }
 
+// refreshTriageGitEvidence copies ev and refreshes only git-related fields.
+// Use after a commit sweep where task status and created-tasks are unchanged.
+func refreshTriageGitEvidence(ev *TriageEvidence) *TriageEvidence {
+	ev2 := *ev // shallow copy
+	ev2.HasUncommitted = false
+
+	if postSHA, err := headSHA(); err == nil {
+		ev2.PostSHA = postSHA
+	}
+	if ev2.PreSHA != "" && ev2.PostSHA != "" && ev2.PreSHA != ev2.PostSHA {
+		if count, err := commitCountBetween(ev2.PreSHA, ev2.PostSHA); err == nil {
+			ev2.CommitCount = count
+		}
+		if summary, err := commitsBetween(ev2.PreSHA, ev2.PostSHA); err == nil {
+			ev2.CommitSummary = summary
+		}
+		if stats, err := diffStatBetween(ev2.PreSHA, ev2.PostSHA); err == nil {
+			ev2.DiffStats = stats
+		}
+	}
+
+	return &ev2
+}
+
 // triageHeuristic examines evidence and returns an outcome.
 // Returns TriageNeedsAgent when signals are ambiguous.
 func triageHeuristic(ev *TriageEvidence) *TriageResult {

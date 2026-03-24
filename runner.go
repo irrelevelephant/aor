@@ -468,14 +468,6 @@ func run(cfg *Config) error {
 					log.Log("Triage: task %s confirmed complete", next.ID)
 					result.Status = &RunnerStatus{Completed: []string{next.ID}}
 				} else {
-					if tr.Outcome == TriagePartial && tr.Comment != "" {
-						if err := addComment(next.ID, tr.Comment, "system"); err != nil {
-							log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
-						} else {
-							log.Log("Added triage comment to %s", next.ID)
-						}
-					}
-
 					// Commit any uncommitted work so it's not lost on unclaim.
 					if ev.HasUncommitted {
 						log.Log("Uncommitted changes detected — running commit sweep for %s", next.ID)
@@ -491,9 +483,42 @@ func run(cfg *Config) error {
 						stats.TotalCostUSD += sweepResult.TotalCostUSD
 						stats.TotalInput += sweepResult.InputTokens
 						stats.TotalOutput += sweepResult.OutputTokens
+
+						// Re-triage with updated git evidence now that work is committed.
+						if sweepResult.Error == nil {
+							log.Log("Re-triaging %s after commit sweep", next.ID)
+							ev2 := refreshTriageGitEvidence(ev)
+							tr2 := runTriage(ev2, cfg, rc)
+							if tr2.AgentSpawned {
+								stats.TriageSessions++
+								stats.TotalCostUSD += tr2.TotalCostUSD
+								stats.TotalInput += tr2.InputTokens
+								stats.TotalOutput += tr2.OutputTokens
+							}
+							lastTriageOutcome = &tr2.Outcome
+							if tr2.Outcome == TriageComplete {
+								log.Log("Post-sweep triage: task %s confirmed complete", next.ID)
+								result.Status = &RunnerStatus{Completed: []string{next.ID}}
+							} else if tr2.Comment != "" {
+								// Leave a comment so the next agent has context about
+								// work committed by the sweep.
+								if err := addComment(next.ID, tr2.Comment, "system"); err != nil {
+									log.Log("%sFailed to add post-sweep triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
+								}
+							}
+						}
+					} else if tr.Outcome == TriagePartial && tr.Comment != "" {
+						// No sweep — post the original triage comment.
+						if err := addComment(next.ID, tr.Comment, "system"); err != nil {
+							log.Log("%sFailed to add triage comment to %s: %v%s", cYellow, next.ID, err, cReset)
+						} else {
+							log.Log("Added triage comment to %s", next.ID)
+						}
 					}
 
-					shouldUnclaim = true
+					if result.Status == nil {
+						shouldUnclaim = true
+					}
 				}
 			}
 		} else {
