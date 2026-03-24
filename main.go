@@ -330,6 +330,9 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 			// Now that review tasks have been filed and resolved,
 			// close the epic if all children are complete.
 			closeEpicsUnder(epic, cfg, rc)
+			if stats.UserQuit {
+				break
+			}
 		}
 	}
 

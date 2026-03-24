@@ -299,6 +299,9 @@ func run(cfg *Config) error {
 			// Before declaring "all done", check if the filtered epic itself needs verification.
 			if cfg.EpicFilter != "" && !cfg.SkipEpicClose {
 				if tryVerifyFilteredEpic(cfg.EpicFilter, cfg, rc) {
+					if stats.UserQuit {
+						break
+					}
 					// Verification may have filed new tasks — re-check.
 					continue
 				}
@@ -417,6 +420,18 @@ func run(cfg *Config) error {
 			}
 			tracker.clear()
 			continue
+		}
+
+		// User quit — unclaim immediately and skip all post-session processing.
+		if result.UserQuit {
+			log.Log("Unclaiming %s (user quit)", next.ID)
+			if err := unclaimTask(next.ID); err != nil {
+				log.Log("%sFailed to unclaim %s: %v%s", cRed, next.ID, err, cReset)
+			}
+			tracker.clear()
+			log.Log("Quitting at user request.")
+			stats.UserQuit = true
+			break
 		}
 
 		// Determine whether the claimed task was completed by the agent.
@@ -596,12 +611,10 @@ func run(cfg *Config) error {
 		if iterCompleted && !cfg.SkipEpicClose {
 			tryCloseEpics()
 		}
-
-		if result.UserQuit {
-			log.Log("Quitting at user request.")
-			stats.UserQuit = true
+		if stats.UserQuit {
 			break
 		}
+
 		if result.UserSkipped {
 			log.Log("Task skipped, moving to next.")
 		}
@@ -613,7 +626,7 @@ func run(cfg *Config) error {
 
 	// Final epic auto-close check — the loop may have exited (via break)
 	// before the in-loop auto-close had a chance to run.
-	if !cfg.SkipEpicClose {
+	if !cfg.SkipEpicClose && !stats.UserQuit {
 		tryCloseEpics()
 	}
 
@@ -629,6 +642,9 @@ func run(cfg *Config) error {
 // loops until no more epics can be closed (capped at 20 iterations).
 func closeEpicsUnder(ancestorID string, cfg *Config, rc *RunContext) {
 	for range 20 {
+		if rc.Stats.UserQuit {
+			return
+		}
 		epics, err := getCloseEligibleEpics(cfg.Workspace)
 		if err != nil {
 			rc.Log.Log("%sEpic eligibility check failed: %v%s", cYellow, err, cReset)
@@ -658,6 +674,9 @@ func closeEpicsUnder(ancestorID string, cfg *Config, rc *RunContext) {
 			if epic.Spec != "" {
 				rc.Log.Log("Epic %s children all closed — verifying...", epic.ID)
 				passed, err := verifyEpic(epic.ID, cfg, rc)
+				if rc.Stats.UserQuit {
+					return
+				}
 				if err != nil {
 					rc.Log.Log("Epic %s verification error: %v", epic.ID, err)
 				} else if passed {

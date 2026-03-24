@@ -232,6 +232,10 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 		} else {
 			rc.Log.Log("No uncommitted changes — commit sweep skipped")
 		}
+		if rc.Stats.UserQuit {
+			stats.StopReason = "user quit"
+			break
+		}
 
 		// 3. Check for open tagged tasks.
 		openTasks, err := getReadyTasks("", rvc.revTag, rvc.cfg.Workspace)

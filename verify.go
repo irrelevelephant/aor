@@ -71,6 +71,7 @@ func verifyEpic(epicID string, cfg *Config, rc *RunContext) (bool, error) {
 			return false, fmt.Errorf("verification session error: %w", result.Error)
 		}
 		if result.UserQuit {
+			rc.Stats.UserQuit = true
 			return false, nil
 		}
 
@@ -133,6 +134,9 @@ func verifyEpic(epicID string, cfg *Config, rc *RunContext) (bool, error) {
 			}
 			if err := run(runCfg); err != nil {
 				rc.Log.Log("%sInner orchestration error: %v%s", cRed, err, cReset)
+			}
+			if rc.Stats.UserQuit {
+				return false, nil
 			}
 
 			// Loop back to re-verify.
