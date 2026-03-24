@@ -6,6 +6,7 @@
         <span class="id-badge">{{.Node.ID}}</span>
         <a href="/epic/{{.Node.ID}}" class="task-link">{{.Node.Title}}</a>
         <span class="count epic-child-count">({{len .Node.Children}})</span>
+        <span class="status-badge {{statusColor .Node.Status}}">{{.Node.Status}}</span>
         <span class="badge epic-badge">epic</span>
         {{if index .BlockedIDs .Node.ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
         {{template "task_tags_inline.html" (dict "Tags" (index .TagMap .Node.ID))}}
@@ -20,6 +21,7 @@
             <span class="drag-handle">⠿</span>
             <span class="id-badge">{{.ID}}</span>
             <a href="{{taskURL .IsEpic .ID}}" class="task-link">{{.Title}}</a>
+            <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
             {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
             {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
             {{template "task_tags_inline.html" (dict "Tags" (index $.TagMap .ID))}}
