@@ -129,7 +129,6 @@ func verifyEpic(epicID string, cfg *Config, rc *RunContext) (bool, error) {
 				Log:             rc.Log,
 				Stats:           rc.Stats,
 				SuppressSummary: true,
-				SkipRecovery:    true,
 				SkipEpicClose:   true,
 			}
 			if err := run(runCfg); err != nil {

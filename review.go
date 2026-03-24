@@ -261,7 +261,6 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 			Log:             rc.Log,
 			Stats:           rc.Stats,
 			SuppressSummary: true,
-			SkipRecovery:    true,
 			SkipEpicClose:   true,
 		}
 		if err := run(runCfg); err != nil {

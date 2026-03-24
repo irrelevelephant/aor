@@ -45,7 +45,6 @@ type Config struct {
 	Log             *Logger      // shared logger (nil = create own)
 	Stats           *RunStats    // shared stats (nil = create own)
 	SuppressSummary bool         // skip printSummary
-	SkipRecovery    bool         // skip recoverStuckTasks (caller already ran it)
 	SkipEpicClose   bool         // skip tryCloseEpics (caller handles epic lifecycle)
 }
 
@@ -259,9 +258,6 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 		// Shallow-copy cfg so the loop doesn't mutate the caller's original.
 		iterCfg := *cfg
 		iterCfg.EpicFilter = epic
-		if i > 0 {
-			iterCfg.SkipRecovery = true
-		}
 		// When review is enabled, defer epic closure until after review
 		// tasks have been filed and resolved — otherwise the epic gets
 		// closed before runRevDirect has a chance to file tasks under it.

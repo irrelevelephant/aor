@@ -55,7 +55,11 @@ func epicDescendantSQL(epicID string) (string, any) {
 	) SELECT id FROM epic_tree)`, epicID
 }
 
-const taskCols = `id, title, body, status, sort_order, epic_id, workspace, worktree, created_in, is_epic, spec, claimed_pid, claimed_at, closed_at, close_reason, created_at, updated_at`
+const taskCols = `id, title, body, status, sort_order, epic_id, workspace, worktree, created_in, is_epic, spec, claimed_pid, claimed_host, claimed_at, closed_at, close_reason, created_at, updated_at`
+
+// unclaimSet is the SQL SET fragment used whenever a task is unclaimed, closed,
+// or moved out of in_progress. Centralised to keep the four fields in sync.
+const unclaimSet = `claimed_pid = NULL, claimed_host = '', claimed_at = NULL, worktree = ''`
 
 // CreateTask inserts a new task, generating a unique ID.
 func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string) (*model.Task, error) {
@@ -217,9 +221,9 @@ func (d *DB) ReadyTasks(workspace, epicID, tag string, limit int) ([]model.Task,
 	return d.scanTasks(rows)
 }
 
-// ClaimTask marks a task as in_progress with the given PID.
+// ClaimTask marks a task as in_progress with the given PID and hostname.
 // Rejects the claim if the task has unclosed dependencies.
-func (d *DB) ClaimTask(id string, pid int) (*model.Task, error) {
+func (d *DB) ClaimTask(id string, pid int, host string) (*model.Task, error) {
 	// Check for blockers before claiming.
 	blockers, err := d.GetBlockers(id, true)
 	if err != nil {
@@ -235,8 +239,8 @@ func (d *DB) ClaimTask(id string, pid int) (*model.Task, error) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	res, err := d.Exec(`UPDATE tasks SET status = 'in_progress', claimed_pid = ?, claimed_at = ? WHERE id = ? AND status = 'queue'`,
-		pid, now, id)
+	res, err := d.Exec(`UPDATE tasks SET status = 'in_progress', claimed_pid = ?, claimed_host = ?, claimed_at = ? WHERE id = ? AND status = 'queue'`,
+		pid, host, now, id)
 	if err != nil {
 		return nil, fmt.Errorf("claim task: %w", err)
 	}
@@ -259,12 +263,11 @@ func (d *DB) ClaimTask(id string, pid int) (*model.Task, error) {
 
 // ForceClaimTask moves a task to in_progress from any non-closed status.
 // The worktree parameter records where the agent is physically working.
-func (d *DB) ForceClaimTask(id, worktree string) (*model.Task, error) {
+func (d *DB) ForceClaimTask(id string, pid int, host, worktree string) (*model.Task, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	pid := os.Getpid()
 
-	res, err := d.Exec(`UPDATE tasks SET status = 'in_progress', claimed_pid = ?, claimed_at = ?, worktree = ? WHERE id = ? AND status != 'closed'`,
-		pid, now, worktree, id)
+	res, err := d.Exec(`UPDATE tasks SET status = 'in_progress', claimed_pid = ?, claimed_host = ?, claimed_at = ?, worktree = ? WHERE id = ? AND status != 'closed'`,
+		pid, host, now, worktree, id)
 	if err != nil {
 		return nil, fmt.Errorf("force claim: %w", err)
 	}
@@ -280,7 +283,7 @@ func (d *DB) ForceClaimTask(id, worktree string) (*model.Task, error) {
 
 // UnclaimTask resets a task from in_progress back to queue.
 func (d *DB) UnclaimTask(id string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id = ? AND status = 'in_progress'`, id)
+	res, err := d.Exec(`UPDATE tasks SET status = 'queue', `+unclaimSet+` WHERE id = ? AND status = 'in_progress'`, id)
 	if err != nil {
 		return nil, fmt.Errorf("unclaim task: %w", err)
 	}
@@ -320,7 +323,7 @@ func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
 		return nil, nil
 	}
 
-	_, err = tx.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE status = 'in_progress' AND workspace = ?`, workspace)
+	_, err = tx.Exec(`UPDATE tasks SET status = 'queue', `+unclaimSet+` WHERE status = 'in_progress' AND workspace = ?`, workspace)
 	if err != nil {
 		return nil, fmt.Errorf("unclaim by workspace: %w", err)
 	}
@@ -354,7 +357,7 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := tx.Exec(`UPDATE tasks SET status = 'closed', close_reason = ?, closed_at = ?, claimed_pid = NULL, claimed_at = NULL, worktree = ''
+	res, err := tx.Exec(`UPDATE tasks SET status = 'closed', close_reason = ?, closed_at = ?, `+unclaimSet+`
 		WHERE id = ? AND status != 'closed'
 		AND NOT (is_epic = 1 AND EXISTS (
 			SELECT 1 FROM tasks AS sub WHERE sub.epic_id = tasks.id AND sub.status != 'closed'
@@ -744,7 +747,7 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 		// Update using the same ID set, re-checking status to avoid reopening closed tasks.
 		args := []any{toStatus}
 		args = append(args, phArgs...)
-		_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id IN (`+ph+`) AND status != 'closed'`, args...)
+		_, err = tx.Exec(`UPDATE tasks SET status = ?, `+unclaimSet+` WHERE id IN (`+ph+`) AND status != 'closed'`, args...)
 	} else if fromStatus != "" {
 		// Read and update within the same transaction.
 		// Skip children whose parent epic is in a different place (queue/backlog).
@@ -786,13 +789,13 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 			return nil, nil
 		}
 		if len(skipIDs) == 0 {
-			_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE workspace = ? AND status = ?`,
+			_, err = tx.Exec(`UPDATE tasks SET status = ?, `+unclaimSet+` WHERE workspace = ? AND status = ?`,
 				toStatus, workspace, fromStatus)
 		} else {
 			skipPH, skipArgs := inPlaceholders(skipIDs)
 			args := []any{toStatus, workspace, fromStatus}
 			args = append(args, skipArgs...)
-			_, err = tx.Exec(`UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE workspace = ? AND status = ? AND id NOT IN (`+skipPH+`)`,
+			_, err = tx.Exec(`UPDATE tasks SET status = ?, `+unclaimSet+` WHERE workspace = ? AND status = ? AND id NOT IN (`+skipPH+`)`,
 				args...)
 		}
 	}
@@ -843,13 +846,20 @@ func (d *DB) MoveEpicTree(epicID, toStatus string) error {
 			UNION ALL
 			SELECT t.id FROM tasks t JOIN tree tr ON t.epic_id = tr.id WHERE t.status != 'closed'
 		)
-		UPDATE tasks SET status = ?, claimed_pid = NULL, claimed_at = NULL, worktree = ''
+		UPDATE tasks SET status = ?, `+unclaimSet+`
 		WHERE id IN (SELECT id FROM tree) AND status != 'closed'`,
 		epicID, toStatus)
 	return err
 }
 
+// recoverStaleThreshold is how long a task claimed by a non-local host can
+// stay in_progress before recovery treats it as stuck. This covers the case
+// where PID checks are meaningless (remote server can't verify the client's PID).
+const recoverStaleThreshold = 30 * time.Minute
+
 // RecoverStuckTasks finds in_progress tasks with dead PIDs and unclaims them.
+// For tasks claimed by a different host, PID checks are skipped and the task
+// is recovered if it has been in_progress longer than recoverStaleThreshold.
 func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 	tx, err := d.Begin()
 	if err != nil {
@@ -875,24 +885,44 @@ func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
 		return nil, err
 	}
 
-	// Collect IDs of tasks whose claiming process is dead.
+	localHost, _ := os.Hostname()
+	now := time.Now().UTC()
+
+	// Collect IDs of tasks whose claiming process is dead or stale.
 	var deadIDs []string
 	var recovered []model.Task
 	for _, t := range tasks {
-		if t.ClaimedPID > 0 && !isProcessAlive(t.ClaimedPID) {
-			deadIDs = append(deadIDs, t.ID)
-			t.Status = model.StatusQueue
-			t.ClaimedPID = 0
-			t.ClaimedAt = ""
-			t.Worktree = ""
-			recovered = append(recovered, t)
+		if t.ClaimedPID <= 0 {
+			continue
 		}
+
+		isLocal := t.ClaimedHost == "" || t.ClaimedHost == localHost
+		if isLocal {
+			// Local claim: check if the PID is still alive.
+			if isProcessAlive(t.ClaimedPID) {
+				continue
+			}
+		} else {
+			// Remote claim: PID check is meaningless; use staleness timeout.
+			claimedAt, err := time.Parse(time.RFC3339, t.ClaimedAt)
+			if err != nil || now.Sub(claimedAt) < recoverStaleThreshold {
+				continue
+			}
+		}
+
+		deadIDs = append(deadIDs, t.ID)
+		t.Status = model.StatusQueue
+		t.ClaimedPID = 0
+		t.ClaimedHost = ""
+		t.ClaimedAt = ""
+		t.Worktree = ""
+		recovered = append(recovered, t)
 	}
 
 	// Batch update all dead-PID tasks in one statement.
 	if len(deadIDs) > 0 {
 		ph, phArgs := inPlaceholders(deadIDs)
-		_, err = tx.Exec(`UPDATE tasks SET status = 'queue', claimed_pid = NULL, claimed_at = NULL, worktree = '' WHERE id IN (`+ph+`)`, phArgs...)
+		_, err = tx.Exec(`UPDATE tasks SET status = 'queue', `+unclaimSet+` WHERE id IN (`+ph+`)`, phArgs...)
 		if err != nil {
 			return nil, fmt.Errorf("recover stuck tasks: %w", err)
 		}
@@ -945,7 +975,7 @@ func scanTaskRow(s scanner) (model.Task, error) {
 
 	err := s.Scan(&t.ID, &t.Title, &t.Body, &t.Status, &t.SortOrder,
 		&epicID, &t.Workspace, &t.Worktree, &t.CreatedIn, &t.IsEpic, &t.Spec,
-		&claimedPID, &claimedAt, &closedAt, &t.CloseReason,
+		&claimedPID, &t.ClaimedHost, &claimedAt, &closedAt, &t.CloseReason,
 		&t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return t, err

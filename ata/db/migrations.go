@@ -2,7 +2,7 @@ package db
 
 import "fmt"
 
-const schemaVersion = 6
+const schemaVersion = 7
 
 // SchemaVersion returns the current schema version for use in snapshot metadata.
 func SchemaVersion() int { return schemaVersion }
@@ -57,6 +57,12 @@ func (d *DB) migrate() error {
 	if current < 6 {
 		if err := d.migrateV6(); err != nil {
 			return fmt.Errorf("v6: %w", err)
+		}
+	}
+
+	if current < 7 {
+		if err := d.migrateV7(); err != nil {
+			return fmt.Errorf("v7: %w", err)
 		}
 	}
 
@@ -180,5 +186,10 @@ CREATE TABLE attachments (
 CREATE INDEX idx_attachments_task_id ON attachments(task_id);
 `
 	_, err := d.Exec(ddl)
+	return err
+}
+
+func (d *DB) migrateV7() error {
+	_, err := d.Exec(`ALTER TABLE tasks ADD COLUMN claimed_host TEXT NOT NULL DEFAULT ''`)
 	return err
 }

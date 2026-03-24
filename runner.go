@@ -93,11 +93,12 @@ Work on it immediately. Do not run ata ready or ata claim for this task.`, claim
 			Tag:       cfg.TagFilter,
 			JSON:      true,
 		})
+		host, _ := os.Hostname()
 		additionalTasks = fmt.Sprintf(`
 After completing the claimed task, run %s for up to %d additional task(s).
-For each additional task, claim it with ata claim <id> --json before working on it.
+For each additional task, claim it with ata claim <id> --json --pid %d --host %s before working on it.
 
-You have %d tasks to complete in this session.`, readyCmd, batchSize-1, batchSize)
+You have %d tasks to complete in this session.`, readyCmd, batchSize-1, os.Getpid(), host, batchSize)
 	}
 
 	// Build discovered task instruction.
@@ -277,18 +278,16 @@ func run(cfg *Config) error {
 	log.Log("Controls: i=interject, s=skip, q=quit, Ctrl+C=stop & exit")
 	fmt.Println()
 
-	// Recover any tasks orphaned by a previous crashed runner (once at startup).
-	if !cfg.SkipRecovery {
-		if n := recoverStuckTasks(cfg.Workspace, log); n > 0 {
-			stats.RecoveredTasks += n
-		}
-	}
-
 	tryCloseEpics := func() {
 		closeEpicsUnder(cfg.EpicFilter, cfg, rc)
 	}
 
 	for {
+		// Recover tasks orphaned by crashed sessions (idempotent, cheap).
+		if n := recoverStuckTasks(cfg.Workspace, log); n > 0 {
+			stats.RecoveredTasks += n
+		}
+
 		tasks, err := getReadyTasks(cfg.EpicFilter, cfg.TagFilter, cfg.Workspace)
 		if err != nil {
 			log.Log("%sError checking ready tasks: %v%s", cRed, err, cReset)

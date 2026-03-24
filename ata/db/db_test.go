@@ -92,7 +92,7 @@ func TestClaimAndUnclaim(t *testing.T) {
 
 	task, _ := d.CreateTask("Claimable", "", model.StatusQueue, "", "/ws", "")
 
-	claimed, err := d.ClaimTask(task.ID, os.Getpid())
+	claimed, err := d.ClaimTask(task.ID, os.Getpid(), "test")
 	if err != nil {
 		t.Fatalf("ClaimTask: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestDeps(t *testing.T) {
 	}
 
 	// ClaimTask should reject B.
-	_, err := d.ClaimTask(b.ID, os.Getpid())
+	_, err := d.ClaimTask(b.ID, os.Getpid(), "test")
 	if err == nil {
 		t.Error("expected ClaimTask on blocked task to fail")
 	}
@@ -813,7 +813,7 @@ func TestClaimBlockedTask(t *testing.T) {
 		t.Fatalf("AddDep: %v", err)
 	}
 
-	_, err := d.ClaimTask(b.ID, os.Getpid())
+	_, err := d.ClaimTask(b.ID, os.Getpid(), "test")
 	if err == nil {
 		t.Fatal("expected error claiming blocked task")
 	}
@@ -823,7 +823,7 @@ func TestClaimBlockedTask(t *testing.T) {
 
 	// Close blocker, claim should succeed.
 	d.CloseTask(a.ID, "done")
-	_, err = d.ClaimTask(b.ID, os.Getpid())
+	_, err = d.ClaimTask(b.ID, os.Getpid(), "test")
 	if err != nil {
 		t.Fatalf("ClaimTask after unblocking: %v", err)
 	}

@@ -77,11 +77,12 @@ func getReadyTasks(epicFilter, tagFilter, workspace string) ([]AtaTask, error) {
 	return tasks, nil
 }
 
-// claimTask marks a task as in_progress, storing the aor process PID so that
-// RecoverStuckTasks checks the right (long-lived) process.
+// claimTask marks a task as in_progress, storing the aor process PID and
+// hostname so that RecoverStuckTasks checks the right (long-lived) process.
 func claimTask(id string) error {
 	pid := strconv.Itoa(os.Getpid())
-	out, err := exec.Command("ata", "claim", id, "--json", "--pid", pid).CombinedOutput()
+	host, _ := os.Hostname()
+	out, err := exec.Command("ata", "claim", id, "--json", "--pid", pid, "--host", host).CombinedOutput()
 	if err != nil {
 		return ataError("claim", id, out, err)
 	}
