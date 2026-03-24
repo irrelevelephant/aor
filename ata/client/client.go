@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"aor/ata/api"
@@ -20,7 +21,7 @@ type Client struct {
 // New creates a Client for the given base URL.
 func New(baseURL string) *Client {
 	return &Client{
-		BaseURL: baseURL,
+		BaseURL: strings.TrimRight(baseURL, "/"),
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
