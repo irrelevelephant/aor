@@ -1,21 +1,25 @@
 {{define "tag_filter_bar.html"}}
-{{if .AllTags}}
-<div class="tag-filter-bar">
-    {{range .AllTags}}
-    <span class="tag-filter-group{{if index $.IncludeSet .}} tag-filter-include{{else if index $.ExcludeSet .}} tag-filter-exclude{{end}}"
-        style="--tag-color:{{tagColor .}};--tag-bg:{{tagBgColor .}}">
-        <button type="button"
-            class="badge tag-filter-pill"
-            data-tag="{{.}}"
-            onclick="includeTagFilter(this.dataset.tag)">{{.}}</button>
-        <button type="button"
-            class="tag-filter-exc-btn"
-            data-tag="{{.}}"
-            onclick="excludeTagFilter(this.dataset.tag)"
-            title="Exclude {{.}}">−</button>
-    </span>
+<div class="filter-toolbar">
+    {{if .AllTags}}
+    <div class="filter-dropdown">
+        <button type="button" class="btn btn-sm filter-dropdown-toggle" onclick="toggleFilterDropdown(this)">
+            Filter{{if .HasFilters}} <span class="filter-active-count">{{len .IncludeSet}}</span>{{end}} ▾
+        </button>
+        <div class="filter-dropdown-menu">
+            {{range .AllTags}}
+            <label class="filter-dropdown-item" style="--tag-color:{{tagColor .}};--tag-bg:{{tagBgColor .}}">
+                <input type="checkbox" data-tag="{{.}}"{{if index $.IncludeSet .}} checked{{end}} onchange="includeTagFilter(this.dataset.tag)">
+                <span class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</span>
+            </label>
+            {{end}}
+            {{if .HasFilters}}
+            <div class="filter-dropdown-footer">
+                <button type="button" class="btn btn-sm" onclick="clearTagFilters()">Clear filters</button>
+            </div>
+            {{end}}
+        </div>
+    </div>
     {{end}}
-    {{if .HasFilters}}<button type="button" class="tag-filter-clear-btn" onclick="clearTagFilters()">&times; clear</button>{{end}}
+    <input type="text" class="filter-search input-sm" placeholder="Search tasks..." oninput="filterTasksBySearch(this.value)">
 </div>
-{{end}}
 {{end}}

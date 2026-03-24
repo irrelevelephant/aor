@@ -356,26 +356,16 @@ function cancelEdit(prefix) {
     document.getElementById(prefix + '-edit').style.display = 'none';
 }
 
-// Tag filter: click pill to toggle include, click "−" to toggle exclude.
-// Uses window.location so non-tag params (show_closed, path, etc.) are preserved.
-function toggleTagFilter(tag, primaryKey, oppositeKey) {
+// Tag filter: include tags via URL param.
+function includeTagFilter(tag) {
     var u = new URL(window.location.href);
-    var primary = parseTagParam(u.searchParams.get(primaryKey) || '');
-    var opposite = parseTagParam(u.searchParams.get(oppositeKey) || '');
-
-    var oi = opposite.indexOf(tag);
-    if (oi >= 0) opposite.splice(oi, 1);
-
-    var pi = primary.indexOf(tag);
-    if (pi >= 0) { primary.splice(pi, 1); } else { primary.push(tag); }
-
-    setTagParam(u, primaryKey, primary);
-    setTagParam(u, oppositeKey, opposite);
+    var tags = parseTagParam(u.searchParams.get('tag') || '');
+    var idx = tags.indexOf(tag);
+    if (idx >= 0) { tags.splice(idx, 1); } else { tags.push(tag); }
+    setTagParam(u, 'tag', tags);
+    u.searchParams.delete('xtag');
     window.location.href = u.toString();
 }
-
-function includeTagFilter(tag) { toggleTagFilter(tag, 'tag', 'xtag'); }
-function excludeTagFilter(tag) { toggleTagFilter(tag, 'xtag', 'tag'); }
 
 function clearTagFilters() {
     var u = new URL(window.location.href);
@@ -395,6 +385,54 @@ function setTagParam(u, key, tags) {
     } else {
         u.searchParams.delete(key);
     }
+}
+
+// Filter dropdown toggle.
+function toggleFilterDropdown(btn) {
+    var dropdown = btn.closest('.filter-dropdown');
+    dropdown.classList.toggle('open');
+}
+
+// Close dropdown when clicking outside.
+document.addEventListener('click', function(e) {
+    document.querySelectorAll('.filter-dropdown.open').forEach(function(dd) {
+        if (!dd.contains(e.target)) dd.classList.remove('open');
+    });
+});
+
+// Check if a row's ID or title matches a lowercase query.
+function rowMatchesQuery(el, q) {
+    var id = (el.dataset.id || '').toLowerCase();
+    var link = el.querySelector('.task-link');
+    var title = link ? link.textContent.toLowerCase() : '';
+    return id.indexOf(q) >= 0 || title.indexOf(q) >= 0;
+}
+
+// Client-side search: filter task rows by title or ID.
+function filterTasksBySearch(query) {
+    var q = query.toLowerCase().trim();
+    if (!q) {
+        document.querySelectorAll('.task-row, .epic-group').forEach(function(el) {
+            el.style.display = '';
+        });
+        return;
+    }
+    document.querySelectorAll('.task-row').forEach(function(row) {
+        row.style.display = rowMatchesQuery(row, q) ? '' : 'none';
+    });
+    // Show/hide epic groups based on whether the epic or any children match.
+    document.querySelectorAll('.epic-group').forEach(function(group) {
+        var epicRow = group.querySelector(':scope > .epic-row');
+        var epicMatch = epicRow && rowMatchesQuery(epicRow, q);
+        var childRows = group.querySelectorAll('.task-row:not(.epic-row)');
+        var anyChildVisible = Array.prototype.some.call(childRows, function(r) {
+            return r.style.display !== 'none';
+        });
+        group.style.display = (epicMatch || anyChildVisible) ? '' : 'none';
+        if (epicMatch) {
+            childRows.forEach(function(r) { r.style.display = ''; });
+        }
+    });
 }
 
 // Preserve scroll position across attachment upload (full-page redirect).
