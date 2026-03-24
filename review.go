@@ -215,6 +215,7 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 
 		if cr.userQuit {
 			stats.StopReason = "user quit"
+			rc.Stats.UserQuit = true
 			break
 		}
 
@@ -258,6 +259,7 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 			BatchSize:       1,
 			StdinCh:         rc.StdinCh,
 			Log:             rc.Log,
+			Stats:           rc.Stats,
 			SuppressSummary: true,
 			SkipRecovery:    true,
 			SkipEpicClose:   true,
@@ -265,6 +267,10 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 		if err := run(runCfg); err != nil {
 			rc.Log.Log("%sOrchestration error: %v%s", cRed, err, cReset)
 			stats.StopReason = "orchestration error"
+			break
+		}
+		if rc.Stats.UserQuit {
+			stats.StopReason = "user quit"
 			break
 		}
 

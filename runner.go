@@ -600,6 +600,7 @@ func run(cfg *Config) error {
 
 		if result.UserQuit {
 			log.Log("Quitting at user request.")
+			stats.UserQuit = true
 			break
 		}
 		if result.UserSkipped {

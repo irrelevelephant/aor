@@ -124,6 +124,7 @@ type RunStats struct {
 	EpicsClosed         int
 	EpicsVerified       int
 	VerifySessions      int
+	UserQuit            bool
 	StartedAt           time.Time
 	TotalCostUSD        float64
 	TotalInput          int

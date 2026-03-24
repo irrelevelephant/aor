@@ -291,6 +291,9 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 		if runErr != nil {
 			log.Log("%sEpic %s failed: %v%s", cRed, label, runErr, cReset)
 		}
+		if stats.UserQuit {
+			break
+		}
 
 		// Merge worktree back to main and clean up. Skip merge if the run
 		// failed — leave the worktree intact for inspection.
@@ -320,6 +323,9 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 				}
 				if err := runRevDirect(revCfg, rc); err != nil {
 					log.Log("%sReview for epic %s failed: %v (continuing)%s", cYellow, label, err, cReset)
+				}
+				if stats.UserQuit {
+					break
 				}
 			} else {
 				log.Log("No new commits for epic %s — skipping review", label)
