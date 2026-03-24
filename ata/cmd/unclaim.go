@@ -38,6 +38,8 @@ func Unclaim(d *db.DB, args []string) error {
 	ws := *workspace
 	if ws == "" {
 		ws = detectWorkspace(d)
+	} else if resolved, err := d.ResolveWorkspace(ws); err == nil {
+		ws = resolved
 	}
 
 	tasks, err := d.UnclaimByWorkspace(ws)

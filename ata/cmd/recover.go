@@ -16,7 +16,14 @@ func Recover(d *db.DB, args []string) error {
 		return err
 	}
 
-	recovered, err := d.RecoverStuckTasks(*workspace)
+	ws := *workspace
+	if ws != "" {
+		if resolved, err := d.ResolveWorkspace(ws); err == nil {
+			ws = resolved
+		}
+	}
+
+	recovered, err := d.RecoverStuckTasks(ws)
 	if err != nil {
 		return err
 	}

@@ -91,7 +91,14 @@ func tagList(d *db.DB, args []string) error {
 		return err
 	}
 
-	tags, err := d.ListAllTags(*workspace)
+	ws := *workspace
+	if ws != "" {
+		if resolved, err := d.ResolveWorkspace(ws); err == nil {
+			ws = resolved
+		}
+	}
+
+	tags, err := d.ListAllTags(ws)
 	if err != nil {
 		return err
 	}

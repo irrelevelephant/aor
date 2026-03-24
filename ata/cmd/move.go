@@ -58,6 +58,10 @@ func Move(d *db.DB, args []string) error {
 	ws := *workspace
 	if ws == "" && len(positional) == 0 {
 		ws = detectWorkspace(d)
+	} else if ws != "" {
+		if resolved, err := d.ResolveWorkspace(ws); err == nil {
+			ws = resolved
+		}
 	}
 
 	var tasks []model.Task
