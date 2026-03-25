@@ -176,8 +176,11 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 
 	stats := &ReviewStats{StartedAt: time.Now()}
 
-	// Generate rev tag from worktree/directory basename.
+	// Generate rev tag scoped to the epic (or workspace basename as fallback).
 	revTag := "rev-" + filepath.Base(workDir)
+	if cfg.EpicID != "" {
+		revTag = "rev-" + cfg.EpicID
+	}
 
 	rc.Log.Log("Code review starting (base: %s, max_rounds: %d, yolo: %v, tag: %s)",
 		base, cfg.MaxRounds, cfg.Yolo, revTag)
