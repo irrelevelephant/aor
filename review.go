@@ -238,7 +238,7 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 		}
 
 		// 3. Check for open tagged tasks.
-		openTasks, err := getReadyTasks("", rvc.revTag, rvc.cfg.Workspace)
+		openTasks, err := getReadyTasks(rvc.cfg.EpicID, rvc.revTag, rvc.cfg.Workspace)
 		if err != nil {
 			rc.Log.Log("%sError checking tagged tasks: %v%s", cRed, err, cReset)
 			stats.StopReason = "task check error"
@@ -255,6 +255,7 @@ func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 
 		// 4. Run orchestration loop filtered to the rev tag.
 		runCfg := &Config{
+			EpicFilter:      rvc.cfg.EpicID,
 			TagFilter:       rvc.revTag,
 			Workspace:       rvc.cfg.Workspace,
 			WorkDir:         rvc.workDir,
