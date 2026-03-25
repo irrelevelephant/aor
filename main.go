@@ -38,7 +38,7 @@ type Config struct {
 	WorkDir         string // actual working directory (worktree path when in a linked worktree)
 	ResumeSessionID string // set internally when resuming an existing session
 
-	MaxRounds int // max rounds for epic verification and review loops
+	MaxRounds int // max rounds for epic verification loops
 
 	// Shared resources — set when run() is called as a sub-process (e.g. sweep mode).
 	StdinCh         <-chan string // shared stdin reader (nil = create own)
@@ -88,8 +88,7 @@ func main() {
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would happen without running")
 	flag.BoolVar(&cfg.Supervised, "supervised", false, "Approve each task before running")
 	flag.BoolVar(&cfg.Unclaim, "unclaim", false, "Reset all in-progress tasks to queue and exit")
-	flag.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Max rounds for epic verification / review loops")
-	rev := flag.Bool("rev", false, "Run code review after each epic completes")
+	flag.IntVar(&cfg.MaxRounds, "max-rounds", 3, "Max rounds for epic verification loops")
 	worktree := flag.Bool("worktree", false, "Run each epic in an isolated git worktree")
 	noYolo := flag.Bool("no-yolo", false, "Require permission prompts (default: skip permissions)")
 
@@ -109,7 +108,7 @@ Usage:
   aor rev [flags] [<ref>]        Iterative code review (see: aor rev --help)
   aor spec [flags] <file.md>...  Spec-driven task planning and execution
 
-Use -epic ID1,ID2 to process multiple epics serially. Use --rev to review after each.
+Use -epic ID1,ID2 to process multiple epics serially.
 Use --worktree with --epic to run each epic in an isolated git worktree.
 
 Controls while running:
@@ -151,8 +150,8 @@ Flags:
 	}
 
 	epics := collectEpics(cfg.EpicFilter)
-	if len(epics) > 1 || *rev || *worktree {
-		if err := runMultiEpic(cfg, epics, *rev, *worktree); err != nil {
+	if len(epics) > 1 || *worktree {
+		if err := runMultiEpic(cfg, epics, *worktree); err != nil {
 			fmt.Fprintf(os.Stderr, "%serror: %v%s\n", cRed, err, cReset)
 			os.Exit(1)
 		}
@@ -200,10 +199,10 @@ func collectEpics(epicFlag string) []string {
 	return []string{""}
 }
 
-// runMultiEpic processes multiple epics serially, optionally running code review
-// after each epic's work completes. When useWorktree is true, each epic runs
-// in an isolated git worktree that is merged back to main on completion.
-func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
+// runMultiEpic processes multiple epics serially. When useWorktree is true,
+// each epic runs in an isolated git worktree that is merged back to main on
+// completion.
+func runMultiEpic(cfg *Config, epics []string, useWorktree bool) error {
 	log, err := NewLogger(cfg.LogDir)
 	if err != nil {
 		return err
@@ -212,7 +211,6 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 
 	stdinCh := startStdinReader()
 	stats := &RunStats{StartedAt: time.Now()}
-	rc := &RunContext{Log: log, StdinCh: stdinCh, Stats: stats}
 
 	cfg.Log = log
 	cfg.StdinCh = stdinCh
@@ -220,32 +218,8 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 	cfg.SuppressSummary = true
 
 	epicLabels := makeEpicLabels(epics)
-	log.Log("Multi-epic run: %s (rev=%v, worktree=%v)", strings.Join(epicLabels, ", "), rev, useWorktree)
+	log.Log("Multi-epic run: %s (worktree=%v)", strings.Join(epicLabels, ", "), useWorktree)
 	fmt.Println()
-
-	// When review is enabled, expand each epic into its sub-epic tree
-	// (depth-first: children before parent) so each sub-epic gets its own
-	// run → review → close cycle before the parent is processed.
-	if rev {
-		var expanded []string
-		for _, epic := range epics {
-			if epic == "" {
-				expanded = append(expanded, "")
-			} else {
-				subEpics, err := expandSubEpics(epic)
-				if err != nil {
-					log.Log("%sFailed to expand sub-epics for %s: %v — processing as single epic%s",
-						cYellow, epic, err, cReset)
-					expanded = append(expanded, epic)
-				} else {
-					expanded = append(expanded, subEpics...)
-				}
-			}
-		}
-		epics = expanded
-		epicLabels = makeEpicLabels(epics)
-		log.Log("Expanded epic list (with sub-epics): %s", strings.Join(epicLabels, ", "))
-	}
 
 	for i, epic := range epics {
 		label := epicLabels[i]
@@ -258,12 +232,6 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 		// Shallow-copy cfg so the loop doesn't mutate the caller's original.
 		iterCfg := *cfg
 		iterCfg.EpicFilter = epic
-		// When review is enabled, defer epic closure until after review
-		// tasks have been filed and resolved — otherwise the epic gets
-		// closed before runRevDirect has a chance to file tasks under it.
-		if rev {
-			iterCfg.SkipEpicClose = true
-		}
 
 		// Create worktree for this epic if requested.
 		var wtPath string
@@ -276,11 +244,6 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 			wtPath = wt
 			iterCfg.WorkDir = wtPath
 			log.Log("Created worktree for epic %s at %s", label, wtPath)
-		}
-
-		var preSHA string
-		if rev {
-			preSHA, _ = headSHA()
 		}
 
 		runErr := run(&iterCfg)
@@ -302,36 +265,6 @@ func runMultiEpic(cfg *Config, epics []string, rev, useWorktree bool) error {
 					cYellow, label, err, wtPath, cReset)
 			} else {
 				log.Log("Worktree for epic %s integrated to main (%s)", label, strategy)
-			}
-		}
-
-		if rev {
-			postSHA, _ := headSHA()
-			if postSHA != preSHA {
-				log.Log("Running code review for epic %s (base: %s)", label, preSHA)
-				revCfg := &ReviewConfig{
-					Base:      preSHA,
-					MaxRounds: cfg.MaxRounds,
-					Yolo:      cfg.Yolo,
-					LogDir:    cfg.LogDir,
-					Workspace: cfg.Workspace,
-					EpicID:    epic,
-				}
-				if err := runRevDirect(revCfg, rc); err != nil {
-					log.Log("%sReview for epic %s failed: %v (continuing)%s", cYellow, label, err, cReset)
-				}
-				if stats.UserQuit {
-					break
-				}
-			} else {
-				log.Log("No new commits for epic %s — skipping review", label)
-			}
-
-			// Now that review tasks have been filed and resolved,
-			// close the epic if all children are complete.
-			closeEpicsUnder(epic, cfg, rc)
-			if stats.UserQuit {
-				break
 			}
 		}
 	}

@@ -303,7 +303,7 @@ aor rev [flags] [<ref>]        Iterative code review with sweep mode
 aor spec [flags] <file.md…>   Spec-driven task planning and execution
 ```
 
-Use `-epic ID1,ID2` to process multiple epics serially — all tasks for the first epic, then the second, etc. Use `--rev` to automatically run code review after each epic completes.
+Use `-epic ID1,ID2` to process multiple epics serially — all tasks for the first epic, then the second, etc. Use `aor rev` separately after work completes to review commits.
 
 ### Flags
 
@@ -311,8 +311,7 @@ Use `-epic ID1,ID2` to process multiple epics serially — all tasks for the fir
 |------|---------|-------------|
 | `--epic ID` | | Only work on tasks under this epic (comma-separated for multiple) |
 | `--tag TAG` | | Only work on tasks with this tag |
-| `--rev` | false | Run code review after each epic completes |
-| `--max-rounds N` | 3 | Max rounds for epic verification / review loops |
+| `--max-rounds N` | 3 | Max rounds for epic verification loops |
 | `--max-tasks N` | 0 (unlimited) | Stop after N tasks |
 | `--batch-size N` | 1 | Tasks per Claude session before fresh context |
 | `--dry-run` | false | Show what would happen without running |
@@ -326,8 +325,6 @@ Use `-epic ID1,ID2` to process multiple epics serially — all tasks for the fir
 
 ```sh
 aor -epic abc,def,ghi          # process epics abc, def, ghi serially
-aor -epic abc,def --rev        # process each epic, review commits after each
-aor --rev                      # process all tasks, review all commits at end
 ```
 
 ### `aor rev` — Iterative Code Review with Sweep Mode

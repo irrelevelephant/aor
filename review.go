@@ -162,7 +162,6 @@ func runRev(args []string) error {
 }
 
 // runRevDirect runs the review logic with an already-initialized logger and stdin channel.
-// It is called by runRev (subcommand entry point) and by runMultiEpic (inline review).
 func runRevDirect(cfg *ReviewConfig, rc *RunContext) error {
 	base, err := resolveBase(cfg.Base)
 	if err != nil {

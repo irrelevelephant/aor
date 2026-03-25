@@ -165,18 +165,17 @@ Two nested loops in `review.go`:
 
 The outer loop has no hard cycle cap — convergence checks in the inner loop and the "no open tasks" check provide the safety net. The `revContext` struct holds stable state (config, base ref, tag, logger, stdin channel) shared across sweep cycles.
 
-The review logic lives in `runRevDirect()`, which accepts a pre-initialized logger and stdin channel. The `runRev()` entry point is a thin wrapper that parses flags and creates these resources. This split allows `runMultiEpic()` to call `runRevDirect()` inline with shared resources (avoiding dual stdin reader problems).
+The review logic lives in `runRevDirect()`, which accepts a pre-initialized logger and stdin channel. The `runRev()` entry point is a thin wrapper that parses flags and creates these resources.
 
 ## Multi-Epic Processing
 
 `runMultiEpic()` in `main.go` processes multiple epics serially. Comma-separated `-epic` values are collected by `collectEpics()` and looped over:
 
-1. Record pre-epic HEAD SHA
-2. Run the orchestration loop (`run()`) for this epic
-3. If `--rev` is set and HEAD advanced, run `runRevDirect()` with the pre-epic SHA as base
-4. Continue to the next epic
+1. Run the orchestration loop (`run()`) for this epic
+2. If using worktrees, merge the worktree back to main
+3. Continue to the next epic
 
-Shared resources (logger, stdin channel, `RunStats`) are created once and passed to each `run()` call via Config fields. Each iteration gets a shallow copy of the Config to avoid mutating the original. Review failures don't stop the run — they're logged and processing continues to the next epic.
+Shared resources (logger, stdin channel, `RunStats`) are created once and passed to each `run()` call via Config fields. Each iteration gets a shallow copy of the Config to avoid mutating the original. Code review is done separately via `aor rev`.
 
 ## ata — Task Management
 
