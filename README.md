@@ -178,7 +178,7 @@ Any task can be promoted to an epic. Epics have a markdown **spec** (goals, cons
 
 ```sh
 ata create "Rewrite auth system"
-ata promote <id> --spec-file auth-spec.md
+ata promote <id> --spec-file auth-spec.md  # or --spec "inline text"
 ata create "Migrate session tokens" --epic <id>
 ata create "Add OAuth2 provider" --epic <id>
 ```
@@ -269,8 +269,8 @@ ata reopen ID [--json]                                              Reopen a clo
 ata ready [--workspace PATH] [--epic ID] [--tag TAG] [--limit N] [--json]
 ata claim ID [--json]
 ata unclaim [ID] [--workspace PATH] [--json]
-ata promote ID [--spec-file PATH]                          Promote task to epic
-ata spec ID [--set-file PATH] [--json]
+ata promote ID [--spec TEXT] [--spec-file PATH]            Promote task to epic
+ata spec ID [--set TEXT] [--set-file PATH] [--json]
 ata comment ID BODY [--author human|agent|system] [--json]
 ata dep add TASK DEPENDS_ON                                Add dependency
 ata dep rm TASK DEPENDS_ON                                 Remove dependency

@@ -79,8 +79,17 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 	c := client.New(remote.URL)
 
 	execArgs := args
-	if remote.Workspace != "" && !hasFlag(args, "workspace") && acceptsWorkspaceFlag(subcmd) {
-		execArgs = append([]string{"--workspace", remote.Workspace}, args...)
+
+	// Resolve file-based flags client-side: read the local file and replace
+	// with the inline equivalent so the remote server doesn't need the file.
+	execArgs, err = resolveFileFlags(execArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1, true
+	}
+
+	if remote.Workspace != "" && !hasFlag(execArgs, "workspace") && acceptsWorkspaceFlag(subcmd) {
+		execArgs = append([]string{"--workspace", remote.Workspace}, execArgs...)
 	}
 
 	stdout, stderr, exitCode, err := c.Exec(subcmd, execArgs)
@@ -124,6 +133,53 @@ func resolveWorkspaceForRemote(args []string) string {
 	}
 
 	return toplevel
+}
+
+// fileFlagToInline maps file-based flags to their inline equivalents.
+// When proxying to a remote, the file is read locally and sent as the inline flag.
+var fileFlagToInline = map[string]string{
+	"--spec-file": "--spec",
+	"--desc-file": "--description",
+	"--set-file":  "--set",
+}
+
+// resolveFileFlags reads any file-based flags (--spec-file, --desc-file, --set-file)
+// from the local filesystem and replaces them with their inline equivalents
+// (--spec, --description, --set) so the remote server receives the content directly.
+func resolveFileFlags(args []string) ([]string, error) {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Handle --flag=value form.
+		if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
+			if inlineFlag, ok := fileFlagToInline[parts[0]]; ok {
+				content, err := os.ReadFile(parts[1])
+				if err != nil {
+					return nil, fmt.Errorf("read %s: %w", parts[0], err)
+				}
+				out = append(out, inlineFlag, string(content))
+				continue
+			}
+		}
+
+		// Handle --flag value form.
+		if inlineFlag, ok := fileFlagToInline[arg]; ok {
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
+			content, err := os.ReadFile(args[i])
+			if err != nil {
+				return nil, fmt.Errorf("read %s: %w", arg, err)
+			}
+			out = append(out, inlineFlag, string(content))
+			continue
+		}
+
+		out = append(out, arg)
+	}
+	return out, nil
 }
 
 // acceptsWorkspaceFlag returns true for subcommands that define a --workspace flag.

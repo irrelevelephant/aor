@@ -84,9 +84,11 @@ Epics are tasks with `is_epic=true`. Epics have **specs** (structured requiremen
 
 ```bash
 ata promote ID                          # promote task to epic
-ata promote ID --spec-file arch.md      # promote with spec
+ata promote ID --spec "Goals: ..."      # promote with inline spec
+ata promote ID --spec-file arch.md      # promote with spec from file
 ata spec ID                             # view epic spec (epic-only)
-ata spec ID --set-file spec.md          # set epic spec (epic-only)
+ata spec ID --set "Goals: ..."          # set epic spec inline (epic-only)
+ata spec ID --set-file spec.md          # set epic spec from file (epic-only)
 ata epic-close-eligible                 # list epics eligible for close (all children closed)
 ata epic-close-eligible --close         # actually close eligible epics
 ```
@@ -199,7 +201,7 @@ ata create "Refactor auth middleware" --tag backend
 **Plan an epic:**
 ```bash
 ata create "User onboarding redesign" --status queue
-ata promote ID --spec-file onboarding-spec.md
+ata promote ID --spec-file onboarding-spec.md  # or --spec "inline text"
 ata create "Design new welcome flow" --epic ID --status queue
 ata create "Implement email verification" --epic ID --status queue
 ata dep add EMAIL_TASK WELCOME_TASK   # email depends on welcome flow
