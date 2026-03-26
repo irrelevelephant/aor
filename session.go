@@ -321,11 +321,34 @@ func runSession(cfg *Config, rc *RunContext, prompt string) *SessionResult {
 // envAtaWorkspace is the environment variable that overrides workspace
 // detection in ata commands. Set on child Claude processes so tasks created
 // from worktrees resolve to the main repo's registered workspace.
-const envAtaWorkspace = "ATA_WORKSPACE"
+const (
+	envAtaWorkspace      = "ATA_WORKSPACE"
+	envAnthropicAPIKey   = "ANTHROPIC_API_KEY"
+	envAORAnthropicKey   = "AOR_ANTHROPIC_API_KEY"
+)
 
 // envWithWorkspace returns the current environment with ATA_WORKSPACE set.
+// It always strips ANTHROPIC_API_KEY so orchestrated Claude processes use the
+// user's Claude subscription rather than a raw API key. If AOR_ANTHROPIC_API_KEY
+// is set, its value is passed through as ANTHROPIC_API_KEY to the child process.
 func envWithWorkspace(workspace string) []string {
-	return append(os.Environ(), envAtaWorkspace+"="+workspace)
+	var override string
+	osEnv := os.Environ()
+	env := make([]string, 0, len(osEnv)+2)
+	for _, e := range osEnv {
+		switch {
+		case strings.HasPrefix(e, envAnthropicAPIKey+"="):
+			continue
+		case strings.HasPrefix(e, envAORAnthropicKey+"="):
+			override = strings.TrimPrefix(e, envAORAnthropicKey+"=")
+			continue
+		}
+		env = append(env, e)
+	}
+	if override != "" {
+		env = append(env, envAnthropicAPIKey+"="+override)
+	}
+	return append(env, envAtaWorkspace+"="+workspace)
 }
 
 // toolGutter is the left-border prefix for all tool-related output,
