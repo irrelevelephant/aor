@@ -14,8 +14,26 @@ type RemoteConfig struct {
 
 // Config holds ata configuration, primarily remote workspace mappings.
 type Config struct {
-	Remotes       map[string]RemoteConfig `json:"remotes"`
-	DefaultRemote string                  `json:"default_remote,omitempty"`
+	Remotes          map[string]RemoteConfig `json:"remotes"`
+	DefaultRemote    string                  `json:"default_remote,omitempty"`
+	DefaultWorkspace string                  `json:"default_workspace,omitempty"`
+	Workspaces       map[string]string       `json:"workspaces,omitempty"` // directory path → workspace name-or-path
+}
+
+// ResolveWorkspaceDir checks directory mappings for dir and mainWorktree,
+// then falls back to DefaultWorkspace. Returns "" if nothing is configured.
+func (c Config) ResolveWorkspaceDir(dir, mainWorktree string) string {
+	if c.Workspaces != nil {
+		if ws, ok := c.Workspaces[dir]; ok {
+			return ws
+		}
+		if mainWorktree != "" && mainWorktree != dir {
+			if ws, ok := c.Workspaces[mainWorktree]; ok {
+				return ws
+			}
+		}
+	}
+	return c.DefaultWorkspace
 }
 
 // Path returns the default config file path (~/.ata/config.json).

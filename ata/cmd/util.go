@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"aor/ata/config"
 	"aor/ata/db"
 )
 
@@ -48,37 +49,44 @@ func GitMainWorktree() string {
 // main repo's registered workspace.
 const envAtaWorkspace = "ATA_WORKSPACE"
 
-// detectWorkspace auto-detects the workspace path, resolving worktrees
-// to their registered main repo when possible.
-// If ATA_WORKSPACE is set, it is used directly.
+// detectWorkspace auto-detects the workspace path.
+// Priority: ATA_WORKSPACE env → config directory mapping → config default_workspace → git auto-detection.
 func detectWorkspace(d *db.DB) string {
 	if ws := os.Getenv(envAtaWorkspace); ws != "" {
 		return ws
 	}
 
 	toplevel := GitToplevel()
-	if toplevel == "" {
+	dir := toplevel
+	if dir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return ""
 		}
-		return cwd
+		dir = cwd
 	}
 
-	// If toplevel is a registered workspace, use it directly.
+	mainWT := ""
+	if toplevel != "" {
+		mainWT = GitMainWorktree()
+	}
+
+	cfg, _ := config.Load()
+	if ws := cfg.ResolveWorkspaceDir(dir, mainWT); ws != "" {
+		return resolveWorkspaceFlag(d, ws)
+	}
+
+	if toplevel == "" {
+		return dir
+	}
 	if ok, _ := d.IsRegisteredWorkspace(toplevel); ok {
 		return toplevel
 	}
-
-	// Try the main worktree (first entry in `git worktree list`).
-	main := GitMainWorktree()
-	if main != "" && main != toplevel {
-		if ok, _ := d.IsRegisteredWorkspace(main); ok {
-			return main
+	if mainWT != "" && mainWT != toplevel {
+		if ok, _ := d.IsRegisteredWorkspace(mainWT); ok {
+			return mainWT
 		}
 	}
-
-	// Fall back to git toplevel.
 	return toplevel
 }
 

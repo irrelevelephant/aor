@@ -70,7 +70,7 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 		return 0, false
 	}
 
-	workspace := resolveWorkspaceForRemote(args)
+	workspace := resolveWorkspaceForRemote(cfg, args)
 	remote := cfg.ResolveRemote(workspace)
 	if remote == nil {
 		return 0, false
@@ -108,7 +108,7 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 
 // resolveWorkspaceForRemote determines the workspace without opening the DB.
 // Mirrors detectWorkspace() logic but skips the DB-dependent IsRegisteredWorkspace check.
-func resolveWorkspaceForRemote(args []string) string {
+func resolveWorkspaceForRemote(cfg config.Config, args []string) string {
 	for i, a := range args {
 		if a == "--workspace" && i+1 < len(args) {
 			return args[i+1]
@@ -123,15 +123,27 @@ func resolveWorkspaceForRemote(args []string) string {
 	}
 
 	toplevel := cmd.GitToplevel()
-	if toplevel == "" {
+	dir := toplevel
+	if dir == "" {
 		cwd, _ := os.Getwd()
-		return cwd
+		dir = cwd
 	}
 
-	if main := cmd.GitMainWorktree(); main != "" && main != toplevel {
-		return main
+	mainWT := ""
+	if toplevel != "" {
+		mainWT = cmd.GitMainWorktree()
 	}
 
+	if ws := cfg.ResolveWorkspaceDir(dir, mainWT); ws != "" {
+		return ws
+	}
+
+	if toplevel == "" {
+		return dir
+	}
+	if mainWT != "" && mainWT != toplevel {
+		return mainWT
+	}
 	return toplevel
 }
 
@@ -236,6 +248,24 @@ Commands:
   remote    Manage remote server connections
 
 Flags:
-  --json    Output JSON (available on most commands)
+  --json        Output JSON (available on most commands)
+  --workspace   Override workspace for this command
+
+Workspace resolution (highest to lowest priority):
+  1. --workspace flag
+  2. ATA_WORKSPACE environment variable
+  3. Directory mapping in ~/.ata/config.json ("workspaces")
+  4. Default workspace in ~/.ata/config.json ("default_workspace")
+  5. Git repo auto-detection
+
+Config example (~/.ata/config.json):
+  {
+    "default_workspace": "my-workspace",
+    "workspaces": {
+      "/path/to/dir": "other-workspace"
+    }
+  }
+
+Workspace values can be names (from ata init --name) or full paths.
 `)
 }
