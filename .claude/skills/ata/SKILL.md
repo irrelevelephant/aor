@@ -12,7 +12,7 @@ allowed-tools: Bash
 
 # ata — Agent TAsks
 
-`ata` is a SQLite-backed task manager at `~/.ata/ata.db`. All tasks are scoped to a **workspace** (auto-detected from git root). The `ata` binary should be on $PATH. If not, check `~/aor/ata/`.
+`ata` is a SQLite-backed task manager at `~/.ata/ata.db`. All tasks are scoped to a **workspace** (auto-detected from git root). The `ata` binary should be on $PATH.
 
 ## Task lifecycle
 
@@ -69,7 +69,7 @@ ata close ID "reason text"      # with close reason
 ata reopen ID                   # move closed task back to backlog
 ```
 
-### Claiming (used by aor orchestrator)
+### Claiming
 ```bash
 ata claim ID                    # set to in_progress, store PID
 ata claim ID --pid 12345        # override PID
