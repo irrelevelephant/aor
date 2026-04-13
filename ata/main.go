@@ -31,6 +31,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "config":
+		if err := cmd.Config(args); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Check if this workspace is configured for a remote server.
@@ -246,6 +252,7 @@ Commands:
   restore   Import workspace from a snapshot archive
   serve     Start web UI server
   remote    Manage remote server connections
+  config    Manage workspace config (default workspace, directory mappings)
 
 Flags:
   --json        Output JSON (available on most commands)
