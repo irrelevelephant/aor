@@ -98,6 +98,8 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 		execArgs = append([]string{"--workspace", remote.Workspace}, execArgs...)
 	}
 
+	execArgs = injectClaimClientContext(subcmd, execArgs)
+
 	stdout, stderr, exitCode, err := c.Exec(subcmd, execArgs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "remote error: %v\n", err)
@@ -208,6 +210,28 @@ func acceptsWorkspaceFlag(subcmd string) bool {
 		return true
 	}
 	return false
+}
+
+// injectClaimClientContext adds --host and --pid defaults resolved on the
+// client side for `claim`, so a remote server records the caller's identity
+// instead of its own.
+func injectClaimClientContext(subcmd string, args []string) []string {
+	if subcmd != "claim" {
+		return args
+	}
+	var prefix []string
+	if !hasFlag(args, "host") {
+		if h, err := os.Hostname(); err == nil && h != "" {
+			prefix = append(prefix, "--host", h)
+		}
+	}
+	if !hasFlag(args, "pid") {
+		prefix = append(prefix, "--pid", fmt.Sprintf("%d", os.Getpid()))
+	}
+	if len(prefix) == 0 {
+		return args
+	}
+	return append(prefix, args...)
 }
 
 // hasFlag checks if a flag name appears in args.
