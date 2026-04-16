@@ -3,9 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -15,16 +13,6 @@ func outputJSON(v any) error {
 	return enc.Encode(v)
 }
 
-// GitToplevel returns the git rev-parse --show-toplevel path, or "" if not in a git repo.
-func GitToplevel() string {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// flagWasSet returns true if a flag was explicitly provided on the command line.
 func flagWasSet(fs *flag.FlagSet, name string) bool {
 	found := false
 	fs.Visit(func(f *flag.Flag) {
@@ -33,10 +21,6 @@ func flagWasSet(fs *flag.FlagSet, name string) bool {
 		}
 	})
 	return found
-}
-
-func exitUsage(msg string) error {
-	return fmt.Errorf("%s\nRun 'afl <command> --help' for usage", msg)
 }
 
 // splitFlagsAndPositional separates flag arguments from positional arguments.
@@ -50,13 +34,11 @@ func splitFlagsAndPositional(args []string, flagsWithValue map[string]bool) (fla
 		}
 		if strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-") {
 			name := strings.TrimLeft(arg, "-")
-			// Handle --flag=value
 			if idx := strings.Index(name, "="); idx >= 0 {
 				flags = append(flags, arg)
 				continue
 			}
 			flags = append(flags, arg)
-			// If the flag takes a value, consume the next arg too.
 			if flagsWithValue[name] && i+1 < len(args) {
 				i++
 				flags = append(flags, args[i])

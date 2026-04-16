@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"aor/afl/model"
 )
@@ -90,7 +91,7 @@ func (d *DB) UpdateStep(id string, name, description *string) (*model.Step, erro
 		return nil, fmt.Errorf("no fields to update")
 	}
 
-	query := "UPDATE steps SET " + joinStrings(setClauses, ", ") + " WHERE id = ?"
+	query := "UPDATE steps SET " + strings.Join(setClauses, ", ") + " WHERE id = ?"
 	args = append(args, id)
 
 	res, err := d.Exec(query, args...)
@@ -123,14 +124,3 @@ func (d *DB) DeleteStep(id string) error {
 	return nil
 }
 
-// joinStrings joins strings with a separator. Avoids importing strings package.
-func joinStrings(parts []string, sep string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += sep + p
-	}
-	return result
-}

@@ -1,15 +1,20 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
+	"sync"
 
+	"aor/afl/api"
 	"aor/afl/db"
 	"aor/afl/model"
 )
@@ -107,6 +112,9 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, opts ...Option) *Server {
 	// Screenshots.
 	mux.HandleFunc("GET /afl/screenshots/{id}", srv.handleScreenshot)
 
+	// API.
+	mux.HandleFunc("POST /api/v1/afl/exec", srv.handleAPIExec)
+
 	return srv
 }
 
@@ -161,41 +169,16 @@ func (s *Server) handleDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flows, err := s.db.ListFlows(dom.ID)
+	flowCoverages, err := s.db.DomainFlowsCoverage(dom.ID)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
-	// Build coverage data for each flow.
-	type flowWithCoverage struct {
-		Flow  model.Flow
-		Paths []model.PathCoverage
-	}
-
-	var flowData []flowWithCoverage
-	coverageMap := make(map[string]map[string]int) // pathID -> platform -> count
-	totalStepsMap := make(map[string]int)           // pathID -> total steps
-
-	for _, f := range flows {
-		fc, err := s.db.FlowCoverage(f.ID)
-		if err != nil {
-			continue
-		}
-		fwc := flowWithCoverage{Flow: f, Paths: fc.Paths}
-		for _, pc := range fc.Paths {
-			coverageMap[pc.Path.ID] = pc.Coverage
-			totalStepsMap[pc.Path.ID] = pc.TotalSteps
-		}
-		flowData = append(flowData, fwc)
-	}
-
 	s.render(w, "domain.html", map[string]any{
-		"Domain":        dom,
-		"Flows":         flowData,
-		"Platforms":     model.ValidPlatforms,
-		"Coverage":      coverageMap,
-		"TotalStepsMap": totalStepsMap,
+		"Domain":    dom,
+		"Flows":     flowCoverages,
+		"Platforms": model.ValidPlatforms,
 	})
 }
 
@@ -286,60 +269,127 @@ func (s *Server) handleFlow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var activePathData map[string]any
+	if activePath != nil {
+		activePathData = map[string]any{
+			"Steps":        activeSteps,
+			"ScreenshotJS": screenshotJSData,
+		}
+	}
+
 	s.render(w, "flow.html", map[string]any{
-		"Flow":       flow,
-		"DomainID":   dom.ID,
-		"DomainName": dom.Name,
-		"Platforms":  model.ValidPlatforms,
-		"Paths":      pathData,
-		"ActivePath": func() any {
-			if activePath != nil {
-				return activePath
-			}
-			return nil
-		}(),
-		"ActivePathData": func() any {
-			if activePath != nil {
-				return map[string]any{
-					"Steps":        activeSteps,
-					"ScreenshotJS": screenshotJSData,
-				}
-			}
-			return nil
-		}(),
-		"ScreenshotMap": screenshotMap,
+		"Flow":           flow,
+		"DomainID":       dom.ID,
+		"DomainName":     dom.Name,
+		"Platforms":      model.ValidPlatforms,
+		"Paths":          pathData,
+		"ActivePath":     activePath,
+		"ActivePathData": activePathData,
+		"ScreenshotMap":  screenshotMap,
 	})
 }
 
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	ss, err := s.db.GetScreenshot(id)
+	ss, err := s.db.GetScreenshotWithPath(id)
 	if err != nil {
+		http.Error(w, "screenshot not found", 500)
+		return
+	}
+	if ss == nil {
 		http.Error(w, "screenshot not found", 404)
 		return
 	}
 
-	// Look up the step to get the path, then the flow, to reconstruct the nested directory.
-	step, err := s.db.GetStep(ss.StepID)
-	if err != nil {
-		http.Error(w, "step not found for screenshot", 500)
-		return
-	}
-	path, err := s.db.GetPath(step.PathID)
-	if err != nil {
-		http.Error(w, "path not found for screenshot", 500)
-		return
-	}
-	flow, err := s.db.GetFlow(path.FlowID)
-	if err != nil {
-		http.Error(w, "flow not found for screenshot", 500)
-		return
-	}
-
-	// Screenshots are stored as: screenshotsDir/flowID/stepID/platform/storedName
-	filePath := filepath.Join(s.screenshotsDir, flow.ID, ss.StepID, ss.Platform, ss.StoredName)
+	filePath := filepath.Join(s.screenshotsDir, ss.FlowID, ss.StepID, ss.Platform, ss.StoredName)
 	w.Header().Set("Content-Type", ss.MimeType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	http.ServeFile(w, r, filePath)
+}
+
+// execMu serializes API exec calls since we redirect os.Stdout/os.Stderr.
+var execMu sync.Mutex
+
+func (s *Server) handleAPIExec(w http.ResponseWriter, r *http.Request) {
+	if s.dispatch == nil {
+		http.Error(w, "exec API not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req api.ExecRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, api.ExecResponse{
+			ExitCode: 1,
+			Stderr:   "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	stdout, stderr, exitCode := s.execCommand(req.Command, req.Args)
+	s.sse.Broadcast("afl_updated", "api")
+
+	writeJSON(w, http.StatusOK, api.ExecResponse{
+		ExitCode: exitCode,
+		Stdout:   stdout,
+		Stderr:   stderr,
+	})
+}
+
+func (s *Server) execCommand(command string, args []string) (stdout, stderr string, exitCode int) {
+	execMu.Lock()
+	defer execMu.Unlock()
+
+	oldStdout := os.Stdout
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return "", "pipe error: " + err.Error(), 1
+	}
+	os.Stdout = outW
+
+	oldStderr := os.Stderr
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		outW.Close()
+		outR.Close()
+		os.Stdout = oldStdout
+		return "", "pipe error: " + err.Error(), 1
+	}
+	os.Stderr = errW
+
+	defer func() {
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+	}()
+
+	var outBuf, errBuf bytes.Buffer
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); io.Copy(&outBuf, outR) }()
+	go func() { defer wg.Done(); io.Copy(&errBuf, errR) }()
+
+	cmdErr := s.dispatch(s.db, command, args)
+
+	outW.Close()
+	errW.Close()
+	wg.Wait()
+	outR.Close()
+	errR.Close()
+
+	code := 0
+	errStr := errBuf.String()
+	if cmdErr != nil {
+		code = 1
+		if errStr == "" {
+			errStr = cmdErr.Error()
+		}
+	}
+
+	return outBuf.String(), errStr, code
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
 }

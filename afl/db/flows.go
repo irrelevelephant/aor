@@ -114,22 +114,6 @@ func (d *DB) DeleteFlow(id string) error {
 	return nil
 }
 
-// UpdateFlowOrder updates a flow's sort order.
-func (d *DB) UpdateFlowOrder(id string, order int) error {
-	res, err := d.Exec(`UPDATE flows SET sort_order = ? WHERE id = ?`, order, id)
-	if err != nil {
-		return fmt.Errorf("update flow order: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("flow %s not found", id)
-	}
-	return nil
-}
-
 func scanFlowRows(rows *sql.Rows) ([]model.Flow, error) {
 	var flows []model.Flow
 	for rows.Next() {

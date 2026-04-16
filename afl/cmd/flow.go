@@ -3,13 +3,13 @@ package cmd
 import (
 	"flag"
 	"fmt"
+	"strings"
 
 	"aor/afl/db"
 	"aor/afl/model"
 	"aor/afl/parser"
 )
 
-// Flow routes flow subcommands.
 func Flow(d *db.DB, args []string) error {
 	if len(args) == 0 {
 		return flowUsage()
@@ -320,26 +320,14 @@ func flowImport(d *db.DB, args []string) error {
 		fmt.Printf("domain exists: %s\n", parsed.Slug)
 	}
 	if len(result.FlowsCreated) > 0 {
-		fmt.Printf("created %d flow(s): %s\n", len(result.FlowsCreated), joinStrSlice(result.FlowsCreated, ", "))
+		fmt.Printf("created %d flow(s): %s\n", len(result.FlowsCreated), strings.Join(result.FlowsCreated, ", "))
 	}
 	if len(result.FlowsSkipped) > 0 {
-		fmt.Printf("skipped %d existing flow(s): %s\n", len(result.FlowsSkipped), joinStrSlice(result.FlowsSkipped, ", "))
+		fmt.Printf("skipped %d existing flow(s): %s\n", len(result.FlowsSkipped), strings.Join(result.FlowsSkipped, ", "))
 	}
 	fmt.Printf("paths: %d created, %d skipped\n", result.PathsCreated, result.PathsSkipped)
 	fmt.Printf("steps: %d created, %d skipped\n", result.StepsCreated, result.StepsSkipped)
 	return nil
-}
-
-// joinStrSlice joins a string slice with a separator.
-func joinStrSlice(parts []string, sep string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += sep + p
-	}
-	return result
 }
 
 func flowUsage() error {

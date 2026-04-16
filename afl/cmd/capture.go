@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Capture routes capture subcommands.
 func Capture(d *db.DB, args []string) error {
 	if len(args) == 0 {
 		return captureUsage()
@@ -65,7 +64,7 @@ func captureUpload(d *db.DB, args []string) error {
 		return fmt.Errorf("invalid platform %q: must be one of %s", platform, strings.Join(model.ValidPlatforms, ", "))
 	}
 	if !model.IsValidSource(*source) {
-		return fmt.Errorf("invalid source %q: must be one of playwright, xcodebuildmcp, droidmind, manual", *source)
+		return fmt.Errorf("invalid source %q: must be one of %s", *source, strings.Join(model.ValidSources, ", "))
 	}
 
 	flow, path, step, err := resolveFlowPathStep(d, flowID, *pathName, stepOrder)
@@ -110,7 +109,7 @@ func captureBatch(d *db.DB, args []string) error {
 		return fmt.Errorf("invalid platform %q: must be one of %s", platform, strings.Join(model.ValidPlatforms, ", "))
 	}
 	if !model.IsValidSource(*source) {
-		return fmt.Errorf("invalid source %q: must be one of playwright, xcodebuildmcp, droidmind, manual", *source)
+		return fmt.Errorf("invalid source %q: must be one of %s", *source, strings.Join(model.ValidSources, ", "))
 	}
 
 	// Verify directory exists.
@@ -177,13 +176,20 @@ func captureBatch(d *db.DB, args []string) error {
 		return fmt.Errorf("no numbered image files found in %q (expected 1.png, 2.png, etc.)", dir)
 	}
 
+	// Pre-fetch all steps for the path to avoid per-file queries.
+	allSteps, err := d.ListSteps(path.ID)
+	if err != nil {
+		return fmt.Errorf("list steps: %w", err)
+	}
+	stepsByOrder := make(map[int]*model.Step, len(allSteps))
+	for i := range allSteps {
+		stepsByOrder[allSteps[i].SortOrder] = &allSteps[i]
+	}
+
 	var uploaded []model.Screenshot
 	for _, f := range files {
-		step, err := d.GetStepByOrder(path.ID, f.order)
-		if err != nil {
-			return fmt.Errorf("looking up step %d: %w", f.order, err)
-		}
-		if step == nil {
+		step, ok := stepsByOrder[f.order]
+		if !ok {
 			return fmt.Errorf("no step with order %d in path %q", f.order, path.Name)
 		}
 
@@ -431,7 +437,6 @@ func uploadScreenshot(d *db.DB, flow *model.Flow, step *model.Step, platform, im
 	return screenshot, nil
 }
 
-// copyFile copies a file from src to dst.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -451,13 +456,11 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// isImageExtension returns true if the file extension is a supported image type.
 func isImageExtension(ext string) bool {
 	_, ok := imageMimeTypes[strings.ToLower(ext)]
 	return ok
 }
 
-// imageMimeTypes maps file extensions to MIME types.
 var imageMimeTypes = map[string]string{
 	".png":  "image/png",
 	".jpg":  "image/jpeg",

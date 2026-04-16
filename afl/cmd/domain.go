@@ -8,7 +8,6 @@ import (
 	"aor/afl/model"
 )
 
-// Domain routes domain subcommands.
 func Domain(d *db.DB, args []string) error {
 	if len(args) == 0 {
 		return domainUsage()

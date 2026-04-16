@@ -45,11 +45,13 @@ const (
 	SourceManual        = "manual"
 )
 
-// IsValidSource reports whether s is a valid capture source.
+var ValidSources = []string{SourcePlaywright, SourceXcodeBuildMCP, SourceDroidMind, SourceManual}
+
 func IsValidSource(s string) bool {
-	switch s {
-	case SourcePlaywright, SourceXcodeBuildMCP, SourceDroidMind, SourceManual:
-		return true
+	for _, src := range ValidSources {
+		if s == src {
+			return true
+		}
 	}
 	return false
 }

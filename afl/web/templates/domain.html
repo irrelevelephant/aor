@@ -26,12 +26,13 @@
             {{.Path.Name}} ({{.TotalSteps}} steps):
         </span>
         <div style="display: flex; gap: 8px;">
+            {{$pc := .}}
             {{range $platform := $.Platforms}}
-                {{$count := index $.Coverage .Path.ID $platform}}
-                {{if eq $count $.TotalStepsMap .Path.ID}}
+                {{$count := index $pc.Coverage $platform}}
+                {{if eq $count $pc.TotalSteps}}
                     <span class="badge badge-ok">{{$platform}}</span>
                 {{else if gt $count 0}}
-                    <span class="badge badge-warn">{{$platform}} {{$count}}/{{index $.TotalStepsMap .Path.ID}}</span>
+                    <span class="badge badge-warn">{{$platform}} {{$count}}/{{$pc.TotalSteps}}</span>
                 {{else}}
                     <span class="badge badge-miss">{{$platform}}</span>
                 {{end}}

@@ -19,7 +19,6 @@ func (d *DB) UpsertScreenshot(stepID, platform, filename, storedName, mimeType s
 	_, err = d.Exec(`INSERT INTO screenshots (id, step_id, platform, filename, stored_name, mime_type, size_bytes, capture_source, captured_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(step_id, platform) DO UPDATE SET
-			id = excluded.id,
 			filename = excluded.filename,
 			stored_name = excluded.stored_name,
 			mime_type = excluded.mime_type,
@@ -108,6 +107,35 @@ func (d *DB) DeleteScreenshot(id string) (string, error) {
 		return "", fmt.Errorf("delete screenshot: %w", err)
 	}
 	return storedName, nil
+}
+
+// ScreenshotWithPath holds a screenshot and its flow ID for file path resolution.
+type ScreenshotWithPath struct {
+	model.Screenshot
+	FlowID string
+}
+
+// GetScreenshotWithPath returns a screenshot with its flow ID in a single query.
+func (d *DB) GetScreenshotWithPath(id string) (*ScreenshotWithPath, error) {
+	var s ScreenshotWithPath
+	err := d.QueryRow(`
+		SELECT sc.id, sc.step_id, sc.platform, sc.filename, sc.stored_name,
+		       sc.mime_type, sc.size_bytes, sc.capture_source, sc.captured_at, sc.created_at,
+		       p.flow_id
+		FROM screenshots sc
+		JOIN steps st ON st.id = sc.step_id
+		JOIN paths p ON p.id = st.path_id
+		WHERE sc.id = ?`, id).
+		Scan(&s.ID, &s.StepID, &s.Platform, &s.Filename, &s.StoredName,
+			&s.MimeType, &s.SizeBytes, &s.CaptureSource, &s.CapturedAt, &s.CreatedAt,
+			&s.FlowID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get screenshot with path: %w", err)
+	}
+	return &s, nil
 }
 
 func scanScreenshotRows(rows *sql.Rows) ([]model.Screenshot, error) {
