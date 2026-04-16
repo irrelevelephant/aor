@@ -7,17 +7,17 @@ import (
 	"aor/afl/model"
 )
 
-const domainCols = `id, workspace, slug, name, created_at, updated_at`
+const domainCols = `id, slug, name, created_at, updated_at`
 
 // CreateDomain inserts a new domain, generating a unique ID.
-func (d *DB) CreateDomain(slug, name, workspace string) (*model.Domain, error) {
+func (d *DB) CreateDomain(slug, name string) (*model.Domain, error) {
 	id, err := d.generateUniqueIDForTable(3, "domains")
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = d.Exec(`INSERT INTO domains (id, workspace, slug, name) VALUES (?, ?, ?, ?)`,
-		id, workspace, slug, name)
+	_, err = d.Exec(`INSERT INTO domains (id, slug, name) VALUES (?, ?, ?)`,
+		id, slug, name)
 	if err != nil {
 		return nil, fmt.Errorf("insert domain: %w", err)
 	}
@@ -29,7 +29,7 @@ func (d *DB) CreateDomain(slug, name, workspace string) (*model.Domain, error) {
 func (d *DB) GetDomain(id string) (*model.Domain, error) {
 	var dom model.Domain
 	err := d.QueryRow(`SELECT `+domainCols+` FROM domains WHERE id = ?`, id).
-		Scan(&dom.ID, &dom.Workspace, &dom.Slug, &dom.Name, &dom.CreatedAt, &dom.UpdatedAt)
+		Scan(&dom.ID, &dom.Slug, &dom.Name, &dom.CreatedAt, &dom.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("domain not found")
@@ -39,11 +39,11 @@ func (d *DB) GetDomain(id string) (*model.Domain, error) {
 	return &dom, nil
 }
 
-// GetDomainBySlug returns a domain by workspace and slug.
-func (d *DB) GetDomainBySlug(workspace, slug string) (*model.Domain, error) {
+// GetDomainBySlug returns a domain by slug.
+func (d *DB) GetDomainBySlug(slug string) (*model.Domain, error) {
 	var dom model.Domain
-	err := d.QueryRow(`SELECT `+domainCols+` FROM domains WHERE workspace = ? AND slug = ?`, workspace, slug).
-		Scan(&dom.ID, &dom.Workspace, &dom.Slug, &dom.Name, &dom.CreatedAt, &dom.UpdatedAt)
+	err := d.QueryRow(`SELECT `+domainCols+` FROM domains WHERE slug = ?`, slug).
+		Scan(&dom.ID, &dom.Slug, &dom.Name, &dom.CreatedAt, &dom.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -53,9 +53,9 @@ func (d *DB) GetDomainBySlug(workspace, slug string) (*model.Domain, error) {
 	return &dom, nil
 }
 
-// ListDomains returns all domains for a workspace.
-func (d *DB) ListDomains(workspace string) ([]model.Domain, error) {
-	rows, err := d.Query(`SELECT `+domainCols+` FROM domains WHERE workspace = ? ORDER BY slug`, workspace)
+// ListDomains returns all domains.
+func (d *DB) ListDomains() ([]model.Domain, error) {
+	rows, err := d.Query(`SELECT ` + domainCols + ` FROM domains ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
 	}
@@ -64,7 +64,7 @@ func (d *DB) ListDomains(workspace string) ([]model.Domain, error) {
 	var domains []model.Domain
 	for rows.Next() {
 		var dom model.Domain
-		if err := rows.Scan(&dom.ID, &dom.Workspace, &dom.Slug, &dom.Name, &dom.CreatedAt, &dom.UpdatedAt); err != nil {
+		if err := rows.Scan(&dom.ID, &dom.Slug, &dom.Name, &dom.CreatedAt, &dom.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan domain row: %w", err)
 		}
 		domains = append(domains, dom)

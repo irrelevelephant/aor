@@ -1,0 +1,49 @@
+{{define "title"}}afl — Flow Coverage{{end}}
+
+{{define "content"}}
+<h1>Flow Coverage</h1>
+
+{{if .Domains}}
+<div style="margin-bottom: 24px;">
+    <div class="coverage-text" style="margin-bottom: 12px;">
+        Overall: {{.TotalCovered}}/{{.TotalFlows}} flows fully covered
+        {{if gt .TotalFlows 0}}({{printf "%.0f" .CoveragePercent}}%){{end}}
+    </div>
+</div>
+
+{{range .Domains}}
+<a href="/afl/d/{{.ID}}" style="display: block; text-decoration: none; color: inherit;">
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2 style="margin-bottom: 4px;">{{.Name}}</h2>
+            <span style="font-size: 13px; color: var(--text-muted);">{{.Slug}}</span>
+        </div>
+        <div style="text-align: right;">
+            {{if eq .TotalFlows 0}}
+                <span class="badge badge-miss">no flows</span>
+            {{else if eq .CoveredFlows .TotalFlows}}
+                <span class="badge badge-ok">{{.CoveredFlows}}/{{.TotalFlows}} covered</span>
+            {{else if gt .CoveredFlows 0}}
+                <span class="badge badge-warn">{{.CoveredFlows}}/{{.TotalFlows}} covered</span>
+            {{else}}
+                <span class="badge badge-miss">0/{{.TotalFlows}} covered</span>
+            {{end}}
+        </div>
+    </div>
+    {{if gt .TotalFlows 0}}
+    <div class="coverage-bar">
+        <div class="coverage-fill" style="width: {{if gt .TotalFlows 0}}{{printf "%.1f" (mul (div (toFloat .CoveredFlows) (toFloat .TotalFlows)) 100)}}%{{else}}0%{{end}}"></div>
+    </div>
+    {{end}}
+</div>
+</a>
+{{end}}
+
+{{else}}
+<div class="empty-state">
+    <h2>No domains yet</h2>
+    <p>Import flows with: <code>afl flow import specs/&lt;domain&gt;/flows.md</code></p>
+</div>
+{{end}}
+{{end}}

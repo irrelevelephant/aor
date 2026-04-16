@@ -1,0 +1,297 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{block "title" .}}afl{{end}}</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface2: #21262d;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --red: #f85149;
+            --orange: #d29922;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 16px 24px; }
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+        .header-brand { font-size: 18px; font-weight: 600; color: var(--text); }
+        .header-nav { display: flex; gap: 16px; margin-left: 24px; }
+        .header-nav a {
+            color: var(--text-muted);
+            font-size: 14px;
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+        .header-nav a:hover, .header-nav a.active {
+            color: var(--text);
+            background: var(--surface2);
+            text-decoration: none;
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        .breadcrumb-sep { color: var(--border); }
+
+        h1 { font-size: 24px; margin-bottom: 16px; }
+        h2 { font-size: 18px; margin-bottom: 12px; color: var(--text); }
+        h3 { font-size: 15px; margin-bottom: 8px; color: var(--text-muted); }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .card:hover { border-color: var(--text-muted); }
+
+        .coverage-bar {
+            display: flex;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            background: var(--surface2);
+            margin: 8px 0;
+        }
+        .coverage-fill {
+            background: var(--green);
+            transition: width 0.3s;
+        }
+        .coverage-text {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-ok { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+        .badge-warn { background: rgba(210, 153, 34, 0.15); color: var(--orange); }
+        .badge-miss { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+
+        .grid {
+            display: grid;
+            gap: 4px;
+        }
+        .grid-header {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 8px 4px;
+            text-align: center;
+        }
+        .grid-step-label {
+            font-size: 13px;
+            padding: 8px 4px;
+            display: flex;
+            align-items: flex-start;
+        }
+        .grid-step-order {
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-right: 6px;
+            min-width: 20px;
+        }
+        .grid-cell {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 60px;
+        }
+        .grid-cell:hover { border-color: var(--accent); }
+        .grid-cell img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .grid-cell-empty {
+            color: var(--text-muted);
+            font-size: 24px;
+            opacity: 0.3;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0;
+        }
+        .tab {
+            padding: 8px 16px;
+            font-size: 14px;
+            color: var(--text-muted);
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            margin-bottom: -1px;
+        }
+        .tab:hover { color: var(--text); text-decoration: none; }
+        .tab.active {
+            color: var(--text);
+            border-bottom-color: var(--accent);
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .lightbox.active { display: flex; }
+        .lightbox-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            color: var(--text);
+            font-size: 24px;
+            cursor: pointer;
+            background: var(--surface2);
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox-img {
+            max-width: 90vw;
+            max-height: 80vh;
+            object-fit: contain;
+        }
+        .lightbox-meta {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+        .lightbox-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text);
+            font-size: 32px;
+            cursor: pointer;
+            background: var(--surface2);
+            border: none;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox-prev { left: 16px; }
+        .lightbox-next { right: 16px; }
+
+        .empty-state {
+            text-align: center;
+            padding: 48px 16px;
+            color: var(--text-muted);
+        }
+        .empty-state h2 { color: var(--text-muted); margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="/afl/" class="header-brand">afl</a>
+        <nav class="header-nav">
+            {{block "nav" .}}{{end}}
+        </nav>
+    </div>
+    <div class="container">
+        {{block "content" .}}{{end}}
+    </div>
+    <div class="lightbox" id="lightbox">
+        <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+        <button class="lightbox-nav lightbox-prev" onclick="navLightbox(-1)">&lsaquo;</button>
+        <button class="lightbox-nav lightbox-next" onclick="navLightbox(1)">&rsaquo;</button>
+        <img class="lightbox-img" id="lightbox-img" src="" alt="">
+        <div class="lightbox-meta" id="lightbox-meta"></div>
+    </div>
+    <script>
+        let lbImages = [];
+        let lbIndex = 0;
+
+        function openLightbox(images, index) {
+            lbImages = images;
+            lbIndex = index;
+            updateLightbox();
+            document.getElementById('lightbox').classList.add('active');
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('active');
+        }
+
+        function navLightbox(delta) {
+            lbIndex = (lbIndex + delta + lbImages.length) % lbImages.length;
+            updateLightbox();
+        }
+
+        function updateLightbox() {
+            const img = lbImages[lbIndex];
+            document.getElementById('lightbox-img').src = img.src;
+            document.getElementById('lightbox-meta').textContent =
+                img.platform + ' \u2014 Step ' + img.step + (img.source ? ' \u2014 ' + img.source : '');
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (!document.getElementById('lightbox').classList.contains('active')) return;
+            if (e.key === 'Escape') closeLightbox();
+            if (e.key === 'ArrowLeft') navLightbox(-1);
+            if (e.key === 'ArrowRight') navLightbox(1);
+        });
+    </script>
+</body>
+</html>
+{{end}}

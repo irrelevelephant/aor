@@ -60,12 +60,10 @@ func (d *DB) GetFlowByFlowID(domainID, flowID string) (*model.Flow, error) {
 	return &f, nil
 }
 
-// ResolveFlow finds a flow by its spec flow ID across the workspace.
-func (d *DB) ResolveFlow(workspace, flowID string) (*model.Flow, error) {
+// ResolveFlow finds a flow by its spec flow ID across all domains.
+func (d *DB) ResolveFlow(flowID string) (*model.Flow, error) {
 	var f model.Flow
-	err := d.QueryRow(`SELECT `+prefixCols("f", flowCols)+` FROM flows f
-		JOIN domains d ON d.id = f.domain_id
-		WHERE d.workspace = ? AND f.flow_id = ?`, workspace, flowID).
+	err := d.QueryRow(`SELECT `+flowCols+` FROM flows WHERE flow_id = ?`, flowID).
 		Scan(&f.ID, &f.DomainID, &f.FlowID, &f.Name, &f.SortOrder, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -87,14 +85,13 @@ func (d *DB) ListFlows(domainID string) ([]model.Flow, error) {
 	return scanFlowRows(rows)
 }
 
-// ListFlowsByWorkspace returns all flows for a workspace.
-func (d *DB) ListFlowsByWorkspace(workspace string) ([]model.Flow, error) {
-	rows, err := d.Query(`SELECT `+prefixCols("f", flowCols)+` FROM flows f
+// ListAllFlows returns all flows across all domains.
+func (d *DB) ListAllFlows() ([]model.Flow, error) {
+	rows, err := d.Query(`SELECT ` + prefixCols("f", flowCols) + ` FROM flows f
 		JOIN domains d ON d.id = f.domain_id
-		WHERE d.workspace = ?
-		ORDER BY d.slug, f.sort_order ASC, f.created_at ASC`, workspace)
+		ORDER BY d.slug, f.sort_order ASC, f.created_at ASC`)
 	if err != nil {
-		return nil, fmt.Errorf("list flows by workspace: %w", err)
+		return nil, fmt.Errorf("list all flows: %w", err)
 	}
 	defer rows.Close()
 

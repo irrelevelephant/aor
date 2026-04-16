@@ -1,0 +1,52 @@
+{{define "title"}}afl — {{.Domain.Name}}{{end}}
+
+{{define "content"}}
+<div class="breadcrumb">
+    <a href="/afl/">afl</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>{{.Domain.Name}}</span>
+</div>
+
+<h1>{{.Domain.Name}}</h1>
+
+{{if .Flows}}
+{{range .Flows}}
+<a href="/afl/f/{{.Flow.ID}}" style="display: block; text-decoration: none; color: inherit;">
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+            <h2 style="margin-bottom: 2px;">{{.Flow.FlowID}}</h2>
+            <span style="font-size: 14px; color: var(--text-muted);">{{.Flow.Name}}</span>
+        </div>
+    </div>
+
+    {{range .Paths}}
+    <div style="margin-top: 10px; display: flex; align-items: center; gap: 12px; font-size: 13px;">
+        <span style="color: var(--text-muted); min-width: 140px;">
+            {{.Path.Name}} ({{.TotalSteps}} steps):
+        </span>
+        <div style="display: flex; gap: 8px;">
+            {{range $platform := $.Platforms}}
+                {{$count := index $.Coverage .Path.ID $platform}}
+                {{if eq $count $.TotalStepsMap .Path.ID}}
+                    <span class="badge badge-ok">{{$platform}}</span>
+                {{else if gt $count 0}}
+                    <span class="badge badge-warn">{{$platform}} {{$count}}/{{index $.TotalStepsMap .Path.ID}}</span>
+                {{else}}
+                    <span class="badge badge-miss">{{$platform}}</span>
+                {{end}}
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+</div>
+</a>
+{{end}}
+
+{{else}}
+<div class="empty-state">
+    <h2>No flows yet</h2>
+    <p>Import flows with: <code>afl flow import specs/{{.Domain.Slug}}/flows.md</code></p>
+</div>
+{{end}}
+{{end}}

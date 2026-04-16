@@ -69,6 +69,13 @@ func (h *Hub) Broadcast(event, data string) {
 	}
 }
 
+// SSEBroadcaster is an interface for broadcasting SSE events.
+// When running standalone (ata serve), the built-in Hub is used.
+// When running unified (aor serve), the shared hub is injected.
+type SSEBroadcaster interface {
+	Broadcast(event, data string)
+}
+
 // DispatchFunc runs an ata command in-process. Matches cmd.Dispatch signature.
 type DispatchFunc func(d *db.DB, subcmd string, args []string) error
 
@@ -80,9 +87,15 @@ func WithDispatch(fn DispatchFunc) Option {
 	return func(s *Server) { s.dispatch = fn }
 }
 
+// WithSSE sets the SSE broadcaster (for unified server mode).
+func WithSSE(b SSEBroadcaster) Option {
+	return func(s *Server) { s.hub = b }
+}
+
 type Server struct {
 	db             *db.DB
-	hub            *Hub
+	hub            SSEBroadcaster
+	localHub       *Hub // only set for standalone (ata serve) mode
 	dispatch       DispatchFunc
 	pages          map[string]*template.Template
 	partials       *template.Template
@@ -144,7 +157,7 @@ func flattenTree(nodes []model.TaskTreeNode) []model.Task {
 	return tasks
 }
 
-// tagPalette contains well-spaced hues that avoid 250–310 (purple, used by epics).
+// tagPalette contains well-spaced hues that avoid 250-310 (purple, used by epics).
 var tagPalette = []uint32{0, 28, 55, 85, 125, 165, 195, 220, 320, 345}
 
 // tagHue returns a deterministic hue from the curated palette using FNV-1a.
@@ -192,7 +205,8 @@ func setTagQuery(baseURL, key, value string) string {
 	return u.String()
 }
 
-func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
+// initServer creates and configures a Server with templates and options.
+func initServer(d *db.DB, opts ...Option) (*Server, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithRendererOptions(goldhtml.WithHardWraps()),
@@ -252,21 +266,23 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 	for _, page := range pageFiles {
 		t, err := template.New("").Funcs(funcMap).ParseFS(content, append(sharedFiles, "templates/"+page)...)
 		if err != nil {
-			return fmt.Errorf("parse template %s: %w", page, err)
+			return nil, fmt.Errorf("parse template %s: %w", page, err)
 		}
 		pages[page] = t
 	}
 
 	partials, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/partials/*.html")
 	if err != nil {
-		return fmt.Errorf("parse partials: %w", err)
+		return nil, fmt.Errorf("parse partials: %w", err)
 	}
 
 	attDir, _ := db.AttachmentsDir()
 
+	localHub := newHub()
 	srv := &Server{
 		db:             d,
-		hub:            newHub(),
+		hub:            localHub,
+		localHub:       localHub,
 		pages:          pages,
 		partials:       partials,
 		md:             md,
@@ -276,8 +292,11 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 		o(srv)
 	}
 
-	mux := http.NewServeMux()
+	return srv, nil
+}
 
+// registerAtaRoutes registers all ata HTTP routes on the given mux.
+func (srv *Server) registerAtaRoutes(mux *http.ServeMux) {
 	// Pages.
 	mux.HandleFunc("GET /", srv.handleTasks)
 	mux.HandleFunc("GET /task/{id}", srv.handleTaskDetail)
@@ -306,9 +325,6 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 	// API.
 	mux.HandleFunc("POST /api/v1/exec", srv.handleAPIExec)
 
-	// SSE.
-	mux.HandleFunc("GET /events", srv.handleSSE)
-
 	// Partials.
 	mux.HandleFunc("GET /partials/task-row/{id}", srv.handlePartialTaskRow)
 	mux.HandleFunc("GET /partials/task-list", srv.handlePartialTaskList)
@@ -329,7 +345,33 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 
 	// Static files.
 	mux.Handle("GET /static/", http.FileServerFS(content))
+}
 
+// RegisterRoutes creates a Server and registers all ata routes on the given mux.
+// Used by the unified aor serve command.
+func RegisterRoutes(mux *http.ServeMux, d *db.DB, opts ...Option) *Server {
+	srv, err := initServer(d, opts...)
+	if err != nil {
+		log.Fatalf("init ata server: %v", err)
+	}
+	srv.registerAtaRoutes(mux)
+	return srv
+}
+
+// Serve starts the ata web server standalone (used by ata serve).
+func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
+	srv, err := initServer(d, opts...)
+	if err != nil {
+		return err
+	}
+
+	mux := http.NewServeMux()
+	srv.registerAtaRoutes(mux)
+
+	// SSE (standalone only -- unified server provides its own).
+	mux.HandleFunc("GET /events", srv.handleSSE)
+
+	// Wrap with recovery middleware.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -1290,8 +1332,13 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch := s.hub.Subscribe()
-	defer s.hub.Unsubscribe(ch)
+	if s.localHub == nil {
+		http.Error(w, "SSE not available (use unified server)", 500)
+		return
+	}
+
+	ch := s.localHub.Subscribe()
+	defer s.localHub.Unsubscribe(ch)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

@@ -8,32 +8,13 @@ import (
 
 // RemoteConfig describes a remote afl server.
 type RemoteConfig struct {
-	URL       string `json:"url"`
-	Workspace string `json:"workspace,omitempty"`
+	URL string `json:"url"`
 }
 
-// Config holds afl configuration, primarily remote workspace mappings.
+// Config holds afl configuration.
 type Config struct {
-	Remotes          map[string]RemoteConfig `json:"remotes"`
-	DefaultRemote    string                  `json:"default_remote,omitempty"`
-	DefaultWorkspace string                  `json:"default_workspace,omitempty"`
-	Workspaces       map[string]string       `json:"workspaces,omitempty"`
-}
-
-// ResolveWorkspaceDir checks directory mappings for dir and mainWorktree,
-// then falls back to DefaultWorkspace. Returns "" if nothing is configured.
-func (c Config) ResolveWorkspaceDir(dir, mainWorktree string) string {
-	if c.Workspaces != nil {
-		if ws, ok := c.Workspaces[dir]; ok {
-			return ws
-		}
-		if mainWorktree != "" && mainWorktree != dir {
-			if ws, ok := c.Workspaces[mainWorktree]; ok {
-				return ws
-			}
-		}
-	}
-	return c.DefaultWorkspace
+	Remotes       map[string]RemoteConfig `json:"remotes"`
+	DefaultRemote string                  `json:"default_remote,omitempty"`
 }
 
 // Path returns the default config file path (~/.afl/config.json).
@@ -83,19 +64,13 @@ func Save(cfg Config) error {
 	return os.WriteFile(p, data, 0o644)
 }
 
-// ResolveRemote looks up a remote for the given workspace.
-// Checks exact match first, then falls back to DefaultRemote.
-func (c Config) ResolveRemote(workspace string) *RemoteConfig {
-	if c.Remotes == nil {
+// ResolveRemote returns the default remote, or nil if none is configured.
+func (c Config) ResolveRemote() *RemoteConfig {
+	if c.DefaultRemote == "" {
 		return nil
 	}
-	if r, ok := c.Remotes[workspace]; ok {
+	if r, ok := c.Remotes[c.DefaultRemote]; ok {
 		return &r
-	}
-	if c.DefaultRemote != "" {
-		if r, ok := c.Remotes[c.DefaultRemote]; ok {
-			return &r
-		}
 	}
 	return nil
 }

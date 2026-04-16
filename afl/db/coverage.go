@@ -6,12 +6,12 @@ import (
 	"aor/afl/model"
 )
 
-// DomainCoverage returns coverage statistics for all domains in a workspace.
+// DomainCoverage returns coverage statistics for all domains.
 // A flow is considered "covered" when every step in its happy path has screenshots
 // for all 4 platforms.
-func (d *DB) DomainCoverage(workspace string) ([]model.DomainCoverage, error) {
+func (d *DB) DomainCoverage() ([]model.DomainCoverage, error) {
 	// Get all domains.
-	domains, err := d.ListDomains(workspace)
+	domains, err := d.ListDomains()
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
 	}

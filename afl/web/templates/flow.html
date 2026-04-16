@@ -1,0 +1,77 @@
+{{define "title"}}afl — {{.Flow.FlowID}}{{end}}
+
+{{define "content"}}
+<div class="breadcrumb">
+    <a href="/afl/">afl</a>
+    <span class="breadcrumb-sep">/</span>
+    <a href="/afl/d/{{.DomainID}}">{{.DomainName}}</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>{{.Flow.FlowID}}</span>
+</div>
+
+<h1>{{.Flow.FlowID}}: {{.Flow.Name}}</h1>
+
+{{if .Paths}}
+<div class="tabs">
+    {{range $i, $p := .Paths}}
+    <a href="/afl/f/{{$.Flow.ID}}{{if $i}}?path={{$p.Path.ID}}{{end}}"
+       class="tab {{if eq $p.Path.ID $.ActivePath.ID}}active{{end}}">
+        {{$p.Path.Name}}
+    </a>
+    {{end}}
+</div>
+
+{{with .ActivePathData}}
+{{if .Steps}}
+<div class="grid" style="grid-template-columns: minmax(180px, 1fr) {{range $.Platforms}}minmax(100px, 1fr) {{end}};">
+    {{/* Header row */}}
+    <div class="grid-header" style="text-align: left;">Step</div>
+    {{range $.Platforms}}
+    <div class="grid-header">{{.}}</div>
+    {{end}}
+
+    {{/* Step rows */}}
+    {{range $si, $step := .Steps}}
+    <div class="grid-step-label">
+        <span class="grid-step-order">{{$step.SortOrder}}.</span>
+        <div>
+            <div>{{$step.Name}}</div>
+            {{if $step.Description}}
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">{{$step.Description}}</div>
+            {{end}}
+        </div>
+    </div>
+    {{range $pi, $platform := $.Platforms}}
+        {{$ss := index $.ScreenshotMap $step.ID $platform}}
+        {{if $ss}}
+        <div class="grid-cell" onclick="openLightbox(screenshotData['{{$step.ID}}'], {{$pi}})">
+            <img src="/afl/screenshots/{{$ss.ID}}" alt="{{$platform}} step {{$step.SortOrder}}" loading="lazy">
+        </div>
+        {{else}}
+        <div class="grid-cell">
+            <span class="grid-cell-empty">&times;</span>
+        </div>
+        {{end}}
+    {{end}}
+    {{end}}
+</div>
+
+<script>
+const screenshotData = {{json .ScreenshotJS}};
+</script>
+
+{{else}}
+<div class="empty-state">
+    <h2>No steps defined</h2>
+    <p>Steps are created via <code>afl flow import</code> or <code>afl step create</code></p>
+</div>
+{{end}}
+{{end}}
+
+{{else}}
+<div class="empty-state">
+    <h2>No paths defined</h2>
+    <p>Import this flow's paths with: <code>afl flow import &lt;flows.md&gt;</code></p>
+</div>
+{{end}}
+{{end}}

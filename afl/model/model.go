@@ -54,25 +54,9 @@ func IsValidSource(s string) bool {
 	return false
 }
 
-// Workspace represents a registered workspace.
-type Workspace struct {
-	Path      string `json:"path"`
-	Name      string `json:"name,omitempty"`
-	CreatedAt string `json:"created_at"`
-}
-
-// DisplayName returns the name if set, otherwise the path.
-func (w Workspace) DisplayName() string {
-	if w.Name != "" {
-		return w.Name
-	}
-	return w.Path
-}
-
 // Domain represents a feature domain (e.g. "hydration", "nutrition").
 type Domain struct {
 	ID        string `json:"id"`
-	Workspace string `json:"workspace"`
 	Slug      string `json:"slug"`
 	Name      string `json:"name"`
 	CreatedAt string `json:"created_at"`

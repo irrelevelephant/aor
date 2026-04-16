@@ -30,19 +30,17 @@ func Remote(args []string) error {
 
 func remoteAdd(args []string) error {
 	fs := flag.NewFlagSet("remote add", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Remote-side workspace path (if different from local)")
 	setDefault := fs.Bool("default", false, "Set as default remote")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 2 {
-		return fmt.Errorf("usage: afl remote add <name> <url> [--workspace <path>] [--default]")
+		return fmt.Errorf("usage: afl remote add <name> <url> [--default]")
 	}
 
 	name := positional[0]
@@ -58,8 +56,7 @@ func remoteAdd(args []string) error {
 	}
 
 	cfg.Remotes[name] = config.RemoteConfig{
-		URL:       url,
-		Workspace: *workspace,
+		URL: url,
 	}
 
 	if *setDefault {
@@ -144,17 +141,13 @@ func remoteList(args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tURL\tWORKSPACE\tDEFAULT\n")
+	fmt.Fprintf(w, "NAME\tURL\tDEFAULT\n")
 	for name, r := range cfg.Remotes {
 		def := ""
 		if name == cfg.DefaultRemote {
 			def = "*"
 		}
-		ws := r.Workspace
-		if ws == "" {
-			ws = "-"
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, r.URL, ws, def)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", name, r.URL, def)
 	}
 	return w.Flush()
 }
@@ -168,6 +161,5 @@ Subcommands:
   list               List configured remotes
 
 Flags for add:
-  --workspace <path>  Remote-side workspace path override
   --default           Set as default remote`)
 }

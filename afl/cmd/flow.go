@@ -33,30 +33,27 @@ func Flow(d *db.DB, args []string) error {
 
 func flowCreate(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("flow create", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 3 {
-		return fmt.Errorf("usage: afl flow create <domain-slug> <FLOW-ID> <name> [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl flow create <domain-slug> <FLOW-ID> <name> [--json]")
 	}
 
 	domainSlug := positional[0]
 	flowID := positional[1]
 	name := positional[2]
-	ws := resolveOrDetectWorkspace(d, *workspace)
 
-	dom, err := d.GetDomainBySlug(ws, domainSlug)
+	dom, err := d.GetDomainBySlug(domainSlug)
 	if err != nil {
 		return err
 	}
 	if dom == nil {
-		return fmt.Errorf("domain %q not found in workspace %s", domainSlug, ws)
+		return fmt.Errorf("domain %q not found", domainSlug)
 	}
 
 	flow, err := d.CreateFlow(dom.ID, flowID, name)
@@ -75,29 +72,26 @@ func flowCreate(d *db.DB, args []string) error {
 func flowList(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("flow list", flag.ContinueOnError)
 	domain := fs.String("domain", "", "Filter by domain slug")
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	ws := resolveOrDetectWorkspace(d, *workspace)
-
 	var flows []model.Flow
 	var err error
 
 	if *domain != "" {
-		dom, domErr := d.GetDomainBySlug(ws, *domain)
+		dom, domErr := d.GetDomainBySlug(*domain)
 		if domErr != nil {
 			return domErr
 		}
 		if dom == nil {
-			return fmt.Errorf("domain %q not found in workspace %s", *domain, ws)
+			return fmt.Errorf("domain %q not found", *domain)
 		}
 		flows, err = d.ListFlows(dom.ID)
 	} else {
-		flows, err = d.ListFlowsByWorkspace(ws)
+		flows, err = d.ListAllFlows()
 	}
 	if err != nil {
 		return err
@@ -123,28 +117,25 @@ func flowList(d *db.DB, args []string) error {
 
 func flowShow(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("flow show", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 1 {
-		return fmt.Errorf("usage: afl flow show <FLOW-ID> [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl flow show <FLOW-ID> [--json]")
 	}
 
 	flowID := positional[0]
-	ws := resolveOrDetectWorkspace(d, *workspace)
 
-	flow, err := d.ResolveFlow(ws, flowID)
+	flow, err := d.ResolveFlow(flowID)
 	if err != nil {
 		return err
 	}
 	if flow == nil {
-		return fmt.Errorf("flow %q not found in workspace %s", flowID, ws)
+		return fmt.Errorf("flow %q not found", flowID)
 	}
 
 	if *jsonOut {
@@ -163,28 +154,25 @@ func flowShow(d *db.DB, args []string) error {
 
 func flowDelete(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("flow delete", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 1 {
-		return fmt.Errorf("usage: afl flow delete <FLOW-ID> [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl flow delete <FLOW-ID> [--json]")
 	}
 
 	flowID := positional[0]
-	ws := resolveOrDetectWorkspace(d, *workspace)
 
-	flow, err := d.ResolveFlow(ws, flowID)
+	flow, err := d.ResolveFlow(flowID)
 	if err != nil {
 		return err
 	}
 	if flow == nil {
-		return fmt.Errorf("flow %q not found in workspace %s", flowID, ws)
+		return fmt.Errorf("flow %q not found", flowID)
 	}
 
 	if err := d.DeleteFlow(flow.ID); err != nil {
@@ -201,33 +189,30 @@ func flowDelete(d *db.DB, args []string) error {
 
 // importResult tracks what was created/skipped during an import.
 type importResult struct {
-	Domain         string   `json:"domain"`
-	DomainCreated  bool     `json:"domain_created"`
-	FlowsCreated   []string `json:"flows_created"`
-	FlowsSkipped   []string `json:"flows_skipped"`
-	PathsCreated   int      `json:"paths_created"`
-	PathsSkipped   int      `json:"paths_skipped"`
-	StepsCreated   int      `json:"steps_created"`
-	StepsSkipped   int      `json:"steps_skipped"`
+	Domain        string   `json:"domain"`
+	DomainCreated bool     `json:"domain_created"`
+	FlowsCreated  []string `json:"flows_created"`
+	FlowsSkipped  []string `json:"flows_skipped"`
+	PathsCreated  int      `json:"paths_created"`
+	PathsSkipped  int      `json:"paths_skipped"`
+	StepsCreated  int      `json:"steps_created"`
+	StepsSkipped  int      `json:"steps_skipped"`
 }
 
 func flowImport(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("flow import", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 1 {
-		return fmt.Errorf("usage: afl flow import <flows.md-path> [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl flow import <flows.md-path> [--json]")
 	}
 
 	filePath := positional[0]
-	ws := resolveOrDetectWorkspace(d, *workspace)
 
 	// Parse the flows.md file.
 	parsed, err := parser.ParseFlowsFile(filePath)
@@ -242,12 +227,12 @@ func flowImport(d *db.DB, args []string) error {
 	}
 
 	// Ensure domain exists.
-	dom, err := d.GetDomainBySlug(ws, parsed.Slug)
+	dom, err := d.GetDomainBySlug(parsed.Slug)
 	if err != nil {
 		return err
 	}
 	if dom == nil {
-		dom, err = d.CreateDomain(parsed.Slug, parsed.Name, ws)
+		dom, err = d.CreateDomain(parsed.Slug, parsed.Name)
 		if err != nil {
 			return fmt.Errorf("create domain %q: %w", parsed.Slug, err)
 		}
@@ -369,6 +354,5 @@ Subcommands:
 
 Flags:
   --domain <slug>    Filter by domain (for list)
-  --workspace <ws>   Override workspace
   --json             Output JSON`)
 }

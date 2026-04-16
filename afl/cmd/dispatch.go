@@ -9,10 +9,6 @@ import (
 // Dispatch routes a subcommand to the appropriate handler.
 func Dispatch(d *db.DB, subcmd string, args []string) error {
 	switch subcmd {
-	case "init":
-		return Init(d, args)
-	case "uninit":
-		return Uninit(d, args)
 	case "domain":
 		return Domain(d, args)
 	case "flow":

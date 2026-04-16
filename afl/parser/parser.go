@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"aor/afl/model"
 )
 
 // ParsedDomain represents the domain extracted from a flows.md file.
@@ -75,12 +77,13 @@ func extractOrder(s string) int {
 	return n
 }
 
+// slugifyRe matches sequences of non-alphanumeric (except hyphen) characters.
+var slugifyRe = regexp.MustCompile(`[^a-z0-9-]+`)
+
 // slugify converts a domain name to a slug: lowercase, spaces/special chars to hyphens.
 func slugify(name string) string {
 	s := strings.ToLower(strings.TrimSpace(name))
-	// Replace sequences of non-alphanumeric (except hyphen) with a single hyphen.
-	re := regexp.MustCompile(`[^a-z0-9-]+`)
-	s = re.ReplaceAllString(s, "-")
+	s = slugifyRe.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	return s
 }
@@ -268,7 +271,7 @@ func parsePaths(lines []string) []ParsedPath {
 				firstHeaderIdx = i
 			}
 			sections = append(sections, pathSection{
-				pathType: "happy",
+				pathType: model.PathTypeHappy,
 				name:     "Happy path",
 				start:    i + 1,
 			})
@@ -280,7 +283,7 @@ func parsePaths(lines []string) []ParsedPath {
 				firstHeaderIdx = i
 			}
 			sections = append(sections, pathSection{
-				pathType: "alternate",
+				pathType: model.PathTypeAlternate,
 				name:     strings.TrimSpace(m[1]),
 				start:    i + 1,
 			})
@@ -292,7 +295,7 @@ func parsePaths(lines []string) []ParsedPath {
 				firstHeaderIdx = i
 			}
 			sections = append(sections, pathSection{
-				pathType: "alternate",
+				pathType: model.PathTypeAlternate,
 				name:     "Alternate paths",
 				start:    i + 1,
 			})
@@ -304,7 +307,7 @@ func parsePaths(lines []string) []ParsedPath {
 				firstHeaderIdx = i
 			}
 			sections = append(sections, pathSection{
-				pathType: "error",
+				pathType: model.PathTypeError,
 				name:     strings.TrimSpace(m[1]),
 				start:    i + 1,
 			})
@@ -316,7 +319,7 @@ func parsePaths(lines []string) []ParsedPath {
 				firstHeaderIdx = i
 			}
 			sections = append(sections, pathSection{
-				pathType: "error",
+				pathType: model.PathTypeError,
 				name:     "Error paths",
 				start:    i + 1,
 			})
@@ -348,7 +351,7 @@ func parsePaths(lines []string) []ParsedPath {
 	// create an implicit happy path.
 	hasExplicitHappy := false
 	for _, sec := range sections {
-		if sec.pathType == "happy" {
+		if sec.pathType == model.PathTypeHappy {
 			hasExplicitHappy = true
 			break
 		}
@@ -358,7 +361,7 @@ func parsePaths(lines []string) []ParsedPath {
 		implicitSteps := parseSteps(lines[:implicitEnd])
 		if len(implicitSteps) > 0 {
 			paths = append(paths, ParsedPath{
-				PathType: "happy",
+				PathType: model.PathTypeHappy,
 				Name:     "Happy path",
 				Steps:    implicitSteps,
 			})

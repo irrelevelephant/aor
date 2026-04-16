@@ -30,18 +30,17 @@ func pathCreate(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("path create", flag.ContinueOnError)
 	pathType := fs.String("type", "", "Path type: happy, alternate, error")
 	name := fs.String("name", "", "Path name")
-	workspace := fs.String("workspace", "", "Workspace")
 	order := fs.Int("order", 0, "Sort order")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"type": true, "name": true, "workspace": true, "order": true}
+	flagsWithValue := map[string]bool{"type": true, "name": true, "order": true}
 	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 1 {
-		return fmt.Errorf("usage: afl path create <FLOW-ID> --type <happy|alternate|error> --name <name> [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl path create <FLOW-ID> --type <happy|alternate|error> --name <name> [--json]")
 	}
 	if *pathType == "" {
 		return fmt.Errorf("--type is required (happy, alternate, error)")
@@ -54,14 +53,13 @@ func pathCreate(d *db.DB, args []string) error {
 	}
 
 	flowID := positional[0]
-	ws := resolveOrDetectWorkspace(d, *workspace)
 
-	flow, err := d.ResolveFlow(ws, flowID)
+	flow, err := d.ResolveFlow(flowID)
 	if err != nil {
 		return err
 	}
 	if flow == nil {
-		return fmt.Errorf("flow %q not found in workspace %s", flowID, ws)
+		return fmt.Errorf("flow %q not found", flowID)
 	}
 
 	p, err := d.CreatePath(flow.ID, *pathType, *name, *order)
@@ -79,28 +77,25 @@ func pathCreate(d *db.DB, args []string) error {
 
 func pathList(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("path list", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 1 {
-		return fmt.Errorf("usage: afl path list <FLOW-ID> [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl path list <FLOW-ID> [--json]")
 	}
 
 	flowID := positional[0]
-	ws := resolveOrDetectWorkspace(d, *workspace)
 
-	flow, err := d.ResolveFlow(ws, flowID)
+	flow, err := d.ResolveFlow(flowID)
 	if err != nil {
 		return err
 	}
 	if flow == nil {
-		return fmt.Errorf("flow %q not found in workspace %s", flowID, ws)
+		return fmt.Errorf("flow %q not found", flowID)
 	}
 
 	paths, err := d.ListPaths(flow.ID)
@@ -165,6 +160,5 @@ Flags:
   --type <type>      Path type: happy, alternate, error (for create)
   --name <name>      Path name (for create)
   --order <n>        Sort order (for create)
-  --workspace <ws>   Override workspace
   --json             Output JSON`)
 }

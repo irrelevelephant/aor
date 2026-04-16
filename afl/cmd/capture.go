@@ -41,17 +41,16 @@ func captureUpload(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("capture upload", flag.ContinueOnError)
 	pathName := fs.String("path", "", "Path name (defaults to happy path)")
 	source := fs.String("source", model.SourceManual, "Capture source: playwright, xcodebuildmcp, droidmind, manual")
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"path": true, "source": true, "workspace": true}
+	flagsWithValue := map[string]bool{"path": true, "source": true}
 	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 4 {
-		return fmt.Errorf("usage: afl capture upload <FLOW-ID> <step-order> <platform> <image-path> [--path <path-name>] [--source <tool>] [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl capture upload <FLOW-ID> <step-order> <platform> <image-path> [--path <path-name>] [--source <tool>] [--json]")
 	}
 
 	flowID := positional[0]
@@ -69,9 +68,7 @@ func captureUpload(d *db.DB, args []string) error {
 		return fmt.Errorf("invalid source %q: must be one of playwright, xcodebuildmcp, droidmind, manual", *source)
 	}
 
-	ws := resolveOrDetectWorkspace(d, *workspace)
-
-	flow, path, step, err := resolveFlowPathStep(d, ws, flowID, *pathName, stepOrder)
+	flow, path, step, err := resolveFlowPathStep(d, flowID, *pathName, stepOrder)
 	if err != nil {
 		return err
 	}
@@ -93,17 +90,16 @@ func captureBatch(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("capture batch", flag.ContinueOnError)
 	pathName := fs.String("path", "", "Path name (defaults to happy path)")
 	source := fs.String("source", model.SourceManual, "Capture source: playwright, xcodebuildmcp, droidmind, manual")
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"path": true, "source": true, "workspace": true}
+	flagsWithValue := map[string]bool{"path": true, "source": true}
 	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 3 {
-		return fmt.Errorf("usage: afl capture batch <FLOW-ID> <platform> <dir> [--path <path-name>] [--source <tool>] [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl capture batch <FLOW-ID> <platform> <dir> [--path <path-name>] [--source <tool>] [--json]")
 	}
 
 	flowID := positional[0]
@@ -126,14 +122,12 @@ func captureBatch(d *db.DB, args []string) error {
 		return fmt.Errorf("%q is not a directory", dir)
 	}
 
-	ws := resolveOrDetectWorkspace(d, *workspace)
-
-	flow, err := d.ResolveFlow(ws, flowID)
+	flow, err := d.ResolveFlow(flowID)
 	if err != nil {
 		return err
 	}
 	if flow == nil {
-		return fmt.Errorf("flow %q not found in workspace %s", flowID, ws)
+		return fmt.Errorf("flow %q not found", flowID)
 	}
 
 	path, err := resolvePathForFlow(d, flow.ID, *pathName)
@@ -213,28 +207,25 @@ func captureBatch(d *db.DB, args []string) error {
 
 func captureStatus(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("capture status", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 1 {
-		return fmt.Errorf("usage: afl capture status <FLOW-ID> [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl capture status <FLOW-ID> [--json]")
 	}
 
 	flowID := positional[0]
-	ws := resolveOrDetectWorkspace(d, *workspace)
 
-	flow, err := d.ResolveFlow(ws, flowID)
+	flow, err := d.ResolveFlow(flowID)
 	if err != nil {
 		return err
 	}
 	if flow == nil {
-		return fmt.Errorf("flow %q not found in workspace %s", flowID, ws)
+		return fmt.Errorf("flow %q not found", flowID)
 	}
 
 	fc, err := d.FlowCoverage(flow.ID)
@@ -264,17 +255,16 @@ func captureGet(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("capture get", flag.ContinueOnError)
 	pathName := fs.String("path", "", "Path name (defaults to happy path)")
 	output := fs.String("output", "", "Copy screenshot to this file path")
-	workspace := fs.String("workspace", "", "Workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"path": true, "output": true, "workspace": true}
+	flagsWithValue := map[string]bool{"path": true, "output": true}
 	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 3 {
-		return fmt.Errorf("usage: afl capture get <FLOW-ID> <step-order> <platform> [--path <path-name>] [--output <file>] [--workspace <ws>] [--json]")
+		return fmt.Errorf("usage: afl capture get <FLOW-ID> <step-order> <platform> [--path <path-name>] [--output <file>] [--json]")
 	}
 
 	flowID := positional[0]
@@ -288,9 +278,7 @@ func captureGet(d *db.DB, args []string) error {
 		return fmt.Errorf("invalid platform %q: must be one of %s", platform, strings.Join(model.ValidPlatforms, ", "))
 	}
 
-	ws := resolveOrDetectWorkspace(d, *workspace)
-
-	flow, _, step, err := resolveFlowPathStep(d, ws, flowID, *pathName, stepOrder)
+	flow, _, step, err := resolveFlowPathStep(d, flowID, *pathName, stepOrder)
 	if err != nil {
 		return err
 	}
@@ -329,13 +317,13 @@ func captureGet(d *db.DB, args []string) error {
 }
 
 // resolveFlowPathStep resolves a flow, path, and step from user-supplied arguments.
-func resolveFlowPathStep(d *db.DB, ws, flowID, pathName string, stepOrder int) (*model.Flow, *model.Path, *model.Step, error) {
-	flow, err := d.ResolveFlow(ws, flowID)
+func resolveFlowPathStep(d *db.DB, flowID, pathName string, stepOrder int) (*model.Flow, *model.Path, *model.Step, error) {
+	flow, err := d.ResolveFlow(flowID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	if flow == nil {
-		return nil, nil, nil, fmt.Errorf("flow %q not found in workspace %s", flowID, ws)
+		return nil, nil, nil, fmt.Errorf("flow %q not found", flowID)
 	}
 
 	path, err := resolvePathForFlow(d, flow.ID, pathName)
@@ -490,6 +478,5 @@ Flags:
   --path <name>        Path name (defaults to happy path)
   --source <tool>      Capture source: playwright, xcodebuildmcp, droidmind, manual
   --output <file>      Copy screenshot to file (for get)
-  --workspace <ws>     Override workspace
   --json               Output JSON`)
 }

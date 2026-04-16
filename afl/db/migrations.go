@@ -48,20 +48,12 @@ func (d *DB) migrate() error {
 
 func (d *DB) migrateV1() error {
 	ddl := `
-CREATE TABLE workspaces (
-    path       TEXT PRIMARY KEY,
-    name       TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
-
 CREATE TABLE domains (
     id         TEXT PRIMARY KEY,
-    workspace  TEXT NOT NULL REFERENCES workspaces(path) ON DELETE CASCADE,
-    slug       TEXT NOT NULL,
+    slug       TEXT NOT NULL UNIQUE,
     name       TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    UNIQUE(workspace, slug)
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 CREATE TABLE flows (
@@ -110,7 +102,6 @@ CREATE TABLE screenshots (
 );
 
 -- Indices on FK columns.
-CREATE INDEX idx_domains_workspace ON domains(workspace);
 CREATE INDEX idx_flows_domain_id ON flows(domain_id);
 CREATE INDEX idx_paths_flow_id ON paths(flow_id);
 CREATE INDEX idx_steps_path_id ON steps(path_id);
