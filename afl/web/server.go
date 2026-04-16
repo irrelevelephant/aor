@@ -65,9 +65,9 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, opts ...Option) *Server {
 		"urlquery": func(s string) template.URL {
 			return template.URL(url.QueryEscape(s))
 		},
-		"json": func(v any) template.HTML {
+		"json": func(v any) template.JS {
 			b, _ := json.Marshal(v)
-			return template.HTML(b)
+			return template.JS(b)
 		},
 		"toFloat": func(i int) float64 {
 			return float64(i)

@@ -44,7 +44,7 @@
     {{range $pi, $platform := $.Platforms}}
         {{$ss := index $.ScreenshotMap $step.ID $platform}}
         {{if $ss}}
-        <div class="grid-cell" onclick="openLightbox(screenshotData['{{$step.ID}}'], {{$pi}})">
+        <div class="grid-cell" onclick="openLightbox('{{$step.ID}}', '{{$platform}}')">
             <img src="/afl/screenshots/{{$ss.ID}}" alt="{{$platform}} step {{$step.SortOrder}}" loading="lazy">
         </div>
         {{else}}

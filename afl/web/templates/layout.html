@@ -252,10 +252,10 @@
     <div class="container">
         {{block "content" .}}{{end}}
     </div>
-    <div class="lightbox" id="lightbox">
-        <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
-        <button class="lightbox-nav lightbox-prev" onclick="navLightbox(-1)">&lsaquo;</button>
-        <button class="lightbox-nav lightbox-next" onclick="navLightbox(1)">&rsaquo;</button>
+    <div class="lightbox" id="lightbox" onclick="onLightboxBackdropClick(event)">
+        <button class="lightbox-close" onclick="closeLightbox()" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+        <button class="lightbox-nav lightbox-prev" onclick="navLightbox(-1)" aria-label="Previous">&lsaquo;</button>
+        <button class="lightbox-nav lightbox-next" onclick="navLightbox(1)" aria-label="Next">&rsaquo;</button>
         <img class="lightbox-img" id="lightbox-img" src="" alt="">
         <div class="lightbox-meta" id="lightbox-meta"></div>
     </div>
@@ -263,9 +263,11 @@
         let lbImages = [];
         let lbIndex = 0;
 
-        function openLightbox(images, index) {
+        function openLightbox(stepID, platform) {
+            const images = screenshotData[stepID] || [];
+            if (!images.length) return;
             lbImages = images;
-            lbIndex = index;
+            lbIndex = Math.max(0, images.findIndex(img => img.platform === platform));
             updateLightbox();
             document.getElementById('lightbox').classList.add('active');
         }
@@ -274,7 +276,12 @@
             document.getElementById('lightbox').classList.remove('active');
         }
 
+        function onLightboxBackdropClick(e) {
+            if (e.target === e.currentTarget) closeLightbox();
+        }
+
         function navLightbox(delta) {
+            if (!lbImages.length) return;
             lbIndex = (lbIndex + delta + lbImages.length) % lbImages.length;
             updateLightbox();
         }
