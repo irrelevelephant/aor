@@ -36,14 +36,18 @@ func Capture(d *db.DB, args []string) error {
 	}
 }
 
+// CaptureUploadFlags lists the value-taking flags accepted by `capture upload`
+// and `capture batch`. Exported so the remote client can split positional
+// args correctly without duplicating the list.
+var CaptureUploadFlags = map[string]bool{"path": true, "source": true}
+
 func captureUpload(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("capture upload", flag.ContinueOnError)
 	pathName := fs.String("path", "", "Path name (defaults to happy path)")
 	source := fs.String("source", model.SourceManual, "Capture source: playwright, xcodebuildmcp, droidmind, manual")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"path": true, "source": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, CaptureUploadFlags)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
@@ -91,8 +95,7 @@ func captureBatch(d *db.DB, args []string) error {
 	source := fs.String("source", model.SourceManual, "Capture source: playwright, xcodebuildmcp, droidmind, manual")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagsWithValue := map[string]bool{"path": true, "source": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, CaptureUploadFlags)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}

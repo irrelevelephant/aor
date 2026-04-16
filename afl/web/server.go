@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"aor/afl/api"
@@ -114,6 +115,7 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, opts ...Option) *Server {
 
 	// API.
 	mux.HandleFunc("POST /api/v1/afl/exec", srv.handleAPIExec)
+	mux.HandleFunc("POST "+api.ExecUploadPath, srv.handleAPIExecUpload)
 
 	return srv
 }
@@ -334,6 +336,136 @@ func (s *Server) handleAPIExec(w http.ResponseWriter, r *http.Request) {
 		Stdout:   stdout,
 		Stderr:   stderr,
 	})
+}
+
+// handleAPIExecUpload runs a command whose args reference uploaded files or
+// directories. See api/upload.go for the wire protocol.
+func (s *Server) handleAPIExecUpload(w http.ResponseWriter, r *http.Request) {
+	if s.dispatch == nil {
+		http.Error(w, "exec API not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// 32 MiB in memory per request; remainder spills to disk via
+	// mime/multipart's own tempfiles.
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		uploadError(w, http.StatusBadRequest, "parse multipart: "+err.Error())
+		return
+	}
+
+	command := r.FormValue(api.CommandField)
+	argsJSON := r.FormValue(api.ArgsField)
+	if command == "" || argsJSON == "" {
+		uploadError(w, http.StatusBadRequest, "missing command or args")
+		return
+	}
+
+	var args []string
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		uploadError(w, http.StatusBadRequest, "decode args: "+err.Error())
+		return
+	}
+
+	tempDir, err := os.MkdirTemp("", "afl-upload-")
+	if err != nil {
+		uploadError(w, http.StatusInternalServerError, "create temp dir: "+err.Error())
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	rewritten, err := materializeUploads(r, args, tempDir)
+	if err != nil {
+		uploadError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	stdout, stderr, exitCode := s.execCommand(command, rewritten)
+	s.sse.Broadcast("afl_updated", "api")
+
+	writeJSON(w, http.StatusOK, api.ExecResponse{
+		ExitCode: exitCode,
+		Stdout:   stdout,
+		Stderr:   stderr,
+	})
+}
+
+func uploadError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, api.ExecResponse{ExitCode: 1, Stderr: msg})
+}
+
+// materializeUploads rewrites upload placeholders in args to concrete paths
+// under tempDir, writing the corresponding file parts. Files keep their
+// original basenames so dispatchers that derive state from filenames (e.g.
+// capture batch reading "1.png" as step 1) still work.
+func materializeUploads(r *http.Request, args []string, tempDir string) ([]string, error) {
+	out := make([]string, len(args))
+	copy(out, args)
+
+	for i, a := range args {
+		switch {
+		case strings.HasPrefix(a, api.UploadFilePrefix):
+			key := strings.TrimPrefix(a, api.UploadFilePrefix)
+			dir := filepath.Join(tempDir, key)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, fmt.Errorf("upload %s: %w", key, err)
+			}
+			path, err := writeFormFile(r, api.UploadFilePart(key), dir)
+			if err != nil {
+				return nil, fmt.Errorf("upload %s: %w", key, err)
+			}
+			out[i] = path
+
+		case strings.HasPrefix(a, api.UploadDirPrefix):
+			key := strings.TrimPrefix(a, api.UploadDirPrefix)
+			dir := filepath.Join(tempDir, key)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, fmt.Errorf("upload-dir %s: %w", key, err)
+			}
+			partPrefix := api.UploadDirPartPrefix(key)
+			found := 0
+			for name := range r.MultipartForm.File {
+				if !strings.HasPrefix(name, partPrefix) {
+					continue
+				}
+				if _, err := writeFormFile(r, name, dir); err != nil {
+					return nil, fmt.Errorf("upload %s: %w", name, err)
+				}
+				found++
+			}
+			if found == 0 {
+				return nil, fmt.Errorf("upload-dir %s: no files supplied", key)
+			}
+			out[i] = dir
+		}
+	}
+	return out, nil
+}
+
+// writeFormFile writes the named file part into dir (which must already
+// exist), using the part's original basename. Returns the full written path.
+func writeFormFile(r *http.Request, partName, dir string) (string, error) {
+	part, header, err := r.FormFile(partName)
+	if err != nil {
+		return "", fmt.Errorf("form file %s: %w", partName, err)
+	}
+	defer part.Close()
+
+	base := filepath.Base(header.Filename)
+	if base == "" || base == "." || base == "/" {
+		base = partName
+	}
+
+	dest := filepath.Join(dir, base)
+	f, err := os.Create(dest)
+	if err != nil {
+		return "", fmt.Errorf("create %s: %w", dest, err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, part); err != nil {
+		return "", fmt.Errorf("write %s: %w", dest, err)
+	}
+	return dest, nil
 }
 
 func (s *Server) execCommand(command string, args []string) (stdout, stderr string, exitCode int) {
