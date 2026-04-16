@@ -7,26 +7,14 @@ import (
 	"aor/ata/model"
 )
 
-// ExportWorkspace exports all data for a workspace: metadata, tasks, comments, deps, tags, and attachments.
-func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []model.Comment, []model.TaskDep, []model.TaskTag, []model.Attachment, error) {
-	ws, err := d.GetWorkspace(path)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, fmt.Errorf("get workspace: %w", err)
-	}
-
-	var sourceName string
-	if ws != nil {
-		sourceName = ws.Name
-	}
-
+// ExportAll exports all data: metadata, tasks, comments, deps, tags, and attachments.
+func (d *DB) ExportAll() (*model.SnapshotMeta, []model.Task, []model.Comment, []model.TaskDep, []model.TaskTag, []model.Attachment, error) {
 	meta := &model.SnapshotMeta{
 		SchemaVersion: SchemaVersion(),
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		SourcePath:    path,
-		SourceName:    sourceName,
 	}
 
-	tasks, err := d.ListTasks(path, "", "", "", "")
+	tasks, err := d.ListTasks("", "", "", "")
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("list tasks: %w", err)
 	}
@@ -40,7 +28,6 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 		taskIDs[i] = t.ID
 	}
 
-	// Batch-query comments.
 	ph, phArgs := inPlaceholders(taskIDs)
 	commentRows, err := d.Query(`SELECT id, task_id, body, author, created_at FROM comments WHERE task_id IN (`+ph+`) ORDER BY created_at ASC`, phArgs...)
 	if err != nil {
@@ -60,8 +47,7 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("comments rows: %w", err)
 	}
 
-	// Batch-query deps — both sides must be in the workspace task set.
-	depRows, err := d.Query(`SELECT task_id, depends_on, created_at FROM task_deps WHERE task_id IN (`+ph+`) AND depends_on IN (`+ph+`)`, append(phArgs, phArgs...)...)
+	depRows, err := d.Query(`SELECT task_id, depends_on, created_at FROM task_deps`)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("query deps: %w", err)
 	}
@@ -79,8 +65,7 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("deps rows: %w", err)
 	}
 
-	// Batch-query tags.
-	tagRows, err := d.Query(`SELECT task_id, tag, created_at FROM task_tags WHERE task_id IN (`+ph+`)`, phArgs...)
+	tagRows, err := d.Query(`SELECT task_id, tag, created_at FROM task_tags`)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("query tags: %w", err)
 	}
@@ -98,8 +83,7 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("tags rows: %w", err)
 	}
 
-	// Batch-query attachments.
-	attRows, err := d.Query(`SELECT id, task_id, filename, stored_name, mime_type, size_bytes, created_at FROM attachments WHERE task_id IN (`+ph+`) ORDER BY created_at ASC`, phArgs...)
+	attRows, err := d.Query(`SELECT id, task_id, filename, stored_name, mime_type, size_bytes, created_at FROM attachments ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("query attachments: %w", err)
 	}
@@ -120,47 +104,31 @@ func (d *DB) ExportWorkspace(path string) (*model.SnapshotMeta, []model.Task, []
 	return meta, tasks, comments, deps, tags, attachments, nil
 }
 
-// ImportWorkspace replaces a workspace with imported data.
-// The target workspace is fully wiped before import.
-func (d *DB) ImportWorkspace(targetPath, targetName string, sourcePath string, tasks []model.Task, comments []model.Comment, deps []model.TaskDep, tags []model.TaskTag, attachments []model.Attachment) error {
+// ImportAll replaces all data with the imported snapshot.
+// All existing tasks (and cascaded rows) are wiped first.
+func (d *DB) ImportAll(tasks []model.Task, comments []model.Comment, deps []model.TaskDep, tags []model.TaskTag, attachments []model.Attachment) error {
 	tx, err := d.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Wipe existing workspace data (cascades to comments, deps, tags, attachments via FK).
-	if _, err := tx.Exec(`DELETE FROM tasks WHERE workspace = ?`, targetPath); err != nil {
+	if _, err := tx.Exec(`DELETE FROM tasks`); err != nil {
 		return fmt.Errorf("delete tasks: %w", err)
 	}
-	if _, err := tx.Exec(`DELETE FROM workspaces WHERE path = ?`, targetPath); err != nil {
-		return fmt.Errorf("delete workspace: %w", err)
-	}
 
-	// Insert workspace.
-	if _, err := tx.Exec(`INSERT INTO workspaces (path, name) VALUES (?, ?)`, targetPath, targetName); err != nil {
-		return fmt.Errorf("insert workspace: %w", err)
-	}
-
-	// Insert tasks with remapped workspace, cleared claim data.
 	for _, t := range tasks {
-		createdIn := t.CreatedIn
-		if createdIn == sourcePath {
-			createdIn = targetPath
-		}
-
 		_, err := tx.Exec(`INSERT INTO tasks (`+taskCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Body, t.Status, t.SortOrder,
-			nullStr(t.EpicID), targetPath, "", createdIn,
+			nullStr(t.EpicID), "", t.CreatedIn,
 			t.IsEpic, t.Spec,
-			nil, nil, nullStr(t.ClosedAt), t.CloseReason,
+			nil, "", nil, nullStr(t.ClosedAt), t.CloseReason,
 			t.CreatedAt, t.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("insert task %s: %w", t.ID, err)
 		}
 	}
 
-	// Insert comments (without original ID — let autoincrement assign new ones).
 	for _, c := range comments {
 		_, err := tx.Exec(`INSERT INTO comments (task_id, body, author, created_at) VALUES (?, ?, ?, ?)`,
 			c.TaskID, c.Body, c.Author, c.CreatedAt)
@@ -169,7 +137,6 @@ func (d *DB) ImportWorkspace(targetPath, targetName string, sourcePath string, t
 		}
 	}
 
-	// Insert deps.
 	for _, dep := range deps {
 		_, err := tx.Exec(`INSERT INTO task_deps (task_id, depends_on, created_at) VALUES (?, ?, ?)`,
 			dep.TaskID, dep.DependsOn, dep.CreatedAt)
@@ -178,7 +145,6 @@ func (d *DB) ImportWorkspace(targetPath, targetName string, sourcePath string, t
 		}
 	}
 
-	// Insert tags.
 	for _, tag := range tags {
 		_, err := tx.Exec(`INSERT INTO task_tags (task_id, tag, created_at) VALUES (?, ?, ?)`,
 			tag.TaskID, tag.Tag, tag.CreatedAt)
@@ -187,7 +153,6 @@ func (d *DB) ImportWorkspace(targetPath, targetName string, sourcePath string, t
 		}
 	}
 
-	// Insert attachments.
 	for _, a := range attachments {
 		_, err := tx.Exec(`INSERT INTO attachments (id, task_id, filename, stored_name, mime_type, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			a.ID, a.TaskID, a.Filename, a.StoredName, a.MimeType, a.SizeBytes, a.CreatedAt)

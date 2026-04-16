@@ -2,7 +2,7 @@ package db
 
 import "fmt"
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 // SchemaVersion returns the current schema version for use in snapshot metadata.
 func SchemaVersion() int { return schemaVersion }
@@ -63,6 +63,12 @@ func (d *DB) migrate() error {
 	if current < 7 {
 		if err := d.migrateV7(); err != nil {
 			return fmt.Errorf("v7: %w", err)
+		}
+	}
+
+	if current < 8 {
+		if err := d.migrateV8(); err != nil {
+			return fmt.Errorf("v8: %w", err)
 		}
 	}
 
@@ -191,5 +197,18 @@ CREATE INDEX idx_attachments_task_id ON attachments(task_id);
 
 func (d *DB) migrateV7() error {
 	_, err := d.Exec(`ALTER TABLE tasks ADD COLUMN claimed_host TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
+// migrateV8 removes the workspace concept: drops the workspace column from
+// tasks and the workspaces table. DROP COLUMN requires SQLite 3.35+ (2021-03),
+// which is satisfied by modernc.org/sqlite.
+func (d *DB) migrateV8() error {
+	ddl := `
+DROP INDEX IF EXISTS idx_tasks_workspace_status;
+ALTER TABLE tasks DROP COLUMN workspace;
+DROP TABLE IF EXISTS workspaces;
+`
+	_, err := d.Exec(ddl)
 	return err
 }

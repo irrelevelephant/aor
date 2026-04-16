@@ -16,12 +16,11 @@ func Create(d *db.DB, args []string) error {
 	status := fs.String("status", "", "Initial status (backlog|queue, default: inherit from epic or queue)")
 	epicID := fs.String("epic", "", "Parent epic ID")
 	tagStr := fs.String("tag", "", "Tags (comma-separated)")
-	workspace := fs.String("workspace", "", "Workspace path (default: auto-detect)")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	// Separate flags from positional args since Go's flag stops at first non-flag.
 	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
-		"description": true, "desc": true, "status": true, "epic": true, "workspace": true, "tag": true,
+		"description": true, "desc": true, "status": true, "epic": true, "tag": true,
 	})
 
 	if err := fs.Parse(flagArgs); err != nil {
@@ -31,17 +30,15 @@ func Create(d *db.DB, args []string) error {
 	// Collect the title from positional args.
 	title := strings.TrimSpace(strings.Join(positional, " "))
 	if title == "" {
-		return exitUsage("usage: ata create TITLE [--description TEXT] [--status backlog|queue] [--epic ID] [--workspace PATH] [--json]")
+		return exitUsage("usage: ata create TITLE [--description TEXT] [--status backlog|queue] [--epic ID] [--json]")
 	}
 
 	if *status != "" && *status != model.StatusBacklog && *status != model.StatusQueue {
 		return fmt.Errorf("status must be '%s' or '%s', got %q", model.StatusBacklog, model.StatusQueue, *status)
 	}
 
-	ws := resolveOrDetectWorkspace(d, *workspace)
-
 	createdIn := rawWorkingDir()
-	task, err := d.CreateTask(title, *desc, *status, *epicID, ws, createdIn)
+	task, err := d.CreateTask(title, *desc, *status, *epicID, createdIn)
 	if err != nil {
 		return err
 	}

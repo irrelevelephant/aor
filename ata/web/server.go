@@ -31,20 +31,20 @@ import (
 //go:embed templates/*.html templates/partials/*.html static/*
 var content embed.FS
 
-// SSE hub for broadcasting events.
+// SSE hub for broadcasting events to all subscribed clients.
 type Hub struct {
 	mu      sync.RWMutex
-	clients map[chan string]string // chan -> workspace filter ("" = all)
+	clients map[chan string]struct{}
 }
 
 func newHub() *Hub {
-	return &Hub{clients: make(map[chan string]string)}
+	return &Hub{clients: make(map[chan string]struct{})}
 }
 
-func (h *Hub) Subscribe(workspace string) chan string {
+func (h *Hub) Subscribe() chan string {
 	ch := make(chan string, 64)
 	h.mu.Lock()
-	h.clients[ch] = workspace
+	h.clients[ch] = struct{}{}
 	h.mu.Unlock()
 	return ch
 }
@@ -56,17 +56,15 @@ func (h *Hub) Unsubscribe(ch chan string) {
 	close(ch)
 }
 
-func (h *Hub) Broadcast(event, workspace, data string) {
+func (h *Hub) Broadcast(event, data string) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	msg := fmt.Sprintf("event: %s\ndata: %s\n\n", event, data)
-	for ch, filter := range h.clients {
-		if filter == "" || filter == workspace {
-			select {
-			case ch <- msg:
-			default:
-				// Drop if client is slow.
-			}
+	for ch := range h.clients {
+		select {
+		case ch <- msg:
+		default:
+			// Drop if client is slow.
 		}
 	}
 }
@@ -170,10 +168,10 @@ func tagFilterData(allTags []string, includeTags, excludeTags string) map[string
 	inc := db.SplitComma(includeTags)
 	exc := db.SplitComma(excludeTags)
 	return map[string]any{
-		"AllTags":     allTags,
-		"IncludeSet":  tagSet(inc),
-		"ExcludeSet":  tagSet(exc),
-		"HasFilters":  len(inc) > 0 || len(exc) > 0,
+		"AllTags":    allTags,
+		"IncludeSet": tagSet(inc),
+		"ExcludeSet": tagSet(exc),
+		"HasFilters": len(inc) > 0 || len(exc) > 0,
 	}
 }
 
@@ -198,10 +196,8 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithRendererOptions(goldhtml.WithHardWraps()),
-		// Default: HTML in markdown source is escaped (safe from XSS).
 	)
 
-	// dict builds an ad-hoc map from key/value pairs for template calls.
 	dict := func(pairs ...any) map[string]any {
 		m := make(map[string]any, len(pairs)/2)
 		for i := 0; i+1 < len(pairs); i += 2 {
@@ -237,12 +233,6 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 		"urlquery": func(s string) template.URL {
 			return template.URL(url.QueryEscape(s))
 		},
-		"workspaceURL": func(path, name string) string {
-			if name != "" {
-				return "/w/" + url.PathEscape(name)
-			}
-			return "/w?path=" + url.QueryEscape(path)
-		},
 		"tagColor": func(tag string) template.CSS {
 			return template.CSS(fmt.Sprintf("hsl(%d, 70%%, 75%%)", tagHue(tag)))
 		},
@@ -253,12 +243,10 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 			return setTagQuery(baseURL, "tag", tag)
 		},
 		"formatBytes": db.FormatBytes,
-		"taskURL": taskURL,
+		"taskURL":     taskURL,
 	}
 
-	// Parse each page template separately to avoid "content" block conflicts.
-	// Each page gets: layout + partials + its own page template.
-	pageFiles := []string{"index.html", "workspace.html", "task.html", "epic.html"}
+	pageFiles := []string{"tasks.html", "task.html", "epic.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
 	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html", "templates/partials/epic_group.html", "templates/partials/deps_section.html"}
 	for _, page := range pageFiles {
@@ -269,13 +257,11 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 		pages[page] = t
 	}
 
-	// Partials template set (no layout, just fragments for htmx responses).
 	partials, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/partials/*.html")
 	if err != nil {
 		return fmt.Errorf("parse partials: %w", err)
 	}
 
-	// Resolve attachments directory.
 	attDir, _ := db.AttachmentsDir()
 
 	srv := &Server{
@@ -293,9 +279,7 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 	mux := http.NewServeMux()
 
 	// Pages.
-	mux.HandleFunc("GET /", srv.handleIndex)
-	mux.HandleFunc("GET /w", srv.handleWorkspace)
-	mux.HandleFunc("GET /w/{name}", srv.handleWorkspaceByName)
+	mux.HandleFunc("GET /", srv.handleTasks)
 	mux.HandleFunc("GET /task/{id}", srv.handleTaskDetail)
 	mux.HandleFunc("GET /epic/{id}", srv.handleEpicDetail)
 
@@ -330,7 +314,6 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 	mux.HandleFunc("GET /partials/task-list", srv.handlePartialTaskList)
 
 	// PWA files (must be at root for browser discovery / service worker scope).
-	// Read once at startup since embedded files are immutable.
 	serveStatic := func(embedPath, contentType string) http.HandlerFunc {
 		data, err := content.ReadFile(embedPath)
 		if err != nil {
@@ -347,8 +330,6 @@ func Serve(d *db.DB, addr, tlsCert, tlsKey string, opts ...Option) error {
 	// Static files.
 	mux.Handle("GET /static/", http.FileServerFS(content))
 
-	// Wrap with recovery middleware so panics don't kill the server,
-	// and limit non-multipart POST bodies to 1 MB to prevent abuse.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -404,64 +385,42 @@ func (s *Server) parentEpicTitle(epicID string) string {
 
 // --- Page handlers ---
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	workspaces, err := s.db.WorkspacesWithCounts()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	// Auto-redirect when exactly 1 workspace has active tasks.
-	if len(workspaces) == 1 && r.URL.Query().Get("dashboard") != "1" {
-		http.Redirect(w, r, workspaceURL(workspaces[0].Path, workspaces[0].Name), http.StatusTemporaryRedirect)
-		return
-	}
-
-	s.render(w, "index.html", map[string]any{
-		"Workspaces": workspaces,
-	})
-}
-
-func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
+func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	showClosed := r.URL.Query().Get("show_closed") == "1"
 	tag := r.URL.Query().Get("tag")
 	xtag := r.URL.Query().Get("xtag")
 
-	// Look up workspace name for display.
-	var wsName string
-	if ws, err := s.db.GetWorkspace(path); err == nil && ws != nil {
-		wsName = ws.Name
-	}
-
-	queue, err := s.db.ListTaskTree(path, model.StatusQueue, tag, xtag)
+	queue, err := s.db.ListTaskTree(model.StatusQueue, tag, xtag)
 	if err != nil {
 		log.Printf("ListTaskTree queue: %v", err)
 	}
-	inProgress, err := s.db.ListTasks(path, model.StatusInProgress, "", tag, xtag)
+	inProgress, err := s.db.ListTasks(model.StatusInProgress, "", tag, xtag)
 	if err != nil {
 		log.Printf("ListTasks in_progress: %v", err)
 	}
-	backlog, err := s.db.ListTaskTree(path, model.StatusBacklog, tag, xtag)
+	backlog, err := s.db.ListTaskTree(model.StatusBacklog, tag, xtag)
 	if err != nil {
 		log.Printf("ListTaskTree backlog: %v", err)
 	}
 
 	var closed []model.Task
 	if showClosed {
-		closed, err = s.db.ListTasks(path, model.StatusClosed, "", tag, xtag)
+		closed, err = s.db.ListTasks(model.StatusClosed, "", tag, xtag)
 		if err != nil {
 			log.Printf("ListTasks closed: %v", err)
 		}
 	}
 
-	// Collect all visible task IDs for batch queries.
 	allOpen := append(flattenTree(queue), flattenTree(backlog)...)
 	allOpen = append(allOpen, inProgress...)
 	allVisible := append(allOpen, closed...)
 	allIDs := make([]string, len(allVisible))
+	tagMap := make(map[string][]string, len(allVisible))
 	for i, t := range allVisible {
 		allIDs[i] = t.ID
+		if len(t.Tags) > 0 {
+			tagMap[t.ID] = t.Tags
+		}
 	}
 
 	blockedIDs, err := s.db.BlockedTaskIDs(allIDs)
@@ -472,36 +431,20 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		blockedIDs = make(map[string]bool)
 	}
 
-	tagMap, err := s.db.GetTagsForTasks(allIDs)
-	if err != nil {
-		log.Printf("GetTagsForTasks: %v", err)
-	}
-	if tagMap == nil {
-		tagMap = make(map[string][]string)
-	}
-
-	// Always fetch the full tag list — needed for the filter bar when
-	// a filter is active (so filtered-out tags still appear clickable).
-	allTags, err := s.db.ListAllTags(path)
+	allTags, err := s.db.ListAllTags()
 	if err != nil {
 		log.Printf("ListAllTags: %v", err)
 	}
 
-	// Tags from open tasks only — used for quick-add autocomplete so stale
-	// tags from closed tasks don't clutter the suggestions.
 	openTags := tagsForTasks(tagMap, allOpen)
 
-	// Use open-task tags for the filter bar so the list stays consistent
-	// regardless of which filters are active. Expand to all tags when
-	// the user has toggled "Show closed".
 	filterBarTags := openTags
 	if showClosed {
 		filterBarTags = allTags
 	}
 
-	wsURL := workspaceURL(path, wsName)
+	baseURL := "/"
 
-	// Build URLs that preserve active tag/xtag filters.
 	addTagParams := func(base string) string {
 		if tag == "" && xtag == "" {
 			return base
@@ -521,55 +464,31 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		return u.String()
 	}
 
-	filteredWsURL := addTagParams(wsURL)
-	showClosedURL := wsURL
-	if u, err := url.Parse(wsURL); err == nil {
+	filteredURL := addTagParams(baseURL)
+	showClosedURL := baseURL
+	if u, err := url.Parse(baseURL); err == nil {
 		q := u.Query()
 		q.Set("show_closed", "1")
 		u.RawQuery = q.Encode()
 		showClosedURL = addTagParams(u.String())
 	}
-	s.render(w, "workspace.html", map[string]any{
-		"Path":           path,
-		"Name":           wsName,
-		"WorkspaceURL":   wsURL,
-		"FilteredURL":    filteredWsURL,
-		"ShowClosedURL":  showClosedURL,
-		"Queue":          queue,
-		"QueueCount":     treeCount(queue),
-		"InProgress":     inProgress,
-		"Backlog":        backlog,
-		"BacklogCount":   treeCount(backlog),
-		"Closed":         closed,
-		"ShowClosed":     showClosed,
-		"BlockedIDs":     blockedIDs,
-		"TagMap":         tagMap,
-		"TagFilter":      tagFilterData(filterBarTags, tag, xtag),
-		"AllTags":        allTags,
-		"OpenTags":       openTags,
+	s.render(w, "tasks.html", map[string]any{
+		"BaseURL":       baseURL,
+		"FilteredURL":   filteredURL,
+		"ShowClosedURL": showClosedURL,
+		"Queue":         queue,
+		"QueueCount":    treeCount(queue),
+		"InProgress":    inProgress,
+		"Backlog":       backlog,
+		"BacklogCount":  treeCount(backlog),
+		"Closed":        closed,
+		"ShowClosed":    showClosed,
+		"BlockedIDs":    blockedIDs,
+		"TagMap":        tagMap,
+		"TagFilter":     tagFilterData(filterBarTags, tag, xtag),
+		"AllTags":       allTags,
+		"OpenTags":      openTags,
 	})
-}
-
-func (s *Server) handleWorkspaceByName(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	path, err := s.db.ResolveWorkspace(name)
-	if err != nil {
-		http.Error(w, "workspace not found", 404)
-		return
-	}
-	// Rewrite into the same request so handleWorkspace can serve it.
-	q := r.URL.Query()
-	q.Set("path", path)
-	r.URL.RawQuery = q.Encode()
-	s.handleWorkspace(w, r)
-}
-
-// workspaceURL returns the preferred URL for a workspace: /w/name if named, /w?path=... otherwise.
-func workspaceURL(path, name string) string {
-	if name != "" {
-		return "/w/" + url.PathEscape(name)
-	}
-	return "/w?path=" + url.QueryEscape(path)
 }
 
 func taskURL(isEpic bool, id string) string {
@@ -604,11 +523,6 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 
 	epicTitle := s.parentEpicTitle(twc.EpicID)
 
-	var wsName string
-	if ws, err := s.db.GetWorkspace(twc.Workspace); err == nil && ws != nil {
-		wsName = ws.Name
-	}
-
 	blockers, err := s.db.GetBlockers(id, false)
 	if err != nil {
 		log.Printf("GetBlockers %s: %v", id, err)
@@ -629,9 +543,9 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("GetTags %s: %v", id, err)
 	}
-	allTags, err := s.db.ListAllTags(twc.Workspace)
+	allTags, err := s.db.ListAllTags()
 	if err != nil {
-		log.Printf("ListAllTags %s: %v", twc.Workspace, err)
+		log.Printf("ListAllTags: %v", err)
 	}
 	attachments, err := s.db.ListAttachments(id)
 	if err != nil {
@@ -639,14 +553,12 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "task.html", map[string]any{
-		"Task":          twc,
-		"EpicTitle":     epicTitle,
-		"WorkspaceName": wsName,
-		"WorkspaceURL":  workspaceURL(twc.Workspace, wsName),
-		"IsBlocked":     isBlocked,
-		"Tags":          tags,
-		"AllTags":       allTags,
-		"Attachments":   attachments,
+		"Task":        twc,
+		"EpicTitle":   epicTitle,
+		"IsBlocked":   isBlocked,
+		"Tags":        tags,
+		"AllTags":     allTags,
+		"Attachments": attachments,
 		"DepsData": map[string]any{
 			"TaskID":   id,
 			"Status":   twc.Status,
@@ -667,12 +579,11 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	childTasks, err := s.db.ListTasks("", "", id, tag, xtag)
+	childTasks, err := s.db.ListTasks("", id, tag, xtag)
 	if err != nil {
 		log.Printf("ListTasks epic %s: %v", id, err)
 	}
 
-	// Build tree from flat children list.
 	childrenTree := model.BuildTree(id, childTasks)
 
 	progress, err := s.db.EpicProgress(id)
@@ -684,20 +595,15 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ListComments %s: %v", id, err)
 	}
 
-	// Batch-load tags for children.
 	childIDs := make([]string, len(childTasks))
+	tagMap := make(map[string][]string, len(childTasks))
 	for i, c := range childTasks {
 		childIDs[i] = c.ID
-	}
-	tagMap, err := s.db.GetTagsForTasks(childIDs)
-	if err != nil {
-		log.Printf("GetTagsForTasks epic %s: %v", id, err)
-	}
-	if tagMap == nil {
-		tagMap = make(map[string][]string)
+		if len(c.Tags) > 0 {
+			tagMap[c.ID] = c.Tags
+		}
 	}
 
-	// Compute blocked IDs for tree rendering.
 	blockedIDs, err := s.db.BlockedTaskIDs(childIDs)
 	if err != nil {
 		log.Printf("BlockedTaskIDs epic %s: %v", id, err)
@@ -706,7 +612,6 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		blockedIDs = make(map[string]bool)
 	}
 
-	// Build filter bar tags from children (not just filtered subset).
 	var childFilterTags []string
 	if tag != "" || xtag != "" {
 		childFilterTags, err = s.db.ListTagsForEpic(id)
@@ -717,19 +622,13 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 		childFilterTags = uniqueSortedTags(tagMap)
 	}
 
-	var wsName string
-	if ws, err := s.db.GetWorkspace(task.Workspace); err == nil && ws != nil {
-		wsName = ws.Name
-	}
-
-	// Load tags for the epic itself.
 	epicTags, err := s.db.GetTags(id)
 	if err != nil {
 		log.Printf("GetTags epic %s: %v", id, err)
 	}
-	allTags, err := s.db.ListAllTags(task.Workspace)
+	allTags, err := s.db.ListAllTags()
 	if err != nil {
-		log.Printf("ListAllTags %s: %v", task.Workspace, err)
+		log.Printf("ListAllTags: %v", err)
 	}
 
 	attachments, err := s.db.ListAttachments(id)
@@ -757,21 +656,19 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 
 	epicURL := "/epic/" + id
 	s.render(w, "epic.html", map[string]any{
-		"Epic":          task,
-		"Children":      childrenTree,
-		"BlockedIDs":    blockedIDs,
-		"Progress":      progress,
-		"Comments":      comments,
-		"WorkspaceName": wsName,
-		"WorkspaceURL":  workspaceURL(task.Workspace, wsName),
-		"TagMap":        tagMap,
-		"TagFilter":     tagFilterData(childFilterTags, tag, xtag),
-		"EpicURL":       epicURL,
-		"Tags":          epicTags,
-		"AllTags":       allTags,
-		"Attachments":   attachments,
-		"EpicTitle":     epicTitle,
-		"IsBlocked":     isBlocked,
+		"Epic":        task,
+		"Children":    childrenTree,
+		"BlockedIDs":  blockedIDs,
+		"Progress":    progress,
+		"Comments":    comments,
+		"TagMap":      tagMap,
+		"TagFilter":   tagFilterData(childFilterTags, tag, xtag),
+		"EpicURL":     epicURL,
+		"Tags":        epicTags,
+		"AllTags":     allTags,
+		"Attachments": attachments,
+		"EpicTitle":   epicTitle,
+		"IsBlocked":   isBlocked,
 		"DepsData": map[string]any{
 			"TaskID":   id,
 			"Status":   task.Status,
@@ -786,7 +683,6 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
-	// Support "content" field: first line = title, rest = body (Google Keep style).
 	title := strings.TrimSpace(r.FormValue("title"))
 	body := r.FormValue("body")
 	if content := strings.TrimSpace(r.FormValue("content")); content != "" && title == "" {
@@ -803,27 +699,21 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := s.db.CreateTask(title, body, r.FormValue("status"), r.FormValue("epic_id"), r.FormValue("workspace"), "")
+	task, err := s.db.CreateTask(title, body, r.FormValue("status"), r.FormValue("epic_id"), "")
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
-	// Add tags if provided.
 	for _, t := range db.SplitComma(r.FormValue("tags")) {
 		s.db.AddTag(task.ID, t)
 	}
 
-	s.hub.Broadcast("task_created", task.Workspace, task.ID)
+	s.hub.Broadcast("task_created", task.ID)
 
-	// Redirect back to the referring page (preserving filters) or workspace root.
 	dest := r.FormValue("redirect")
 	if dest == "" || !strings.HasPrefix(dest, "/") || strings.HasPrefix(dest, "//") {
-		var wsName string
-		if ws, err := s.db.GetWorkspace(task.Workspace); err == nil && ws != nil {
-			wsName = ws.Name
-		}
-		dest = workspaceURL(task.Workspace, wsName)
+		dest = "/"
 	}
 	s.hxRedirect(w, r, dest, http.StatusSeeOther)
 }
@@ -832,7 +722,6 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	r.ParseForm()
 
-	// Build update params from form.
 	var pTitle, pBody *string
 	if title := r.FormValue("title"); title != "" {
 		pTitle = &title
@@ -847,7 +736,6 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject body/description updates for epics — use spec instead.
 	if pBody != nil {
 		existing, err := s.db.GetTask(id)
 		if err != nil {
@@ -866,7 +754,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.hub.Broadcast("task_updated", task.Workspace, id)
+	s.hub.Broadcast("task_updated", id)
 
 	if r.Header.Get("HX-Request") == "true" {
 		s.partials.ExecuteTemplate(w, "task_row.html", task)
@@ -894,13 +782,13 @@ func (s *Server) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 	if task.IsEpic {
 		err = s.db.MoveEpicTree(id, to)
 	} else {
-		_, err = s.db.MoveTasks([]string{id}, "", to, task.Workspace)
+		_, err = s.db.MoveTasks([]string{id}, "", to)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	s.hub.Broadcast("task_updated", task.Workspace, id)
+	s.hub.Broadcast("task_updated", id)
 	dest := r.FormValue("redirect")
 	if dest == "" {
 		dest = "/task/" + id
@@ -919,7 +807,7 @@ func (s *Server) handleCloseTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.hub.Broadcast("task_closed", task.Workspace, id)
+	s.hub.Broadcast("task_closed", id)
 
 	dest := "/task/" + id
 	if task.IsEpic {
@@ -936,7 +824,7 @@ func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.hub.Broadcast("task_updated", task.Workspace, id)
+	s.hub.Broadcast("task_updated", id)
 
 	dest := "/task/" + id
 	if task.IsEpic {
@@ -947,25 +835,25 @@ func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePromoteTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	task, err := s.db.PromoteToEpic(id, "")
+	_, err := s.db.PromoteToEpic(id, "")
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
-	s.hub.Broadcast("epic_promoted", task.Workspace, id)
+	s.hub.Broadcast("epic_promoted", id)
 	s.hxRedirect(w, r, "/epic/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleDemoteEpic(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	task, err := s.db.DemoteToTask(id)
+	_, err := s.db.DemoteToTask(id)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
-	s.hub.Broadcast("task_updated", task.Workspace, id)
+	s.hub.Broadcast("task_updated", id)
 	s.hxRedirect(w, r, "/task/"+id, http.StatusSeeOther)
 }
 
@@ -984,13 +872,7 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := s.db.GetTask(id)
-	if err != nil {
-		log.Printf("GetTask %s: %v", id, err)
-	}
-	if task != nil {
-		s.hub.Broadcast("comment_added", task.Workspace, id)
-	}
+	s.hub.Broadcast("comment_added", id)
 
 	if r.Header.Get("HX-Request") == "true" {
 		s.partials.ExecuteTemplate(w, "comment.html", comment)
@@ -1004,7 +886,6 @@ func (s *Server) handleUpdateSpec(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	spec := r.FormValue("spec")
 
-	// Validate task is an epic.
 	existing, err := s.db.GetTask(id)
 	if err != nil {
 		http.Error(w, "not found", 404)
@@ -1041,9 +922,7 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("GetTask %s: %v", id, err)
 	}
-	if task != nil {
-		s.hub.Broadcast("task_updated", task.Workspace, id)
-	}
+	s.hub.Broadcast("task_updated", id)
 
 	if r.Header.Get("HX-Request") == "true" {
 		s.renderDepsSection(w, id, task)
@@ -1070,9 +949,7 @@ func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("GetTask %s: %v", id, err)
 	}
-	if task != nil {
-		s.hub.Broadcast("task_updated", task.Workspace, id)
-	}
+	s.hub.Broadcast("task_updated", id)
 
 	if r.Header.Get("HX-Request") == "true" {
 		s.renderDepsSection(w, id, task)
@@ -1114,9 +991,7 @@ func (s *Server) handleAddChild(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	if epic, err := s.db.GetTask(epicID); err == nil && epic != nil {
-		s.hub.Broadcast("task_updated", epic.Workspace, epicID)
-	}
+	s.hub.Broadcast("task_updated", epicID)
 	s.hxRedirect(w, r, "/epic/"+epicID, http.StatusSeeOther)
 }
 
@@ -1138,9 +1013,7 @@ func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("GetTask %s: %v", id, err)
 	}
-	if task != nil {
-		s.hub.Broadcast("task_updated", task.Workspace, id)
-	}
+	s.hub.Broadcast("task_updated", id)
 
 	s.hxRedirect(w, r, s.tagRedirect(id, task, r), http.StatusSeeOther)
 }
@@ -1163,9 +1036,7 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("GetTask %s: %v", id, err)
 	}
-	if task != nil {
-		s.hub.Broadcast("task_updated", task.Workspace, id)
-	}
+	s.hub.Broadcast("task_updated", id)
 
 	s.hxRedirect(w, r, s.tagRedirect(id, task, r), http.StatusSeeOther)
 }
@@ -1184,11 +1055,11 @@ func (s *Server) tagRedirect(id string, task *model.Task, r *http.Request) strin
 
 // allowedMIME is the set of allowed upload MIME types.
 var allowedMIME = map[string]bool{
-	"image/png":     true,
-	"image/jpeg":    true,
-	"image/gif":     true,
-	"image/svg+xml": true,
-	"image/webp":    true,
+	"image/png":       true,
+	"image/jpeg":      true,
+	"image/gif":       true,
+	"image/svg+xml":   true,
+	"image/webp":      true,
 	"application/pdf": true,
 	"text/plain":      true,
 	"text/markdown":   true,
@@ -1211,8 +1082,7 @@ func sanitizeFilename(name string) string {
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// Enforce 10 MB limit.
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<20+1024) // extra 1KB for multipart headers
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20+1024)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		http.Error(w, "file too large (max 10 MB)", 400)
 		return
@@ -1225,18 +1095,14 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 	}
 	defer file.Close()
 
-	// Read first 512 bytes for content detection.
 	buf := make([]byte, 512)
 	n, _ := file.Read(buf)
 	detected := http.DetectContentType(buf[:n])
-	// Reset reader.
 	file.Seek(0, io.SeekStart)
 
-	// For SVG, DetectContentType returns text/xml or text/plain. Check extension too.
 	if strings.HasSuffix(strings.ToLower(header.Filename), ".svg") {
 		detected = "image/svg+xml"
 	}
-	// For markdown, DetectContentType returns text/plain. Check extension.
 	if strings.HasSuffix(strings.ToLower(header.Filename), ".md") {
 		detected = "text/markdown"
 	}
@@ -1248,14 +1114,12 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 
 	filename := sanitizeFilename(header.Filename)
 
-	// Create DB record (storedName = id + "_" + filename, computed internally).
 	att, err := s.db.CreateAttachment(id, filename, detected, header.Size)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
-	// Write file to disk.
 	taskDir := filepath.Join(s.attachmentsDir, id)
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		s.db.DeleteAttachment(att.ID)
@@ -1280,7 +1144,6 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Update size_bytes with actual bytes written.
 	if written != header.Size {
 		if _, err := s.db.Exec(`UPDATE attachments SET size_bytes = ? WHERE id = ?`, written, att.ID); err != nil {
 			log.Printf("update attachment size %s: %v", att.ID, err)
@@ -1288,9 +1151,7 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	task, _ := s.db.GetTask(id)
-	if task != nil {
-		s.hub.Broadcast("task_updated", task.Workspace, id)
-	}
+	s.hub.Broadcast("task_updated", id)
 
 	dest := "/task/" + id
 	if task != nil && task.IsEpic {
@@ -1314,25 +1175,20 @@ func (s *Server) handleDeleteAttachment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Verify attachment belongs to this task.
 	if att.TaskID != id {
 		http.Error(w, "attachment does not belong to this task", 400)
 		return
 	}
 
-	// Remove from disk.
 	os.Remove(filepath.Join(s.attachmentsDir, att.TaskID, att.StoredName))
 
-	// Remove from DB.
 	if err := s.db.DeleteAttachment(attID); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
 	task, _ := s.db.GetTask(id)
-	if task != nil {
-		s.hub.Broadcast("task_updated", task.Workspace, id)
-	}
+	s.hub.Broadcast("task_updated", id)
 
 	dest := "/task/" + id
 	if task != nil && task.IsEpic {
@@ -1345,23 +1201,19 @@ func (s *Server) handleServeAttachment(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("taskID")
 	filename := r.PathValue("filename")
 
-	// Sanitize to prevent path traversal.
 	filename = filepath.Base(filename)
 	filePath := filepath.Join(s.attachmentsDir, taskID, filename)
 
-	// Detect MIME from extension for Content-Type header.
 	ext := filepath.Ext(filename)
 	mimeType := mime.TypeByExtension(ext)
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
 
-	// SVG: force download and sandbox to prevent script execution.
 	if strings.HasSuffix(strings.ToLower(filename), ".svg") {
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	} else if !strings.HasPrefix(mimeType, "image/") {
-		// Non-images: suggest download.
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	}
 
@@ -1381,16 +1233,13 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Detect epic membership change.
 	epicChanged := oldParentID != parentID
 
 	if epicChanged {
-		// Reparenting: update epic_id first, then reorder within new context.
 		if err := s.db.SetEpicID(id, parentID); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		// Update status if crossing columns (SetEpicID doesn't change status).
 		if newStatus != "" {
 			if _, err := s.db.Exec(`UPDATE tasks SET status = ? WHERE id = ? AND status != ?`, newStatus, id, newStatus); err != nil {
 				log.Printf("update status for reparent: %v", err)
@@ -1404,8 +1253,6 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 	} else if parentID != "" {
 		err = s.db.ReorderInEpic(id, pos, parentID)
 	} else {
-		// Top-level reorder — if this is an epic moving between columns,
-		// move all children/subchildren with it.
 		if newStatus != "" {
 			task, tErr := s.db.GetTask(id)
 			if tErr != nil {
@@ -1426,13 +1273,7 @@ func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := s.db.GetTask(id)
-	if err != nil {
-		log.Printf("GetTask %s: %v", id, err)
-	}
-	if task != nil {
-		s.hub.Broadcast("task_reordered", task.Workspace, id)
-	}
+	s.hub.Broadcast("task_reordered", id)
 	if dest := r.FormValue("redirect"); dest != "" {
 		s.hxRedirect(w, r, dest, http.StatusSeeOther)
 		return
@@ -1449,8 +1290,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workspace := r.URL.Query().Get("workspace")
-	ch := s.hub.Subscribe(workspace)
+	ch := s.hub.Subscribe()
 	defer s.hub.Unsubscribe(ch)
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -1458,7 +1298,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	flusher.Flush()
 
-	// Keepalive ticker.
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -1492,10 +1331,9 @@ func (s *Server) handlePartialTaskRow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePartialTaskList(w http.ResponseWriter, r *http.Request) {
-	workspace := r.URL.Query().Get("workspace")
 	status := r.URL.Query().Get("status")
 
-	tasks, err := s.db.ListTasks(workspace, status, "", "", "")
+	tasks, err := s.db.ListTasks(status, "", "", "")
 	if err != nil {
 		log.Printf("ListTasks partial: %v", err)
 	}

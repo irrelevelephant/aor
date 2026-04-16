@@ -9,17 +9,11 @@ import (
 )
 
 // ListClosedTasks returns closed tasks matching the given filters.
-// If workspace is empty, all workspaces are included.
 // If olderThan is zero, all closed tasks match regardless of age.
 // Subtasks of closed epics are included automatically.
-func (d *DB) ListClosedTasks(workspace string, olderThan time.Duration) ([]model.Task, error) {
+func (d *DB) ListClosedTasks(olderThan time.Duration) ([]model.Task, error) {
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'closed'`
 	var args []any
-
-	if workspace != "" {
-		query += ` AND workspace = ?`
-		args = append(args, workspace)
-	}
 
 	if olderThan > 0 {
 		cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)

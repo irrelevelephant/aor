@@ -1,12 +1,10 @@
 package cmd
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"aor/ata/db"
@@ -14,14 +12,13 @@ import (
 
 func Clean(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace name or path (default: auto-detect)")
 	force := fs.Bool("force", false, "Skip confirmation prompt")
-	closed := fs.Bool("closed", false, "Only delete closed tasks (keep workspace registered)")
+	closed := fs.Bool("closed", false, "Only delete closed tasks")
 	olderThan := fs.String("older-than", "", "Only closed tasks older than N days (e.g. 30d); implies --closed")
+	all := fs.Bool("all", false, "Delete ALL tasks (not just closed)")
 	jsonOut := fs.Bool("json", false, "Output deleted task list as JSON")
 
 	flagArgs, _ := splitFlagsAndPositional(args, map[string]bool{
-		"workspace":  true,
 		"older-than": true,
 	})
 
@@ -34,16 +31,14 @@ func Clean(d *db.DB, args []string) error {
 		*closed = true
 	}
 
-	ws := resolveOrDetectWorkspace(d, *workspace)
-
-	if *closed {
-		return cleanClosed(d, ws, *olderThan, *force, *jsonOut)
+	if *all {
+		return cleanAll(d, *force)
 	}
-	return cleanAll(d, ws, *force)
+	return cleanClosed(d, *olderThan, *force, *jsonOut)
 }
 
 // cleanClosed deletes only closed tasks (GC mode).
-func cleanClosed(d *db.DB, ws, olderThan string, force, jsonOut bool) error {
+func cleanClosed(d *db.DB, olderThan string, force, jsonOut bool) error {
 	var ageDur time.Duration
 	if olderThan != "" {
 		parsed, err := db.ParseDayDuration(olderThan)
@@ -53,7 +48,7 @@ func cleanClosed(d *db.DB, ws, olderThan string, force, jsonOut bool) error {
 		ageDur = parsed
 	}
 
-	tasks, err := d.ListClosedTasks(ws, ageDur)
+	tasks, err := d.ListClosedTasks(ageDur)
 	if err != nil {
 		return err
 	}
@@ -129,10 +124,7 @@ func cleanClosed(d *db.DB, ws, olderThan string, force, jsonOut bool) error {
 
 	// Confirm.
 	if !force {
-		fmt.Printf("Delete these %d closed tasks? [y/N] ", len(tasks))
-		reader := bufio.NewReader(os.Stdin)
-		answer, _ := reader.ReadString('\n')
-		if strings.TrimSpace(strings.ToLower(answer)) != "y" {
+		if !promptConfirm(fmt.Sprintf("Delete these %d closed tasks? [y/N] ", len(tasks)), "y") {
 			fmt.Println("aborted")
 			return nil
 		}
@@ -158,61 +150,36 @@ func cleanClosed(d *db.DB, ws, olderThan string, force, jsonOut bool) error {
 	return nil
 }
 
-// cleanAll is the nuclear option: delete ALL tasks and unregister workspace.
-func cleanAll(d *db.DB, ws string, force bool) error {
-	if !force {
-		// Count tasks for the confirmation message.
-		open, closed, _ := d.WorkspaceTaskCounts(ws)
-		total := open + closed
-		fmt.Printf("This will permanently delete ALL %d tasks and unregister workspace: %s\n", total, ws)
-		fmt.Print("Type the workspace path to confirm: ")
-		reader := bufio.NewReader(os.Stdin)
-		answer, _ := reader.ReadString('\n')
-		answer = strings.TrimSpace(answer)
-
-		// Accept either the full path or workspace name.
-		wsInfo, _ := d.GetWorkspace(ws)
-		matched := answer == ws
-		if !matched && wsInfo != nil && wsInfo.Name != "" {
-			matched = answer == wsInfo.Name
-		}
-		if !matched {
-			fmt.Println("aborted")
-			return nil
-		}
-	}
-
-	deleted, removedDirs, err := doCleanWorkspace(d, ws)
+// cleanAll is the nuclear option: delete ALL tasks.
+func cleanAll(d *db.DB, force bool) error {
+	allTasks, err := d.ListTasks("", "", "", "")
 	if err != nil {
 		return err
-	}
-
-	fmt.Printf("deleted %d tasks, unregistered workspace: %s\n", deleted, ws)
-	if removedDirs > 0 {
-		fmt.Printf("removed %d attachment directories\n", removedDirs)
-	}
-	return nil
-}
-
-// doCleanWorkspace deletes all tasks and unregisters the workspace, including
-// attachment cleanup. Returns the number of deleted tasks and removed attachment dirs.
-func doCleanWorkspace(d *db.DB, ws string) (deleted int64, removedDirs int, err error) {
-	allTasks, err := d.ListTasks(ws, "", "", "", "")
-	if err != nil {
-		return 0, 0, err
 	}
 	taskIDs := make([]string, len(allTasks))
 	for i, t := range allTasks {
 		taskIDs[i] = t.ID
 	}
 
-	deleted, err = d.CleanWorkspace(ws)
-	if err != nil {
-		return 0, 0, err
+	if !force {
+		fmt.Printf("This will permanently delete ALL %d tasks.\n", len(allTasks))
+		if !promptConfirm(`Type "yes" to confirm: `, "yes") {
+			fmt.Println("aborted")
+			return nil
+		}
 	}
 
-	removedDirs = removeAttachmentDirs(taskIDs)
-	return deleted, removedDirs, nil
+	if _, err := d.Exec(`DELETE FROM tasks`); err != nil {
+		return fmt.Errorf("delete tasks: %w", err)
+	}
+
+	removedDirs := removeAttachmentDirs(taskIDs)
+
+	fmt.Printf("deleted %d tasks\n", len(allTasks))
+	if removedDirs > 0 {
+		fmt.Printf("removed %d attachment directories\n", removedDirs)
+	}
+	return nil
 }
 
 // removeAttachmentDirs removes attachment directories from disk for the given task IDs.
@@ -228,7 +195,7 @@ func removeAttachmentDirs(taskIDs []string) int {
 	for _, id := range taskIDs {
 		dir := filepath.Join(attDir, id)
 		if _, err := os.Lstat(dir); err != nil {
-			continue // doesn't exist
+			continue
 		}
 		if err := os.RemoveAll(dir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to remove attachments for %s: %v\n", id, err)

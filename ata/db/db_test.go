@@ -28,18 +28,18 @@ func testDB(t *testing.T) *DB {
 // makeNestedEpic creates a root epic → sub-epic → leaf task hierarchy for tests.
 func makeNestedEpic(t *testing.T, d *DB) (root, sub, leaf *model.Task) {
 	t.Helper()
-	r, _ := d.CreateTask("Root", "", model.StatusQueue, "", "/ws", "")
+	r, _ := d.CreateTask("Root", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(r.ID, "")
-	s, _ := d.CreateTask("Sub", "", model.StatusQueue, r.ID, "/ws", "")
+	s, _ := d.CreateTask("Sub", "", model.StatusQueue, r.ID, "")
 	d.PromoteToEpic(s.ID, "")
-	l, _ := d.CreateTask("Leaf", "", model.StatusQueue, s.ID, "/ws", "")
+	l, _ := d.CreateTask("Leaf", "", model.StatusQueue, s.ID, "")
 	return r, s, l
 }
 
 func TestCreateAndGetTask(t *testing.T) {
 	d := testDB(t)
 
-	task, err := d.CreateTask("Test task", "body text", model.StatusBacklog, "", "/test/workspace", "")
+	task, err := d.CreateTask("Test task", "body text", model.StatusBacklog, "", "")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -66,19 +66,19 @@ func TestCreateAndGetTask(t *testing.T) {
 func TestListTasks(t *testing.T) {
 	d := testDB(t)
 
-	d.CreateTask("A", "", model.StatusQueue, "", "/ws1", "")
-	d.CreateTask("B", "", model.StatusBacklog, "", "/ws1", "")
-	d.CreateTask("C", "", model.StatusQueue, "", "/ws2", "")
+	d.CreateTask("A", "", model.StatusQueue, "", "")
+	d.CreateTask("B", "", model.StatusBacklog, "", "")
+	d.CreateTask("C", "", model.StatusQueue, "", "")
 
-	tasks, err := d.ListTasks("/ws1", "", "", "", "")
+	tasks, err := d.ListTasks("", "", "", "")
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(tasks) != 2 {
-		t.Errorf("got %d tasks for /ws1, want 2", len(tasks))
+	if len(tasks) != 3 {
+		t.Errorf("got %d tasks, want 3", len(tasks))
 	}
 
-	tasks, err = d.ListTasks("", model.StatusQueue, "", "", "")
+	tasks, err = d.ListTasks(model.StatusQueue, "", "", "")
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestListTasks(t *testing.T) {
 func TestClaimAndUnclaim(t *testing.T) {
 	d := testDB(t)
 
-	task, _ := d.CreateTask("Claimable", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("Claimable", "", model.StatusQueue, "", "")
 
 	claimed, err := d.ClaimTask(task.ID, os.Getpid(), "test")
 	if err != nil {
@@ -112,7 +112,7 @@ func TestClaimAndUnclaim(t *testing.T) {
 func TestCloseAndReopen(t *testing.T) {
 	d := testDB(t)
 
-	task, _ := d.CreateTask("Closable", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("Closable", "", model.StatusQueue, "", "")
 
 	closed, err := d.CloseTask(task.ID, "done")
 	if err != nil {
@@ -137,7 +137,7 @@ func TestCloseAndReopen(t *testing.T) {
 func TestPromoteToEpic(t *testing.T) {
 	d := testDB(t)
 
-	task, _ := d.CreateTask("Epic candidate", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("Epic candidate", "", model.StatusQueue, "", "")
 
 	epic, err := d.PromoteToEpic(task.ID, "# Spec\nDo things")
 	if err != nil {
@@ -155,14 +155,14 @@ func TestEpicCloseEligible(t *testing.T) {
 	d := testDB(t)
 
 	// Create epic with 2 children.
-	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
 
-	c1, _ := d.CreateTask("Child 1", "", model.StatusQueue, epic.ID, "/ws", "")
-	c2, _ := d.CreateTask("Child 2", "", model.StatusQueue, epic.ID, "/ws", "")
+	c1, _ := d.CreateTask("Child 1", "", model.StatusQueue, epic.ID, "")
+	c2, _ := d.CreateTask("Child 2", "", model.StatusQueue, epic.ID, "")
 
 	// Not eligible yet.
-	eligible, _ := d.EpicCloseEligible("/ws")
+	eligible, _ := d.EpicCloseEligible()
 	if len(eligible) != 0 {
 		t.Errorf("expected 0 eligible, got %d", len(eligible))
 	}
@@ -171,7 +171,7 @@ func TestEpicCloseEligible(t *testing.T) {
 	d.CloseTask(c1.ID, "done")
 	d.CloseTask(c2.ID, "done")
 
-	eligible, _ = d.EpicCloseEligible("/ws")
+	eligible, _ = d.EpicCloseEligible()
 	if len(eligible) != 1 {
 		t.Fatalf("expected 1 eligible, got %d", len(eligible))
 	}
@@ -184,11 +184,11 @@ func TestReadyTasksExcludesEpics(t *testing.T) {
 	d := testDB(t)
 
 	// Create a regular task and an epic, both in queue.
-	task, _ := d.CreateTask("Regular Task", "", model.StatusQueue, "", "/ws", "")
-	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("Regular Task", "", model.StatusQueue, "", "")
+	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "# Spec")
 
-	ready, err := d.ReadyTasks("/ws", "", "", 0)
+	ready, err := d.ReadyTasks("", "", 0)
 	if err != nil {
 		t.Fatalf("ReadyTasks: %v", err)
 	}
@@ -211,18 +211,18 @@ func TestReadyTasksNestedEpics(t *testing.T) {
 	//     │   ├── deep1 (task, queue)
 	//     │   └── deep2 (task, queue)
 	//     └── shallow (task, queue)
-	root, _ := d.CreateTask("Root Epic", "", model.StatusQueue, "", "/ws", "")
+	root, _ := d.CreateTask("Root Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(root.ID, "# Root Spec")
 
-	sub, _ := d.CreateTask("Sub Epic", "", model.StatusQueue, root.ID, "/ws", "")
+	sub, _ := d.CreateTask("Sub Epic", "", model.StatusQueue, root.ID, "")
 	d.PromoteToEpic(sub.ID, "# Sub Spec")
 
-	deep1, _ := d.CreateTask("Deep Task 1", "", model.StatusQueue, sub.ID, "/ws", "")
-	deep2, _ := d.CreateTask("Deep Task 2", "", model.StatusQueue, sub.ID, "/ws", "")
-	shallow, _ := d.CreateTask("Shallow Task", "", model.StatusQueue, root.ID, "/ws", "")
+	deep1, _ := d.CreateTask("Deep Task 1", "", model.StatusQueue, sub.ID, "")
+	deep2, _ := d.CreateTask("Deep Task 2", "", model.StatusQueue, sub.ID, "")
+	shallow, _ := d.CreateTask("Shallow Task", "", model.StatusQueue, root.ID, "")
 
 	// Filtering by root epic should return tasks at all nesting levels.
-	ready, err := d.ReadyTasks("/ws", root.ID, "", 0)
+	ready, err := d.ReadyTasks(root.ID, "", 0)
 	if err != nil {
 		t.Fatalf("ReadyTasks: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestReadyTasksNestedEpics(t *testing.T) {
 	}
 
 	// Filtering by sub-epic should only return its children.
-	ready, err = d.ReadyTasks("/ws", sub.ID, "", 0)
+	ready, err = d.ReadyTasks(sub.ID, "", 0)
 	if err != nil {
 		t.Fatalf("ReadyTasks: %v", err)
 	}
@@ -259,18 +259,18 @@ func TestReadyTasksTripleNestedEpics(t *testing.T) {
 	d := testDB(t)
 
 	// Three levels of nesting: root → mid → leaf (epic) → task
-	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "/ws", "")
+	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(root.ID, "")
 
-	mid, _ := d.CreateTask("Mid", "", model.StatusQueue, root.ID, "/ws", "")
+	mid, _ := d.CreateTask("Mid", "", model.StatusQueue, root.ID, "")
 	d.PromoteToEpic(mid.ID, "")
 
-	leaf, _ := d.CreateTask("Leaf Epic", "", model.StatusQueue, mid.ID, "/ws", "")
+	leaf, _ := d.CreateTask("Leaf Epic", "", model.StatusQueue, mid.ID, "")
 	d.PromoteToEpic(leaf.ID, "")
 
-	task, _ := d.CreateTask("Deep Task", "", model.StatusQueue, leaf.ID, "/ws", "")
+	task, _ := d.CreateTask("Deep Task", "", model.StatusQueue, leaf.ID, "")
 
-	ready, err := d.ReadyTasks("/ws", root.ID, "", 0)
+	ready, err := d.ReadyTasks(root.ID, "", 0)
 	if err != nil {
 		t.Fatalf("ReadyTasks: %v", err)
 	}
@@ -286,11 +286,11 @@ func TestReadyTasksTripleNestedEpics(t *testing.T) {
 func TestCloseEpicWithOpenSubtasks(t *testing.T) {
 	d := testDB(t)
 
-	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
 
-	c1, _ := d.CreateTask("Child 1", "", model.StatusQueue, epic.ID, "/ws", "")
-	d.CreateTask("Child 2", "", model.StatusQueue, epic.ID, "/ws", "")
+	c1, _ := d.CreateTask("Child 1", "", model.StatusQueue, epic.ID, "")
+	d.CreateTask("Child 2", "", model.StatusQueue, epic.ID, "")
 
 	// Should not be able to close epic with open subtasks.
 	_, err := d.CloseTask(epic.ID, "done")
@@ -314,14 +314,14 @@ func TestEpicCloseEligibleCascadesWithNesting(t *testing.T) {
 	root, sub, task := makeNestedEpic(t, d)
 
 	// Nothing eligible yet.
-	eligible, _ := d.EpicCloseEligible("/ws")
+	eligible, _ := d.EpicCloseEligible()
 	if len(eligible) != 0 {
 		t.Fatalf("expected 0 eligible, got %d", len(eligible))
 	}
 
 	// Close the leaf task — sub should become eligible, but not root.
 	d.CloseTask(task.ID, "done")
-	eligible, _ = d.EpicCloseEligible("/ws")
+	eligible, _ = d.EpicCloseEligible()
 	if len(eligible) != 1 {
 		t.Fatalf("expected 1 eligible, got %d", len(eligible))
 	}
@@ -331,7 +331,7 @@ func TestEpicCloseEligibleCascadesWithNesting(t *testing.T) {
 
 	// Close sub — now root should become eligible.
 	d.CloseTask(sub.ID, "done")
-	eligible, _ = d.EpicCloseEligible("/ws")
+	eligible, _ = d.EpicCloseEligible()
 	if len(eligible) != 1 {
 		t.Fatalf("expected 1 eligible, got %d", len(eligible))
 	}
@@ -365,17 +365,17 @@ func TestListTasksNestedEpic(t *testing.T) {
 
 	// root (epic) → sub (epic) → deep task
 	//             → shallow task
-	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "/ws", "")
+	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(root.ID, "")
 
-	sub, _ := d.CreateTask("Sub", "", model.StatusQueue, root.ID, "/ws", "")
+	sub, _ := d.CreateTask("Sub", "", model.StatusQueue, root.ID, "")
 	d.PromoteToEpic(sub.ID, "")
 
-	deep, _ := d.CreateTask("Deep", "", model.StatusQueue, sub.ID, "/ws", "")
-	shallow, _ := d.CreateTask("Shallow", "", model.StatusQueue, root.ID, "/ws", "")
+	deep, _ := d.CreateTask("Deep", "", model.StatusQueue, sub.ID, "")
+	shallow, _ := d.CreateTask("Shallow", "", model.StatusQueue, root.ID, "")
 
 	// ListTasks with root epic should return sub, deep, and shallow.
-	tasks, err := d.ListTasks("/ws", "", root.ID, "", "")
+	tasks, err := d.ListTasks("", root.ID, "", "")
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestListTasksNestedEpic(t *testing.T) {
 	}
 
 	// ListTasks with sub epic should only return deep task.
-	tasks, err = d.ListTasks("/ws", "", sub.ID, "", "")
+	tasks, err = d.ListTasks("", sub.ID, "", "")
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestListTasksNestedEpic(t *testing.T) {
 func TestComments(t *testing.T) {
 	d := testDB(t)
 
-	task, _ := d.CreateTask("Commented task", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("Commented task", "", model.StatusQueue, "", "")
 
 	c, err := d.AddComment(task.ID, "first comment", model.AuthorHuman)
 	if err != nil {
@@ -435,16 +435,16 @@ func TestComments(t *testing.T) {
 func TestReorder(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
-	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
-	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "")
+	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "")
+	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "")
 
 	// Move third to position 0 (top).
 	if err := d.Reorder(t3.ID, 0, ""); err != nil {
 		t.Fatalf("Reorder: %v", err)
 	}
 
-	tasks, _ := d.ReadyTasks("/ws", "", "", 0)
+	tasks, _ := d.ReadyTasks("", "", 0)
 	if len(tasks) < 3 {
 		t.Fatalf("expected 3 tasks, got %d", len(tasks))
 	}
@@ -459,9 +459,9 @@ func TestReorder(t *testing.T) {
 func TestDeps(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("Task A", "", model.StatusQueue, "", "/ws", "")
-	b, _ := d.CreateTask("Task B", "", model.StatusQueue, "", "/ws", "")
-	c, _ := d.CreateTask("Task C", "", model.StatusQueue, "", "/ws", "")
+	a, _ := d.CreateTask("Task A", "", model.StatusQueue, "", "")
+	b, _ := d.CreateTask("Task B", "", model.StatusQueue, "", "")
+	c, _ := d.CreateTask("Task C", "", model.StatusQueue, "", "")
 
 	// B depends on A.
 	if err := d.AddDep(b.ID, a.ID); err != nil {
@@ -481,7 +481,7 @@ func TestDeps(t *testing.T) {
 	}
 
 	// ReadyTasks should exclude B.
-	ready, _ := d.ReadyTasks("/ws", "", "", 0)
+	ready, _ := d.ReadyTasks("", "", 0)
 	for _, r := range ready {
 		if r.ID == b.ID {
 			t.Errorf("B should not be in ready tasks")
@@ -514,7 +514,7 @@ func TestDeps(t *testing.T) {
 	}
 
 	// Now B should be in ready tasks.
-	ready, _ = d.ReadyTasks("/ws", "", "", 0)
+	ready, _ = d.ReadyTasks("", "", 0)
 	found := false
 	for _, r := range ready {
 		if r.ID == b.ID {
@@ -564,8 +564,8 @@ func TestDeps(t *testing.T) {
 func TestTags(t *testing.T) {
 	d := testDB(t)
 
-	task1, _ := d.CreateTask("Tagged 1", "", model.StatusQueue, "", "/ws", "")
-	task2, _ := d.CreateTask("Tagged 2", "", model.StatusQueue, "", "/ws", "")
+	task1, _ := d.CreateTask("Tagged 1", "", model.StatusQueue, "", "")
+	task2, _ := d.CreateTask("Tagged 2", "", model.StatusQueue, "", "")
 
 	t.Run("AddAndGetTags", func(t *testing.T) {
 		d.AddTag(task1.ID, "backend")
@@ -635,36 +635,19 @@ func TestTags(t *testing.T) {
 	})
 
 	t.Run("ListAllTags", func(t *testing.T) {
-		tags, err := d.ListAllTags("")
+		tags, err := d.ListAllTags()
 		if err != nil {
 			t.Fatalf("ListAllTags: %v", err)
 		}
 		if len(tags) < 3 {
 			t.Errorf("expected at least 3 tags, got %d", len(tags))
 		}
-
-		// Workspace filter.
-		tags, err = d.ListAllTags("/ws")
-		if err != nil {
-			t.Fatalf("ListAllTags with workspace: %v", err)
-		}
-		if len(tags) < 3 {
-			t.Errorf("expected at least 3 tags for /ws, got %d", len(tags))
-		}
-
-		tags, err = d.ListAllTags("/nonexistent")
-		if err != nil {
-			t.Fatalf("ListAllTags with nonexistent workspace: %v", err)
-		}
-		if len(tags) != 0 {
-			t.Errorf("expected 0 tags for nonexistent workspace, got %d", len(tags))
-		}
 	})
 
 	t.Run("ListTagsForEpic", func(t *testing.T) {
-		epic, _ := d.CreateTask("Tag Epic", "", model.StatusQueue, "", "/ws", "")
+		epic, _ := d.CreateTask("Tag Epic", "", model.StatusQueue, "", "")
 		d.PromoteToEpic(epic.ID, "")
-		child, _ := d.CreateTask("Tag Child", "", model.StatusQueue, epic.ID, "/ws", "")
+		child, _ := d.CreateTask("Tag Child", "", model.StatusQueue, epic.ID, "")
 		d.AddTag(child.ID, "epic-tag")
 
 		tags, err := d.ListTagsForEpic(epic.ID)
@@ -677,117 +660,18 @@ func TestTags(t *testing.T) {
 	})
 }
 
-func TestWorkspaces(t *testing.T) {
-	d := testDB(t)
-
-	t.Run("RegisterAndCheck", func(t *testing.T) {
-		err := d.RegisterWorkspace("/test/ws", "testws")
-		if err != nil {
-			t.Fatalf("RegisterWorkspace: %v", err)
-		}
-
-		exists, err := d.IsRegisteredWorkspace("/test/ws")
-		if err != nil {
-			t.Fatalf("IsRegisteredWorkspace: %v", err)
-		}
-		if !exists {
-			t.Error("expected workspace to be registered")
-		}
-
-		exists, err = d.IsRegisteredWorkspace("/nonexistent")
-		if err != nil {
-			t.Fatalf("IsRegisteredWorkspace: %v", err)
-		}
-		if exists {
-			t.Error("expected workspace to not be registered")
-		}
-	})
-
-	t.Run("ResolveByName", func(t *testing.T) {
-		path, err := d.ResolveWorkspace("testws")
-		if err != nil {
-			t.Fatalf("ResolveWorkspace by name: %v", err)
-		}
-		if path != "/test/ws" {
-			t.Errorf("path = %q, want /test/ws", path)
-		}
-	})
-
-	t.Run("ResolveByPath", func(t *testing.T) {
-		path, err := d.ResolveWorkspace("/test/ws")
-		if err != nil {
-			t.Fatalf("ResolveWorkspace by path: %v", err)
-		}
-		if path != "/test/ws" {
-			t.Errorf("path = %q, want /test/ws", path)
-		}
-	})
-
-	t.Run("ResolveNotFound", func(t *testing.T) {
-		_, err := d.ResolveWorkspace("nonexistent")
-		if err == nil {
-			t.Error("expected error for nonexistent workspace")
-		}
-	})
-
-	t.Run("Unregister", func(t *testing.T) {
-		err := d.UnregisterWorkspace("/test/ws")
-		if err != nil {
-			t.Fatalf("UnregisterWorkspace: %v", err)
-		}
-		exists, _ := d.IsRegisteredWorkspace("/test/ws")
-		if exists {
-			t.Error("expected workspace to be unregistered")
-		}
-	})
-
-	t.Run("TaskCounts", func(t *testing.T) {
-		d.RegisterWorkspace("/count/ws", "countws")
-		d.CreateTask("Open1", "", model.StatusQueue, "", "/count/ws", "")
-		d.CreateTask("Open2", "", model.StatusBacklog, "", "/count/ws", "")
-		t3, _ := d.CreateTask("Closed1", "", model.StatusQueue, "", "/count/ws", "")
-		d.CloseTask(t3.ID, "done")
-		t4, _ := d.CreateTask("Closed2", "", model.StatusQueue, "", "/count/ws", "")
-		d.CloseTask(t4.ID, "done")
-		t5, _ := d.CreateTask("Closed3", "", model.StatusQueue, "", "/count/ws", "")
-		d.CloseTask(t5.ID, "done")
-
-		open, closed, err := d.WorkspaceTaskCounts("/count/ws")
-		if err != nil {
-			t.Fatalf("WorkspaceTaskCounts: %v", err)
-		}
-		if open != 2 {
-			t.Errorf("open = %d, want 2", open)
-		}
-		if closed != 3 {
-			t.Errorf("closed = %d, want 3", closed)
-		}
-	})
-
-	t.Run("TaskCountsEmpty", func(t *testing.T) {
-		d.RegisterWorkspace("/empty/ws", "emptyws")
-		open, closed, err := d.WorkspaceTaskCounts("/empty/ws")
-		if err != nil {
-			t.Fatalf("WorkspaceTaskCounts: %v", err)
-		}
-		if open != 0 || closed != 0 {
-			t.Errorf("expected 0/0, got %d/%d", open, closed)
-		}
-	})
-}
-
 func TestCreateTaskSortOrder(t *testing.T) {
 	d := testDB(t)
 
-	t1, err := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
+	t1, err := d.CreateTask("First", "", model.StatusQueue, "", "")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	t2, err := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
+	t2, err := d.CreateTask("Second", "", model.StatusQueue, "", "")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	t3, err := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+	t3, err := d.CreateTask("Third", "", model.StatusQueue, "", "")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -806,8 +690,8 @@ func TestCreateTaskSortOrder(t *testing.T) {
 func TestClaimBlockedTask(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("Blocker", "", model.StatusQueue, "", "/ws", "")
-	b, _ := d.CreateTask("Blocked", "", model.StatusQueue, "", "/ws", "")
+	a, _ := d.CreateTask("Blocker", "", model.StatusQueue, "", "")
+	b, _ := d.CreateTask("Blocked", "", model.StatusQueue, "", "")
 
 	if err := d.AddDep(b.ID, a.ID); err != nil {
 		t.Fatalf("AddDep: %v", err)
@@ -832,16 +716,16 @@ func TestClaimBlockedTask(t *testing.T) {
 func TestReorderDown(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
-	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
-	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "")
+	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "")
+	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "")
 
 	// Move first task to last position.
 	if err := d.Reorder(t1.ID, 2, ""); err != nil {
 		t.Fatalf("Reorder down: %v", err)
 	}
 
-	tasks, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	tasks, _ := d.ListTasks(model.StatusQueue, "", "", "")
 	if len(tasks) != 3 {
 		t.Fatalf("expected 3 tasks, got %d", len(tasks))
 	}
@@ -859,21 +743,21 @@ func TestReorderDown(t *testing.T) {
 func TestReorderCrossStatus(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("Queue1", "", model.StatusQueue, "", "/ws", "")
-	t2, _ := d.CreateTask("Queue2", "", model.StatusQueue, "", "/ws", "")
-	b1, _ := d.CreateTask("Backlog1", "", model.StatusBacklog, "", "/ws", "")
+	t1, _ := d.CreateTask("Queue1", "", model.StatusQueue, "", "")
+	t2, _ := d.CreateTask("Queue2", "", model.StatusQueue, "", "")
+	b1, _ := d.CreateTask("Backlog1", "", model.StatusBacklog, "", "")
 
 	// Move t1 from queue to backlog at position 0.
 	if err := d.Reorder(t1.ID, 0, model.StatusBacklog); err != nil {
 		t.Fatalf("Reorder cross-status: %v", err)
 	}
 
-	queue, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	queue, _ := d.ListTasks(model.StatusQueue, "", "", "")
 	if len(queue) != 1 || queue[0].ID != t2.ID {
 		t.Errorf("queue should have only t2, got %v", queue)
 	}
 
-	backlog, _ := d.ListTasks("/ws", model.StatusBacklog, "", "", "")
+	backlog, _ := d.ListTasks(model.StatusBacklog, "", "", "")
 	if len(backlog) != 2 {
 		t.Fatalf("expected 2 backlog tasks, got %d", len(backlog))
 	}
@@ -888,19 +772,19 @@ func TestReorderCrossStatus(t *testing.T) {
 func TestReorderInEpic(t *testing.T) {
 	d := testDB(t)
 
-	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
 
-	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
-	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
-	c3, _ := d.CreateTask("Child3", "", model.StatusQueue, epic.ID, "/ws", "")
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
+	c3, _ := d.CreateTask("Child3", "", model.StatusQueue, epic.ID, "")
 
 	// Move c1 to last position.
 	if err := d.ReorderInEpic(c1.ID, 2, epic.ID); err != nil {
 		t.Fatalf("ReorderInEpic: %v", err)
 	}
 
-	children, _ := d.ListTasks("", "", epic.ID, "", "")
+	children, _ := d.ListTasks("", epic.ID, "", "")
 	if len(children) != 3 {
 		t.Fatalf("expected 3 children, got %d", len(children))
 	}
@@ -918,15 +802,15 @@ func TestReorderInEpic(t *testing.T) {
 func TestReorderOptBeforeAfter(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
-	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
-	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "")
+	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "")
+	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "")
 
 	// Move t3 before t1 (to the top).
 	if err := d.ReorderOpt(t3.ID, "", ReorderOpts{Position: -1, Before: t1.ID}); err != nil {
 		t.Fatalf("ReorderOpt before: %v", err)
 	}
-	tasks, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	tasks, _ := d.ListTasks(model.StatusQueue, "", "", "")
 	if len(tasks) != 3 {
 		t.Fatalf("expected 3, got %d", len(tasks))
 	}
@@ -944,7 +828,7 @@ func TestReorderOptBeforeAfter(t *testing.T) {
 	if err := d.ReorderOpt(t1.ID, "", ReorderOpts{Position: -1, After: t2.ID}); err != nil {
 		t.Fatalf("ReorderOpt after: %v", err)
 	}
-	tasks, _ = d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	tasks, _ = d.ListTasks(model.StatusQueue, "", "", "")
 	if tasks[0].ID != t3.ID {
 		t.Errorf("pos 0: want %s, got %s", t3.ID, tasks[0].ID)
 	}
@@ -959,15 +843,15 @@ func TestReorderOptBeforeAfter(t *testing.T) {
 func TestReorderOptTopBottom(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
-	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "/ws", "")
-	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "/ws", "")
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "")
+	t2, _ := d.CreateTask("Second", "", model.StatusQueue, "", "")
+	t3, _ := d.CreateTask("Third", "", model.StatusQueue, "", "")
 
 	// Move t3 to top.
 	if err := d.ReorderOpt(t3.ID, "", ReorderOpts{Position: -1, Top: true}); err != nil {
 		t.Fatalf("ReorderOpt top: %v", err)
 	}
-	tasks, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	tasks, _ := d.ListTasks(model.StatusQueue, "", "", "")
 	if tasks[0].ID != t3.ID {
 		t.Errorf("top: pos 0 want %s, got %s", t3.ID, tasks[0].ID)
 	}
@@ -976,7 +860,7 @@ func TestReorderOptTopBottom(t *testing.T) {
 	if err := d.ReorderOpt(t3.ID, "", ReorderOpts{Position: -1, Bottom: true}); err != nil {
 		t.Fatalf("ReorderOpt bottom: %v", err)
 	}
-	tasks, _ = d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	tasks, _ = d.ListTasks(model.StatusQueue, "", "", "")
 	if tasks[2].ID != t3.ID {
 		t.Errorf("bottom: pos 2 want %s, got %s", t3.ID, tasks[2].ID)
 	}
@@ -988,20 +872,20 @@ func TestReorderOptTopBottom(t *testing.T) {
 func TestReorderOptCrossStatus(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("Queue1", "", model.StatusQueue, "", "/ws", "")
-	b1, _ := d.CreateTask("Backlog1", "", model.StatusBacklog, "", "/ws", "")
+	t1, _ := d.CreateTask("Queue1", "", model.StatusQueue, "", "")
+	b1, _ := d.CreateTask("Backlog1", "", model.StatusBacklog, "", "")
 
 	// Move t1 to backlog at top.
 	if err := d.ReorderOpt(t1.ID, model.StatusBacklog, ReorderOpts{Position: -1, Top: true}); err != nil {
 		t.Fatalf("ReorderOpt cross-status: %v", err)
 	}
 
-	queue, _ := d.ListTasks("/ws", model.StatusQueue, "", "", "")
+	queue, _ := d.ListTasks(model.StatusQueue, "", "", "")
 	if len(queue) != 0 {
 		t.Errorf("queue should be empty, got %d", len(queue))
 	}
 
-	backlog, _ := d.ListTasks("/ws", model.StatusBacklog, "", "", "")
+	backlog, _ := d.ListTasks(model.StatusBacklog, "", "", "")
 	if len(backlog) != 2 {
 		t.Fatalf("expected 2 backlog, got %d", len(backlog))
 	}
@@ -1016,18 +900,18 @@ func TestReorderOptCrossStatus(t *testing.T) {
 func TestReorderInEpicOpts(t *testing.T) {
 	d := testDB(t)
 
-	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
 
-	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
-	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
-	c3, _ := d.CreateTask("Child3", "", model.StatusQueue, epic.ID, "/ws", "")
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
+	c3, _ := d.CreateTask("Child3", "", model.StatusQueue, epic.ID, "")
 
 	// Move c3 before c1.
 	if err := d.ReorderInEpicOpts(c3.ID, epic.ID, ReorderOpts{Position: -1, Before: c1.ID}); err != nil {
 		t.Fatalf("ReorderInEpicOpts before: %v", err)
 	}
-	children, _ := d.ListTasks("", "", epic.ID, "", "")
+	children, _ := d.ListTasks("", epic.ID, "", "")
 	if children[0].ID != c3.ID {
 		t.Errorf("pos 0: want %s, got %s", c3.ID, children[0].ID)
 	}
@@ -1042,7 +926,7 @@ func TestReorderInEpicOpts(t *testing.T) {
 	if err := d.ReorderInEpicOpts(c1.ID, epic.ID, ReorderOpts{Position: -1, After: c2.ID}); err != nil {
 		t.Fatalf("ReorderInEpicOpts after: %v", err)
 	}
-	children, _ = d.ListTasks("", "", epic.ID, "", "")
+	children, _ = d.ListTasks("", epic.ID, "", "")
 	if children[0].ID != c3.ID {
 		t.Errorf("pos 0: want %s, got %s", c3.ID, children[0].ID)
 	}
@@ -1057,7 +941,7 @@ func TestReorderInEpicOpts(t *testing.T) {
 func TestReorderOptBeforeNotFound(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "/ws", "")
+	t1, _ := d.CreateTask("First", "", model.StatusQueue, "", "")
 	_ = t1
 
 	err := d.ReorderOpt(t1.ID, "", ReorderOpts{Position: -1, Before: "nonexistent"})
@@ -1069,9 +953,9 @@ func TestReorderOptBeforeNotFound(t *testing.T) {
 func TestSetEpicID(t *testing.T) {
 	d := testDB(t)
 
-	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	task, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "")
 
 	// Move task into epic.
 	if err := d.SetEpicID(task.ID, epic.ID); err != nil {
@@ -1087,9 +971,9 @@ func TestSetEpicID(t *testing.T) {
 func TestSetEpicIDClear(t *testing.T) {
 	d := testDB(t)
 
-	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	child, _ := d.CreateTask("Child", "", model.StatusQueue, epic.ID, "/ws", "")
+	child, _ := d.CreateTask("Child", "", model.StatusQueue, epic.ID, "")
 
 	// Remove from epic.
 	if err := d.SetEpicID(child.ID, ""); err != nil {
@@ -1106,8 +990,8 @@ func TestSetEpicIDAutoPromote(t *testing.T) {
 	d := testDB(t)
 
 	// Create two regular tasks.
-	target, _ := d.CreateTask("Will become epic", "", model.StatusQueue, "", "/ws", "")
-	task, _ := d.CreateTask("Child", "", model.StatusQueue, "", "/ws", "")
+	target, _ := d.CreateTask("Will become epic", "", model.StatusQueue, "", "")
+	task, _ := d.CreateTask("Child", "", model.StatusQueue, "", "")
 
 	// SetEpicID should auto-promote target.
 	if err := d.SetEpicID(task.ID, target.ID); err != nil {
@@ -1124,13 +1008,13 @@ func TestListTaskTree(t *testing.T) {
 	d := testDB(t)
 
 	// Create an epic with children and a standalone task.
-	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
-	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
-	standalone, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "/ws", "")
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
+	standalone, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "")
 
-	tree, err := d.ListTaskTree("/ws", model.StatusQueue, "", "")
+	tree, err := d.ListTaskTree(model.StatusQueue, "", "")
 	if err != nil {
 		t.Fatalf("ListTaskTree: %v", err)
 	}
@@ -1174,12 +1058,12 @@ func TestListTaskTreeOrphanedChildren(t *testing.T) {
 	d := testDB(t)
 
 	// Epic in backlog, child moved to queue — child should appear as top-level in queue.
-	epic, _ := d.CreateTask("Epic", "", model.StatusBacklog, "", "/ws", "")
+	epic, _ := d.CreateTask("Epic", "", model.StatusBacklog, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	child, _ := d.CreateTask("Orphan Child", "", model.StatusBacklog, epic.ID, "/ws", "")
+	child, _ := d.CreateTask("Orphan Child", "", model.StatusBacklog, epic.ID, "")
 	d.Exec(`UPDATE tasks SET status = ? WHERE id = ?`, model.StatusQueue, child.ID)
 
-	tree, err := d.ListTaskTree("/ws", model.StatusQueue, "", "")
+	tree, err := d.ListTaskTree(model.StatusQueue, "", "")
 	if err != nil {
 		t.Fatalf("ListTaskTree: %v", err)
 	}
@@ -1198,7 +1082,7 @@ func TestListTaskTreeOrphanedChildren(t *testing.T) {
 func TestGetTaskWithComments(t *testing.T) {
 	d := testDB(t)
 
-	task, _ := d.CreateTask("With comments", "", model.StatusQueue, "", "/ws", "")
+	task, _ := d.CreateTask("With comments", "", model.StatusQueue, "", "")
 	d.AddComment(task.ID, "comment 1", model.AuthorHuman)
 
 	twc, err := d.GetTaskWithComments(task.ID)
@@ -1216,9 +1100,9 @@ func TestGetTaskWithComments(t *testing.T) {
 func TestReopenTaskSortOrder(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
-	t2, _ := d.CreateTask("B", "", model.StatusQueue, "", "/ws", "")
-	t3, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+	t1, _ := d.CreateTask("A", "", model.StatusQueue, "", "")
+	t2, _ := d.CreateTask("B", "", model.StatusQueue, "", "")
+	t3, _ := d.CreateTask("C", "", model.StatusQueue, "", "")
 
 	// Close t1, then reopen — it should land at the end, after t2 and t3.
 	d.CloseTask(t1.ID, "done")
@@ -1240,10 +1124,10 @@ func TestReopenTaskSortOrder(t *testing.T) {
 func TestReopenEpicChildSortOrder(t *testing.T) {
 	d := testDB(t)
 
-	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "/ws", "")
-	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "/ws", "")
+	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
+	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
 
 	d.CloseTask(c1.ID, "done")
 	reopened, err := d.ReopenTask(c1.ID)
@@ -1260,9 +1144,9 @@ func TestReopenEpicChildSortOrder(t *testing.T) {
 func TestCloseTaskRecompactsSiblings(t *testing.T) {
 	d := testDB(t)
 
-	t1, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
-	t2, _ := d.CreateTask("B", "", model.StatusQueue, "", "/ws", "")
-	t3, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+	t1, _ := d.CreateTask("A", "", model.StatusQueue, "", "")
+	t2, _ := d.CreateTask("B", "", model.StatusQueue, "", "")
+	t3, _ := d.CreateTask("C", "", model.StatusQueue, "", "")
 
 	// Close the middle task — siblings should be recompacted to 0, 1.
 	d.CloseTask(t2.ID, "done")
@@ -1282,12 +1166,12 @@ func TestMoveTasksPlacedAtEnd(t *testing.T) {
 	d := testDB(t)
 
 	// Create tasks in queue and backlog.
-	q1, _ := d.CreateTask("Q1", "", model.StatusQueue, "", "/ws", "")
-	q2, _ := d.CreateTask("Q2", "", model.StatusQueue, "", "/ws", "")
-	b1, _ := d.CreateTask("B1", "", model.StatusBacklog, "", "/ws", "")
+	q1, _ := d.CreateTask("Q1", "", model.StatusQueue, "", "")
+	q2, _ := d.CreateTask("Q2", "", model.StatusQueue, "", "")
+	b1, _ := d.CreateTask("B1", "", model.StatusBacklog, "", "")
 
 	// Move q1 to backlog — it should land after b1.
-	_, err := d.MoveTasks([]string{q1.ID}, "", model.StatusBacklog, "/ws")
+	_, err := d.MoveTasks([]string{q1.ID}, "", model.StatusBacklog)
 	if err != nil {
 		t.Fatalf("MoveTasks: %v", err)
 	}
@@ -1307,13 +1191,13 @@ func TestReorderOrphanTaskAboveEpic(t *testing.T) {
 	d := testDB(t)
 
 	// Create an epic with a child, then close the epic — the child becomes an orphan.
-	epic, _ := d.CreateTask("Parent Epic", "", model.StatusQueue, "", "/ws", "")
+	epic, _ := d.CreateTask("Parent Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	orphan, _ := d.CreateTask("Orphan Child", "", model.StatusQueue, epic.ID, "/ws", "")
+	orphan, _ := d.CreateTask("Orphan Child", "", model.StatusQueue, epic.ID, "")
 	d.CloseTask(epic.ID, "done")
 
 	// Create a top-level epic (like jg3 in the bug report).
-	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "/ws", "")
+	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(topEpic.ID, "")
 
 	// Reorder orphan above the top-level epic (position 0).
@@ -1333,18 +1217,18 @@ func TestReorderTwoOrphansAboveEpic(t *testing.T) {
 	d := testDB(t)
 
 	// Create two orphan tasks (children of closed epics).
-	epic1, _ := d.CreateTask("Closed Epic 1", "", model.StatusQueue, "", "/ws", "")
+	epic1, _ := d.CreateTask("Closed Epic 1", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic1.ID, "")
-	orphan1, _ := d.CreateTask("Orphan 1", "", model.StatusQueue, epic1.ID, "/ws", "")
+	orphan1, _ := d.CreateTask("Orphan 1", "", model.StatusQueue, epic1.ID, "")
 	d.CloseTask(epic1.ID, "done")
 
-	epic2, _ := d.CreateTask("Closed Epic 2", "", model.StatusQueue, "", "/ws", "")
+	epic2, _ := d.CreateTask("Closed Epic 2", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(epic2.ID, "")
-	orphan2, _ := d.CreateTask("Orphan 2", "", model.StatusQueue, epic2.ID, "/ws", "")
+	orphan2, _ := d.CreateTask("Orphan 2", "", model.StatusQueue, epic2.ID, "")
 	d.CloseTask(epic2.ID, "done")
 
 	// Create a top-level epic.
-	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "/ws", "")
+	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "")
 	d.PromoteToEpic(topEpic.ID, "")
 
 	// Move orphan1 above topEpic (position 0).

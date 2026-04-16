@@ -143,7 +143,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Top-level sortable lists (queue, backlog columns).
     document.querySelectorAll('.task-list.sortable').forEach(function(el) {
         new Sortable(el, {
-            group: 'workspace',
+            group: 'tasks',
             handle: '.drag-handle',
             draggable: '.task-row:not(.epic-row), .epic-group',
             animation: 150,
@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Nested sortable lists (epic children), including deeply nested ones.
     document.querySelectorAll('.epic-children.sortable').forEach(function(el) {
         new Sortable(el, {
-            group: 'workspace',
+            group: 'tasks',
             handle: '.drag-handle',
             draggable: '.child-row, .task-row:not(.epic-row), .epic-group',
             animation: 150,
@@ -173,10 +173,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // SSE: reload page when tasks change externally (e.g. CLI moves).
-    var sseEl = document.querySelector('[data-sse-workspace]');
+    var sseEl = document.querySelector('[data-sse-enabled]');
     if (sseEl) {
-        var ws = sseEl.getAttribute('data-sse-workspace');
-        var es = new EventSource('/events?workspace=' + encodeURIComponent(ws));
+        var es = new EventSource('/events');
         var reloadTimer = null;
         ['task_created', 'task_updated', 'task_closed', 'task_reordered'].forEach(function(evt) {
             es.addEventListener(evt, function() {
@@ -309,7 +308,7 @@ function initChipInputs() {
     });
 }
 
-// --- Inline tag add on detail and workspace pages (Enter to submit) ---
+// --- Inline tag add on detail and list pages (Enter to submit) ---
 function initInlineTagForms() {
     document.querySelectorAll('.tag-add-inline').forEach(function(form) {
         var field = form.querySelector('.chip-input-field');

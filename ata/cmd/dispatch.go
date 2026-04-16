@@ -10,12 +10,8 @@ import (
 // Used by both the CLI main and the API exec endpoint.
 func Dispatch(d *db.DB, subcmd string, args []string) error {
 	switch subcmd {
-	case "init":
-		return Init(d, args)
 	case "clean":
 		return Clean(d, args)
-	case "uninit":
-		return Uninit(d, args)
 	case "create":
 		return Create(d, args)
 	case "list":

@@ -52,7 +52,6 @@ func Show(d *db.DB, args []string) error {
 	if t.IsEpic {
 		fmt.Println("Type: epic")
 	}
-	fmt.Printf("Workspace: %s\n", t.Workspace)
 
 	// Show dependency info.
 	blockers, _ := d.GetBlockers(id, true)

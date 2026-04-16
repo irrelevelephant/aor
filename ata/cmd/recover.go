@@ -9,14 +9,13 @@ import (
 
 func Recover(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("recover", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Filter by workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	recovered, err := d.RecoverStuckTasks(resolveWorkspaceFlag(d, *workspace))
+	recovered, err := d.RecoverStuckTasks()
 	if err != nil {
 		return err
 	}

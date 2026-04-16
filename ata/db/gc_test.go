@@ -7,37 +7,15 @@ import (
 	"aor/ata/model"
 )
 
-func TestListClosedTasks_WorkspaceFilter(t *testing.T) {
+func TestListClosedTasks_All(t *testing.T) {
 	d := testDB(t)
 
-	// Create tasks in two workspaces.
-	t1, _ := d.CreateTask("ws1 task", "", model.StatusBacklog, "", "/ws1", "")
-	t2, _ := d.CreateTask("ws2 task", "", model.StatusBacklog, "", "/ws2", "")
+	t1, _ := d.CreateTask("task 1", "", model.StatusBacklog, "", "")
+	t2, _ := d.CreateTask("task 2", "", model.StatusBacklog, "", "")
 	d.CloseTask(t1.ID, "done")
 	d.CloseTask(t2.ID, "done")
 
-	// Filter to ws1 only.
-	tasks, err := d.ListClosedTasks("/ws1", 0)
-	if err != nil {
-		t.Fatalf("ListClosedTasks: %v", err)
-	}
-	if len(tasks) != 1 {
-		t.Fatalf("got %d tasks, want 1", len(tasks))
-	}
-	if tasks[0].ID != t1.ID {
-		t.Errorf("got task %s, want %s", tasks[0].ID, t1.ID)
-	}
-}
-
-func TestListClosedTasks_AllWorkspaces(t *testing.T) {
-	d := testDB(t)
-
-	t1, _ := d.CreateTask("ws1 task", "", model.StatusBacklog, "", "/ws1", "")
-	t2, _ := d.CreateTask("ws2 task", "", model.StatusBacklog, "", "/ws2", "")
-	d.CloseTask(t1.ID, "done")
-	d.CloseTask(t2.ID, "done")
-
-	tasks, err := d.ListClosedTasks("", 0)
+	tasks, err := d.ListClosedTasks(0)
 	if err != nil {
 		t.Fatalf("ListClosedTasks: %v", err)
 	}
@@ -49,12 +27,10 @@ func TestListClosedTasks_AllWorkspaces(t *testing.T) {
 func TestListClosedTasks_AgeFilter(t *testing.T) {
 	d := testDB(t)
 
-	// Create and close a task.
-	task, _ := d.CreateTask("old task", "", model.StatusBacklog, "", "/ws", "")
+	task, _ := d.CreateTask("old task", "", model.StatusBacklog, "", "")
 	d.CloseTask(task.ID, "done")
 
-	// With a very large olderThan, it shouldn't match (task was just closed).
-	tasks, err := d.ListClosedTasks("", 999*24*time.Hour)
+	tasks, err := d.ListClosedTasks(999 * 24 * time.Hour)
 	if err != nil {
 		t.Fatalf("ListClosedTasks: %v", err)
 	}
@@ -62,8 +38,7 @@ func TestListClosedTasks_AgeFilter(t *testing.T) {
 		t.Errorf("got %d tasks, want 0 (task is too recent)", len(tasks))
 	}
 
-	// With 0d (no filter), it should match.
-	tasks, err = d.ListClosedTasks("", 0)
+	tasks, err = d.ListClosedTasks(0)
 	if err != nil {
 		t.Fatalf("ListClosedTasks: %v", err)
 	}
@@ -75,10 +50,10 @@ func TestListClosedTasks_AgeFilter(t *testing.T) {
 func TestListClosedTasks_OpenTasksExcluded(t *testing.T) {
 	d := testDB(t)
 
-	d.CreateTask("open task", "", model.StatusBacklog, "", "/ws", "")
-	d.CreateTask("queue task", "", model.StatusQueue, "", "/ws", "")
+	d.CreateTask("open task", "", model.StatusBacklog, "", "")
+	d.CreateTask("queue task", "", model.StatusQueue, "", "")
 
-	tasks, err := d.ListClosedTasks("/ws", 0)
+	tasks, err := d.ListClosedTasks(0)
 	if err != nil {
 		t.Fatalf("ListClosedTasks: %v", err)
 	}
@@ -90,16 +65,14 @@ func TestListClosedTasks_OpenTasksExcluded(t *testing.T) {
 func TestListClosedTasks_EpicSubtasksIncluded(t *testing.T) {
 	d := testDB(t)
 
-	// Create an epic and a subtask.
-	epic, _ := d.CreateTask("my epic", "", model.StatusBacklog, "", "/ws", "")
+	epic, _ := d.CreateTask("my epic", "", model.StatusBacklog, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	sub, _ := d.CreateTask("subtask", "", model.StatusBacklog, epic.ID, "/ws", "")
+	sub, _ := d.CreateTask("subtask", "", model.StatusBacklog, epic.ID, "")
 
-	// Close both.
 	d.CloseTask(sub.ID, "done")
 	d.CloseTask(epic.ID, "done")
 
-	tasks, err := d.ListClosedTasks("/ws", 0)
+	tasks, err := d.ListClosedTasks(0)
 	if err != nil {
 		t.Fatalf("ListClosedTasks: %v", err)
 	}
@@ -119,8 +92,7 @@ func TestListClosedTasks_EpicSubtasksIncluded(t *testing.T) {
 func TestGCClosedTasks_DeleteCascades(t *testing.T) {
 	d := testDB(t)
 
-	// Create a task with comments, tags, and an attachment record.
-	task, _ := d.CreateTask("to delete", "", model.StatusBacklog, "", "/ws", "")
+	task, _ := d.CreateTask("to delete", "", model.StatusBacklog, "", "")
 	d.AddComment(task.ID, "a comment", model.AuthorHuman)
 	d.AddTag(task.ID, "important")
 	d.CreateAttachment(task.ID, "file.txt", "text/plain", 100)
@@ -135,12 +107,10 @@ func TestGCClosedTasks_DeleteCascades(t *testing.T) {
 		t.Errorf("deleted = %d, want 1", deleted)
 	}
 
-	// Task should be gone.
 	if _, err := d.GetTask(task.ID); err == nil {
 		t.Error("task still exists after GC")
 	}
 
-	// Comments should be gone (cascaded).
 	comments, err := d.ListComments(task.ID)
 	if err != nil {
 		t.Fatalf("ListComments: %v", err)
@@ -149,7 +119,6 @@ func TestGCClosedTasks_DeleteCascades(t *testing.T) {
 		t.Errorf("comments remain: %d", len(comments))
 	}
 
-	// Tags should be gone (cascaded).
 	tags, err := d.GetTags(task.ID)
 	if err != nil {
 		t.Fatalf("GetTags: %v", err)
@@ -158,7 +127,6 @@ func TestGCClosedTasks_DeleteCascades(t *testing.T) {
 		t.Errorf("tags remain: %d", len(tags))
 	}
 
-	// Attachments should be gone (cascaded).
 	atts, err := d.ListAttachments(task.ID)
 	if err != nil {
 		t.Fatalf("ListAttachments: %v", err)
@@ -171,9 +139,9 @@ func TestGCClosedTasks_DeleteCascades(t *testing.T) {
 func TestGCClosedTasks_DepsCleanedUp(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("task a", "", model.StatusBacklog, "", "/ws", "")
-	b, _ := d.CreateTask("task b", "", model.StatusBacklog, "", "/ws", "")
-	d.AddDep(b.ID, a.ID) // b depends on a
+	a, _ := d.CreateTask("task a", "", model.StatusBacklog, "", "")
+	b, _ := d.CreateTask("task b", "", model.StatusBacklog, "", "")
+	d.AddDep(b.ID, a.ID)
 
 	d.CloseTask(a.ID, "done")
 
@@ -185,7 +153,6 @@ func TestGCClosedTasks_DepsCleanedUp(t *testing.T) {
 		t.Errorf("deleted = %d, want 1", deleted)
 	}
 
-	// b should no longer be blocked.
 	blockers, err := d.GetBlockers(b.ID, true)
 	if err != nil {
 		t.Fatalf("GetBlockers: %v", err)
@@ -198,13 +165,12 @@ func TestGCClosedTasks_DepsCleanedUp(t *testing.T) {
 func TestGCClosedTasks_EpicRefCleared(t *testing.T) {
 	d := testDB(t)
 
-	epic, _ := d.CreateTask("epic", "", model.StatusBacklog, "", "/ws", "")
+	epic, _ := d.CreateTask("epic", "", model.StatusBacklog, "", "")
 	d.PromoteToEpic(epic.ID, "")
-	sub, _ := d.CreateTask("open sub", "", model.StatusBacklog, epic.ID, "/ws", "")
+	sub, _ := d.CreateTask("open sub", "", model.StatusBacklog, epic.ID, "")
 
 	d.CloseTask(epic.ID, "done")
 
-	// GC just the epic, not the open subtask.
 	deleted, err := d.GCClosedTasks([]string{epic.ID})
 	if err != nil {
 		t.Fatalf("GCClosedTasks: %v", err)
@@ -213,7 +179,6 @@ func TestGCClosedTasks_EpicRefCleared(t *testing.T) {
 		t.Errorf("deleted = %d, want 1", deleted)
 	}
 
-	// The open subtask should still exist but with cleared epic_id.
 	got, err := d.GetTask(sub.ID)
 	if err != nil {
 		t.Fatalf("subtask gone: %v", err)
@@ -260,7 +225,7 @@ func TestParseDayDuration(t *testing.T) {
 func TestGetAttachmentSummaries(t *testing.T) {
 	d := testDB(t)
 
-	task, _ := d.CreateTask("with attachments", "", model.StatusBacklog, "", "/ws", "")
+	task, _ := d.CreateTask("with attachments", "", model.StatusBacklog, "", "")
 	d.CreateAttachment(task.ID, "a.txt", "text/plain", 100)
 	d.CreateAttachment(task.ID, "b.txt", "text/plain", 200)
 

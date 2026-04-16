@@ -9,9 +9,9 @@ import (
 func TestPropagateDeps(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
-	b, _ := d.CreateTask("B", "", model.StatusQueue, "", "/ws", "")
-	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "")
+	b, _ := d.CreateTask("B", "", model.StatusQueue, "", "")
+	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "")
 
 	// B depends on A (A blocks B).
 	if err := d.AddDep(b.ID, a.ID); err != nil {
@@ -46,9 +46,9 @@ func TestPropagateDeps(t *testing.T) {
 func TestPropagateDeps_Cycle(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
-	b, _ := d.CreateTask("B", "", model.StatusQueue, "", "/ws", "")
-	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "")
+	b, _ := d.CreateTask("B", "", model.StatusQueue, "", "")
+	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "")
 
 	// B depends on A.
 	d.AddDep(b.ID, a.ID)
@@ -69,8 +69,8 @@ func TestPropagateDeps_Cycle(t *testing.T) {
 func TestPropagateDeps_NoDependents(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
-	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "")
+	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "")
 
 	// A has no dependents.
 	added, err := d.PropagateDeps(a.ID, c.ID)
@@ -85,10 +85,10 @@ func TestPropagateDeps_NoDependents(t *testing.T) {
 func TestPropagateDeps_Multiple(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
-	b1, _ := d.CreateTask("B1", "", model.StatusQueue, "", "/ws", "")
-	b2, _ := d.CreateTask("B2", "", model.StatusQueue, "", "/ws", "")
-	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "")
+	b1, _ := d.CreateTask("B1", "", model.StatusQueue, "", "")
+	b2, _ := d.CreateTask("B2", "", model.StatusQueue, "", "")
+	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "")
 
 	// B1 and B2 both depend on A.
 	d.AddDep(b1.ID, a.ID)
@@ -120,9 +120,9 @@ func TestPropagateDeps_Multiple(t *testing.T) {
 func TestPropagateDeps_Duplicate(t *testing.T) {
 	d := testDB(t)
 
-	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "/ws", "")
-	b, _ := d.CreateTask("B", "", model.StatusQueue, "", "/ws", "")
-	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "/ws", "")
+	a, _ := d.CreateTask("A", "", model.StatusQueue, "", "")
+	b, _ := d.CreateTask("B", "", model.StatusQueue, "", "")
+	c, _ := d.CreateTask("C", "", model.StatusQueue, "", "")
 
 	d.AddDep(b.ID, a.ID)
 	// B already depends on C.

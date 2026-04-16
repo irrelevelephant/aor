@@ -23,21 +23,20 @@ const (
 
 // Task represents a task or epic in the system.
 type Task struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Body        string `json:"body,omitempty"`
-	Status      string `json:"status"`
-	SortOrder   int    `json:"sort_order"`
-	EpicID      string `json:"epic_id,omitempty"`
-	Workspace   string `json:"workspace"`
-	Worktree    string `json:"worktree,omitempty"`
-	CreatedIn   string `json:"created_in,omitempty"`
-	IsEpic      bool   `json:"is_epic"`
-	Spec        string `json:"spec,omitempty"`
-	ClaimedPID  int    `json:"claimed_pid,omitempty"`
-	ClaimedHost string `json:"claimed_host,omitempty"`
-	ClaimedAt   string `json:"claimed_at,omitempty"`
-	ClosedAt    string `json:"closed_at,omitempty"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Body        string   `json:"body,omitempty"`
+	Status      string   `json:"status"`
+	SortOrder   int      `json:"sort_order"`
+	EpicID      string   `json:"epic_id,omitempty"`
+	Worktree    string   `json:"worktree,omitempty"`
+	CreatedIn   string   `json:"created_in,omitempty"`
+	IsEpic      bool     `json:"is_epic"`
+	Spec        string   `json:"spec,omitempty"`
+	ClaimedPID  int      `json:"claimed_pid,omitempty"`
+	ClaimedHost string   `json:"claimed_host,omitempty"`
+	ClaimedAt   string   `json:"claimed_at,omitempty"`
+	ClosedAt    string   `json:"closed_at,omitempty"`
 	CloseReason string   `json:"close_reason,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	CreatedAt   string   `json:"created_at"`
@@ -96,42 +95,10 @@ type TaskWithComments struct {
 	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
-// Workspace represents a registered workspace.
-type Workspace struct {
-	Path      string `json:"path"`
-	Name      string `json:"name,omitempty"`
-	CreatedAt string `json:"created_at"`
-}
-
-// DisplayName returns the name if set, otherwise the path.
-func (w Workspace) DisplayName() string {
-	if w.Name != "" {
-		return w.Name
-	}
-	return w.Path
-}
-
-// WorkspaceInfo is a workspace with an active task count, for the dashboard.
-type WorkspaceInfo struct {
-	Path  string `json:"path"`
-	Name  string `json:"name,omitempty"`
-	Count int    `json:"count"`
-}
-
-// DisplayName returns the name if set, otherwise the path.
-func (wi WorkspaceInfo) DisplayName() string {
-	if wi.Name != "" {
-		return wi.Name
-	}
-	return wi.Path
-}
-
-// SnapshotMeta holds metadata for a workspace snapshot archive.
+// SnapshotMeta holds metadata for a snapshot archive.
 type SnapshotMeta struct {
 	SchemaVersion int    `json:"schema_version"`
 	CreatedAt     string `json:"created_at"`
-	SourcePath    string `json:"source_path"`
-	SourceName    string `json:"source_name,omitempty"`
 }
 
 // TaskDep represents a dependency edge for snapshot export/import.
@@ -179,10 +146,10 @@ func (a Attachment) MarkdownRef(baseURL string) string {
 
 // EpicProgress holds progress info for an epic.
 type EpicProgress struct {
-	Total    int `json:"total"`
-	Closed   int `json:"closed"`
-	Open     int `json:"open"`
-	InProg   int `json:"in_progress"`
-	Queue    int `json:"queue"`
-	Backlog  int `json:"backlog"`
+	Total   int `json:"total"`
+	Closed  int `json:"closed"`
+	Open    int `json:"open"`
+	InProg  int `json:"in_progress"`
+	Queue   int `json:"queue"`
+	Backlog int `json:"backlog"`
 }

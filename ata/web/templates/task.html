@@ -2,7 +2,7 @@
 {{define "content"}}
 {{with .Task}}
 <div class="task-detail">
-    <a href="{{$.WorkspaceURL}}" class="back-link">&larr; {{if $.WorkspaceName}}{{$.WorkspaceName}}{{else}}{{.Workspace}}{{end}}</a>
+    <a href="/" class="back-link">&larr; Tasks</a>
 
     <div class="task-header">
         <span class="id-badge">{{.ID}}</span>
@@ -60,7 +60,7 @@
         <div class="tag-list">
             {{range $.Tags}}
             <span class="tag-item">
-                <a href="{{tagFilterURL $.WorkspaceURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>
+                <a href="{{tagFilterURL "/" .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>
                 {{if ne $.Task.Status "closed"}}
                 <form action="/task/{{$.Task.ID}}/tags/remove" method="POST" class="dep-remove-form"
                       hx-post="/task/{{$.Task.ID}}/tags/remove" hx-swap="none">

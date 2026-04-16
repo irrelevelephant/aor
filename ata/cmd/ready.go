@@ -10,7 +10,6 @@ import (
 
 func Ready(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("ready", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Filter by workspace")
 	epicID := fs.String("epic", "", "Filter by epic ID")
 	tag := fs.String("tag", "", "Filter by tag")
 	limit := fs.Int("limit", 0, "Max results (0 = unlimited)")
@@ -20,7 +19,7 @@ func Ready(d *db.DB, args []string) error {
 		return err
 	}
 
-	tasks, err := d.ReadyTasks(resolveWorkspaceFlag(d, *workspace), *epicID, *tag, *limit)
+	tasks, err := d.ReadyTasks(*epicID, *tag, *limit)
 	if err != nil {
 		return err
 	}

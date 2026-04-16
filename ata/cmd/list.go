@@ -11,7 +11,6 @@ import (
 
 func List(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Filter by workspace")
 	status := fs.String("status", "", "Filter by status")
 	epicID := fs.String("epic", "", "Filter by epic ID")
 	tag := fs.String("tag", "", "Filter by tag")
@@ -22,7 +21,7 @@ func List(d *db.DB, args []string) error {
 		return err
 	}
 
-	tasks, err := d.ListTasks(resolveWorkspaceFlag(d, *workspace), *status, *epicID, *tag, "")
+	tasks, err := d.ListTasks(*status, *epicID, *tag, "")
 	if err != nil {
 		return err
 	}

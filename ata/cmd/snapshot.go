@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"time"
 
 	"aor/ata/db"
@@ -18,35 +17,25 @@ import (
 
 func Snapshot(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("snapshot", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Workspace name or path (default: auto-detect)")
-	output := fs.String("output", "", "Output file path (default: ata-snapshot-NAME-DATE.tar.gz)")
+	output := fs.String("output", "", "Output file path (default: ata-snapshot-DATE.tar.gz)")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	ws := resolveOrDetectWorkspace(d, *workspace)
-
-	meta, tasks, comments, deps, tags, attachments, err := d.ExportWorkspace(ws)
+	meta, tasks, comments, deps, tags, attachments, err := d.ExportAll()
 	if err != nil {
 		return err
 	}
 
-	// Resolve attachments directory.
 	attDir, _ := db.AttachmentsDir()
 
-	// Determine output filename.
 	outPath := *output
 	if outPath == "" {
-		name := meta.SourceName
-		if name == "" {
-			name = sanitizeName(ws)
-		}
-		outPath = fmt.Sprintf("ata-snapshot-%s-%s.tar.gz", name, time.Now().Format("20060102"))
+		outPath = fmt.Sprintf("ata-snapshot-%s.tar.gz", time.Now().Format("20060102"))
 	}
 
-	// Build tar.gz — write to file, remove on error.
 	if err := writeSnapshotArchive(outPath, meta, tasks, comments, deps, tags, attachments, attDir); err != nil {
 		os.Remove(outPath)
 		return err
@@ -103,12 +92,10 @@ func writeSnapshotArchive(outPath string, meta any, tasks []model.Task, comments
 		return err
 	}
 
-	// Write attachment files into the archive.
 	for _, a := range attachments {
 		filePath := filepath.Join(attachmentsDir, a.TaskID, a.StoredName)
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			// Skip missing files silently — they may have been deleted from disk.
 			continue
 		}
 		if err := writeTarEntry(tw, "attachments/"+a.TaskID+"/"+a.StoredName, data); err != nil {
@@ -117,16 +104,6 @@ func writeSnapshotArchive(outPath string, meta any, tasks []model.Task, comments
 	}
 
 	return nil
-}
-
-var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9]+`)
-
-func sanitizeName(s string) string {
-	s = nonAlphaNum.ReplaceAllString(s, "-")
-	if len(s) > 40 {
-		s = s[:40]
-	}
-	return s
 }
 
 func writeTarEntry(tw *tar.Writer, name string, data []byte) error {

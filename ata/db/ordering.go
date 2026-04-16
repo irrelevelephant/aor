@@ -7,23 +7,23 @@ import (
 )
 
 // topLevelFilter returns a SQL WHERE fragment (and bind args) that matches
-// tasks considered "top-level roots" in the given status+workspace — those
-// with no epic_id, or whose epic_id references a parent not present in the
-// same status+workspace (i.e. orphans whose parent was closed/moved).
+// tasks considered "top-level roots" in the given status — those with no
+// epic_id, or whose epic_id references a parent not present in the same
+// status (i.e. orphans whose parent was closed/moved).
 // This matches the logic in ListTaskTree that determines root nodes.
-func topLevelFilter(status, workspace string) (string, []any) {
-	return `(epic_id IS NULL OR epic_id = '' OR NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = tasks.epic_id AND p.status = ? AND p.workspace = ?))`,
-		[]any{status, workspace}
+func topLevelFilter(status string) (string, []any) {
+	return `(epic_id IS NULL OR epic_id = '' OR NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = tasks.epic_id AND p.status = ?))`,
+		[]any{status}
 }
 
 // queryTopLevelIDs returns the ordered IDs of top-level root tasks (including
-// orphans) in the given status+workspace.
-func queryTopLevelIDs(tx *sql.Tx, status, workspace string) ([]string, error) {
-	frag, fArgs := topLevelFilter(status, workspace)
-	args := []any{status, workspace}
+// orphans) in the given status.
+func queryTopLevelIDs(tx *sql.Tx, status string) ([]string, error) {
+	frag, fArgs := topLevelFilter(status)
+	args := []any{status}
 	args = append(args, fArgs...)
 	rows, err := tx.Query(
-		`SELECT id FROM tasks WHERE status = ? AND workspace = ? AND `+frag+` ORDER BY sort_order ASC, created_at ASC`,
+		`SELECT id FROM tasks WHERE status = ? AND `+frag+` ORDER BY sort_order ASC, created_at ASC`,
 		args...)
 	if err != nil {
 		return nil, err
@@ -129,14 +129,14 @@ func nextEpicChildOrder(tx *sql.Tx, epicID string) (int, error) {
 }
 
 // nextTopLevelOrder returns the sort_order to assign to a new top-level task
-// in the given status+workspace group, placing it after all existing siblings.
-func nextTopLevelOrder(tx *sql.Tx, status, workspace string) (int, error) {
-	frag, fArgs := topLevelFilter(status, workspace)
+// in the given status group, placing it after all existing siblings.
+func nextTopLevelOrder(tx *sql.Tx, status string) (int, error) {
+	frag, fArgs := topLevelFilter(status)
 	var maxOrder int
-	args := []any{status, workspace}
+	args := []any{status}
 	args = append(args, fArgs...)
 	if err := tx.QueryRow(
-		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND `+frag,
+		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND `+frag,
 		args...).Scan(&maxOrder); err != nil {
 		return 0, fmt.Errorf("query max sort_order: %w", err)
 	}
@@ -146,8 +146,8 @@ func nextTopLevelOrder(tx *sql.Tx, status, workspace string) (int, error) {
 // recompactSiblings reassigns sort_order 0..n-1 to the siblings of a task
 // that was just removed from a group (e.g. by closing). If epicID is non-null
 // and non-empty, recompacts the epic's non-closed children; otherwise
-// recompacts the top-level tasks in the given status+workspace.
-func recompactSiblings(tx *sql.Tx, epicID sql.NullString, status, workspace string) error {
+// recompacts the top-level tasks in the given status.
+func recompactSiblings(tx *sql.Tx, epicID sql.NullString, status string) error {
 	var ids []string
 	var err error
 	if epicID.Valid && epicID.String != "" {
@@ -160,7 +160,7 @@ func recompactSiblings(tx *sql.Tx, epicID sql.NullString, status, workspace stri
 		}
 		ids, err = scanIDs(rows)
 	} else {
-		ids, err = queryTopLevelIDs(tx, status, workspace)
+		ids, err = queryTopLevelIDs(tx, status)
 	}
 	if err != nil {
 		return fmt.Errorf("recompact query: %w", err)
@@ -173,7 +173,7 @@ func recompactSiblings(tx *sql.Tx, epicID sql.NullString, status, workspace stri
 	return nil
 }
 
-// Reorder sets a top-level task's position within its status+workspace group.
+// Reorder sets a top-level task's position within its status group.
 // If newStatus is non-empty and differs from the current status, the task is moved to that status.
 func (d *DB) Reorder(id string, position int, newStatus string) error {
 	return d.ReorderOpt(id, newStatus, ReorderOpts{Position: position})
@@ -187,8 +187,8 @@ func (d *DB) ReorderOpt(id string, newStatus string, opts ReorderOpts) error {
 	}
 	defer tx.Rollback()
 
-	var status, workspace string
-	err = tx.QueryRow(`SELECT status, workspace FROM tasks WHERE id = ?`, id).Scan(&status, &workspace)
+	var status string
+	err = tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, id).Scan(&status)
 	if err != nil {
 		return fmt.Errorf("task %s not found", id)
 	}
@@ -198,7 +198,7 @@ func (d *DB) ReorderOpt(id string, newStatus string, opts ReorderOpts) error {
 		targetStatus = newStatus
 	}
 
-	ids, err := queryTopLevelIDs(tx, targetStatus, workspace)
+	ids, err := queryTopLevelIDs(tx, targetStatus)
 	if err != nil {
 		return fmt.Errorf("query top-level ids: %w", err)
 	}
@@ -209,7 +209,7 @@ func (d *DB) ReorderOpt(id string, newStatus string, opts ReorderOpts) error {
 	}
 
 	if targetStatus != status {
-		oldIDs, err := queryTopLevelIDs(tx, status, workspace)
+		oldIDs, err := queryTopLevelIDs(tx, status)
 		if err != nil {
 			return fmt.Errorf("query old status ids: %w", err)
 		}

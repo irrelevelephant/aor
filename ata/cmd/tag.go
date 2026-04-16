@@ -13,9 +13,9 @@ func Tag(d *db.DB, args []string) error {
 		return exitUsage(`usage: ata tag <subcommand> [args]
 
 Subcommands:
-  add  TASK TAG [TAG...]        Add tags to a task
-  rm   TASK TAG [TAG...]        Remove tags from a task
-  list [--workspace WS] [--json]  List all tags in use`)
+  add  TASK TAG [TAG...]  Add tags to a task
+  rm   TASK TAG [TAG...]  Remove tags from a task
+  list [--json]           List all tags in use`)
 	}
 
 	sub := args[0]
@@ -84,14 +84,13 @@ func tagRemove(d *db.DB, args []string) error {
 
 func tagList(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("tag list", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Filter by workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	tags, err := d.ListAllTags(resolveWorkspaceFlag(d, *workspace))
+	tags, err := d.ListAllTags()
 	if err != nil {
 		return err
 	}

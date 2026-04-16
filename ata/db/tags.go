@@ -97,17 +97,9 @@ func (d *DB) ListTagsForEpic(epicID string) ([]string, error) {
 	return scanStrings(rows)
 }
 
-// ListAllTags returns all distinct tags in use, optionally filtered by workspace.
-func (d *DB) ListAllTags(workspace string) ([]string, error) {
-	query := `SELECT DISTINCT tt.tag FROM task_tags tt`
-	var args []any
-	if workspace != "" {
-		query += ` JOIN tasks t ON t.id = tt.task_id WHERE t.workspace = ?`
-		args = append(args, workspace)
-	}
-	query += ` ORDER BY tt.tag`
-
-	rows, err := d.Query(query, args...)
+// ListAllTags returns all distinct tags in use.
+func (d *DB) ListAllTags() ([]string, error) {
+	rows, err := d.Query(`SELECT DISTINCT tag FROM task_tags ORDER BY tag`)
 	if err != nil {
 		return nil, fmt.Errorf("list all tags: %w", err)
 	}

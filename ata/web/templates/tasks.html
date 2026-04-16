@@ -1,8 +1,8 @@
 {{template "layout" .}}
 {{define "content"}}
-<div class="workspace-header">
-    <h1>{{if .Name}}{{.Name}} <span class="workspace-path-subtitle">{{.Path}}</span>{{else}}{{.Path}}{{end}}</h1>
-    <div class="workspace-controls">
+<div class="tasks-header">
+    <h1>Tasks</h1>
+    <div class="tasks-controls">
         {{template "tag_filter_bar.html" .TagFilter}}
         {{if .ShowClosed}}
         <a href="{{.FilteredURL}}" class="btn btn-sm">Hide closed</a>
@@ -18,7 +18,6 @@
 
 <form class="quick-add" hx-post="/task" hx-swap="none"
       hx-vals='js:{"redirect": location.pathname + location.search}'>
-    <input type="hidden" name="workspace" value="{{.Path}}">
     <input type="hidden" name="status" value="queue">
     <input type="hidden" name="tags" value="">
     <textarea name="content" class="quick-add-input" placeholder="New task...&#10;&#10;First line becomes the title.&#10;Everything else becomes the description." rows="1" required></textarea>
@@ -51,7 +50,7 @@
 </div>
 {{end}}
 
-<div class="columns" data-sse-workspace="{{.Path}}">
+<div class="columns" data-sse-enabled="1">
 
     <div class="column">
         <div class="column-header">

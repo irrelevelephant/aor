@@ -9,7 +9,6 @@ import (
 
 func EpicCloseEligible(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("epic-close-eligible", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Filter by workspace")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 	doClose := fs.Bool("close", false, "Actually close eligible epics (default: list only)")
 
@@ -17,7 +16,7 @@ func EpicCloseEligible(d *db.DB, args []string) error {
 		return err
 	}
 
-	epics, err := d.EpicCloseEligible(resolveWorkspaceFlag(d, *workspace))
+	epics, err := d.EpicCloseEligible()
 	if err != nil {
 		return err
 	}

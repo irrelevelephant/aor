@@ -74,25 +74,6 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     font-size: 0.85rem;
 }
 
-/* Workspace list */
-.workspace-list { display: flex; flex-direction: column; gap: 0.5rem; }
-.workspace-card {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text);
-    transition: border-color 0.15s;
-}
-.workspace-card:hover { border-color: var(--accent); text-decoration: none; }
-.workspace-info { display: flex; flex-direction: column; gap: 0.15rem; }
-.workspace-name { font-weight: 600; font-size: 1rem; }
-.workspace-path { font-family: monospace; font-size: 0.85rem; color: var(--text-dim); }
-.workspace-path-subtitle { font-size: 0.85rem; font-weight: normal; color: var(--text-dim); font-family: monospace; }
-
 /* Badges */
 .badge {
     display: inline-block;
@@ -153,8 +134,8 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .back-link:hover { color: var(--accent); background: rgba(255,255,255,0.04); text-decoration: none; }
 
 /* Columns */
-.workspace-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
-.workspace-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.tasks-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+.tasks-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 
 /* Quick-add textarea */
 .quick-add {

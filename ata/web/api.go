@@ -48,7 +48,7 @@ func (s *Server) handleAPIExec(w http.ResponseWriter, r *http.Request) {
 	stdout, stderr, exitCode := s.execCommand(req.Command, req.Args)
 
 	// Broadcast a generic refresh event so the web UI updates.
-	s.hub.Broadcast("task_updated", "", "api")
+	s.hub.Broadcast("task_updated", "api")
 
 	writeJSON(w, http.StatusOK, api.ExecResponse{
 		ExitCode: exitCode,
@@ -88,9 +88,9 @@ func (s *Server) execCommand(command string, args []string) (stdout, stderr stri
 	}()
 
 	// Read pipes concurrently to avoid blocking. Child processes spawned
-	// during dispatch (e.g. git commands in detectWorkspace) inherit pipe
-	// fds; reading concurrently prevents deadlock if a child holds an fd
-	// open momentarily after the parent closes its write end.
+	// during dispatch inherit pipe fds; reading concurrently prevents
+	// deadlock if a child holds an fd open momentarily after the parent
+	// closes its write end.
 	var outBuf, errBuf bytes.Buffer
 	var wg sync.WaitGroup
 	wg.Add(2)

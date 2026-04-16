@@ -55,14 +55,14 @@ func epicDescendantSQL(epicID string) (string, any) {
 	) SELECT id FROM epic_tree)`, epicID
 }
 
-const taskCols = `id, title, body, status, sort_order, epic_id, workspace, worktree, created_in, is_epic, spec, claimed_pid, claimed_host, claimed_at, closed_at, close_reason, created_at, updated_at`
+const taskCols = `id, title, body, status, sort_order, epic_id, worktree, created_in, is_epic, spec, claimed_pid, claimed_host, claimed_at, closed_at, close_reason, created_at, updated_at`
 
 // unclaimSet is the SQL SET fragment used whenever a task is unclaimed, closed,
 // or moved out of in_progress. Centralised to keep the four fields in sync.
 const unclaimSet = `claimed_pid = NULL, claimed_host = '', claimed_at = NULL, worktree = ''`
 
 // CreateTask inserts a new task, generating a unique ID.
-func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string) (*model.Task, error) {
+func (d *DB) CreateTask(title, body, status, epicID, createdIn string) (*model.Task, error) {
 	id, err := d.generateUniqueID(3)
 	if err != nil {
 		return nil, err
@@ -98,14 +98,14 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 			return nil, err
 		}
 	} else {
-		sortOrder, err = nextTopLevelOrder(tx, status, workspace)
+		sortOrder, err = nextTopLevelOrder(tx, status)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	_, err = tx.Exec(`INSERT INTO tasks (id, title, body, status, sort_order, epic_id, workspace, created_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, title, body, status, sortOrder, nullStr(epicID), workspace, createdIn)
+	_, err = tx.Exec(`INSERT INTO tasks (id, title, body, status, sort_order, epic_id, created_in) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, title, body, status, sortOrder, nullStr(epicID), createdIn)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
@@ -127,7 +127,7 @@ func (d *DB) CreateTask(title, body, status, epicID, workspace, createdIn string
 
 // GetTask returns a single task by ID.
 func (d *DB) GetTask(id string) (*model.Task, error) {
-	return d.scanTask(d.QueryRow(`SELECT ` + taskCols + ` FROM tasks WHERE id = ?`, id))
+	return d.scanTask(d.QueryRow(`SELECT `+taskCols+` FROM tasks WHERE id = ?`, id))
 }
 
 // GetTaskWithComments returns a task with its comments.
@@ -143,15 +143,11 @@ func (d *DB) GetTaskWithComments(id string) (*model.TaskWithComments, error) {
 	return &model.TaskWithComments{Task: *task, Comments: comments}, nil
 }
 
-// ListTasks returns tasks filtered by optional workspace, status, epic_id, tag (include), and excludeTag (exclude).
-func (d *DB) ListTasks(workspace, status, epicID, tag, excludeTag string) ([]model.Task, error) {
+// ListTasks returns tasks filtered by optional status, epic_id, tag (include), and excludeTag (exclude).
+func (d *DB) ListTasks(status, epicID, tag, excludeTag string) ([]model.Task, error) {
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE 1=1`
 	var args []any
 
-	if workspace != "" {
-		query += ` AND workspace = ?`
-		args = append(args, workspace)
-	}
 	if status != "" {
 		query += ` AND status = ?`
 		args = append(args, status)
@@ -185,16 +181,12 @@ func (d *DB) ListTasks(workspace, status, epicID, tag, excludeTag string) ([]mod
 	return d.scanTasks(rows)
 }
 
-// ReadyTasks returns queue tasks that are not blocked, optionally filtered by workspace, epic, and tag.
-func (d *DB) ReadyTasks(workspace, epicID, tag string, limit int) ([]model.Task, error) {
+// ReadyTasks returns queue tasks that are not blocked, optionally filtered by epic and tag.
+func (d *DB) ReadyTasks(epicID, tag string, limit int) ([]model.Task, error) {
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'queue' AND is_epic = 0`
 	query += ` AND id NOT IN (SELECT td.task_id FROM task_deps td JOIN tasks dep ON dep.id = td.depends_on WHERE dep.status != 'closed')`
 	var args []any
 
-	if workspace != "" {
-		query += ` AND workspace = ?`
-		args = append(args, workspace)
-	}
 	if epicID != "" {
 		fragment, arg := epicDescendantSQL(epicID)
 		query += ` AND epic_id IN ` + fragment
@@ -301,18 +293,17 @@ func (d *DB) UnclaimTask(id string) (*model.Task, error) {
 	return d.GetTask(id)
 }
 
-// UnclaimByWorkspace unclaims all in_progress tasks for a workspace.
-func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
+// UnclaimAll unclaims every in_progress task.
+func (d *DB) UnclaimAll() ([]model.Task, error) {
 	tx, err := d.Begin()
 	if err != nil {
-		return nil, fmt.Errorf("unclaim by workspace: %w", err)
+		return nil, fmt.Errorf("unclaim all: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Read within the transaction for consistency.
-	rows, err := tx.Query(`SELECT `+taskCols+` FROM tasks WHERE status = 'in_progress' AND workspace = ? ORDER BY sort_order ASC, created_at ASC`, workspace)
+	rows, err := tx.Query(`SELECT ` + taskCols + ` FROM tasks WHERE status = 'in_progress' ORDER BY sort_order ASC, created_at ASC`)
 	if err != nil {
-		return nil, fmt.Errorf("unclaim by workspace: %w", err)
+		return nil, fmt.Errorf("unclaim all: %w", err)
 	}
 	defer rows.Close()
 	tasks, err := scanTaskRows(rows)
@@ -323,13 +314,13 @@ func (d *DB) UnclaimByWorkspace(workspace string) ([]model.Task, error) {
 		return nil, nil
 	}
 
-	_, err = tx.Exec(`UPDATE tasks SET status = 'queue', `+unclaimSet+` WHERE status = 'in_progress' AND workspace = ?`, workspace)
+	_, err = tx.Exec(`UPDATE tasks SET status = 'queue', ` + unclaimSet + ` WHERE status = 'in_progress'`)
 	if err != nil {
-		return nil, fmt.Errorf("unclaim by workspace: %w", err)
+		return nil, fmt.Errorf("unclaim all: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("unclaim by workspace commit: %w", err)
+		return nil, fmt.Errorf("unclaim all commit: %w", err)
 	}
 	return tasks, nil
 }
@@ -346,9 +337,9 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 
 	// Read the task's group info before closing so we know which siblings to recompact.
 	var epicID sql.NullString
-	var oldStatus, workspace string
+	var oldStatus string
 	var isEpic bool
-	err = tx.QueryRow(`SELECT epic_id, status, workspace, is_epic FROM tasks WHERE id = ?`, id).Scan(&epicID, &oldStatus, &workspace, &isEpic)
+	err = tx.QueryRow(`SELECT epic_id, status, is_epic FROM tasks WHERE id = ?`, id).Scan(&epicID, &oldStatus, &isEpic)
 	if err != nil {
 		return nil, fmt.Errorf("task %s not found", id)
 	}
@@ -385,7 +376,7 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 	}
 
 	// Recompact siblings to eliminate sort_order gaps.
-	if err := recompactSiblings(tx, epicID, oldStatus, workspace); err != nil {
+	if err := recompactSiblings(tx, epicID, oldStatus); err != nil {
 		return nil, fmt.Errorf("recompact after close: %w", err)
 	}
 
@@ -405,8 +396,8 @@ func (d *DB) ReopenTask(id string) (*model.Task, error) {
 	defer tx.Rollback()
 
 	var epicID sql.NullString
-	var workspace, status string
-	err = tx.QueryRow(`SELECT epic_id, workspace, status FROM tasks WHERE id = ?`, id).Scan(&epicID, &workspace, &status)
+	var status string
+	err = tx.QueryRow(`SELECT epic_id, status FROM tasks WHERE id = ?`, id).Scan(&epicID, &status)
 	if err != nil {
 		return nil, fmt.Errorf("task %s not found", id)
 	}
@@ -433,7 +424,7 @@ func (d *DB) ReopenTask(id string) (*model.Task, error) {
 			return nil, err
 		}
 	} else {
-		sortOrder, err = nextTopLevelOrder(tx, reopenStatus, workspace)
+		sortOrder, err = nextTopLevelOrder(tx, reopenStatus)
 		if err != nil {
 			return nil, err
 		}
@@ -541,8 +532,8 @@ func (d *DB) UpdateTask(id string, title, body, spec *string) (*model.Task, erro
 // Children whose parent epic is not in the result set appear as top-level (orphan) nodes.
 // NOTE: This has its own tree-building logic (rather than using model.BuildTree)
 // because it must handle orphan root detection while preserving the original EpicID.
-func (d *DB) ListTaskTree(workspace, status, tag, excludeTag string) ([]model.TaskTreeNode, error) {
-	tasks, err := d.ListTasks(workspace, status, "", tag, excludeTag)
+func (d *DB) ListTaskTree(status, tag, excludeTag string) ([]model.TaskTreeNode, error) {
+	tasks, err := d.ListTasks(status, "", tag, excludeTag)
 	if err != nil {
 		return nil, err
 	}
@@ -625,13 +616,13 @@ func (d *DB) SetEpicID(taskID, newEpicID string) error {
 			return fmt.Errorf("set epic_id: %w", err)
 		}
 	} else {
-		// Remove from epic: get workspace and status for placing at end of top-level.
-		var status, workspace string
-		if err := tx.QueryRow(`SELECT status, workspace FROM tasks WHERE id = ?`, taskID).Scan(&status, &workspace); err != nil {
+		// Remove from epic: get status for placing at end of top-level.
+		var status string
+		if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, taskID).Scan(&status); err != nil {
 			return fmt.Errorf("task %s not found", taskID)
 		}
 
-		nextOrder, err := nextTopLevelOrder(tx, status, workspace)
+		nextOrder, err := nextTopLevelOrder(tx, status)
 		if err != nil {
 			return err
 		}
@@ -646,19 +637,14 @@ func (d *DB) SetEpicID(taskID, newEpicID string) error {
 }
 
 // EpicCloseEligible returns epics where all children are closed.
-func (d *DB) EpicCloseEligible(workspace string) ([]model.Task, error) {
+func (d *DB) EpicCloseEligible() ([]model.Task, error) {
 	query := `SELECT ` + prefixCols("e", taskCols) + `
 		FROM tasks e
 		WHERE e.is_epic = 1 AND e.status != 'closed'
 		AND (SELECT COUNT(*) FROM tasks c WHERE c.epic_id = e.id) > 0
 		AND (SELECT COUNT(*) FROM tasks c WHERE c.epic_id = e.id AND c.status != 'closed') = 0`
-	var args []any
-	if workspace != "" {
-		query += ` AND e.workspace = ?`
-		args = append(args, workspace)
-	}
 
-	rows, err := d.Query(query, args...)
+	rows, err := d.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("epic close eligible: %w", err)
 	}
@@ -700,9 +686,9 @@ func (d *DB) EpicProgress(epicID string) (*model.EpicProgress, error) {
 
 // MoveTasks changes the status of tasks matching the filter criteria.
 // It preserves sort_order values. If specific IDs are given, only those are moved.
-// If fromStatus is given (and ids is empty), all tasks matching workspace+fromStatus are moved.
+// If fromStatus is given (and ids is empty), all tasks matching fromStatus are moved.
 // Returns the moved tasks (with their pre-move state for display).
-func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]model.Task, error) {
+func (d *DB) MoveTasks(ids []string, fromStatus, toStatus string) ([]model.Task, error) {
 	tx, err := d.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("move tasks: %w", err)
@@ -751,8 +737,8 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 	} else if fromStatus != "" {
 		// Read and update within the same transaction.
 		// Skip children whose parent epic is in a different place (queue/backlog).
-		query := `SELECT ` + taskCols + ` FROM tasks WHERE status = ? AND workspace = ? ORDER BY sort_order ASC, created_at ASC`
-		fromRows, qErr := tx.Query(query, fromStatus, workspace)
+		query := `SELECT ` + taskCols + ` FROM tasks WHERE status = ? ORDER BY sort_order ASC, created_at ASC`
+		fromRows, qErr := tx.Query(query, fromStatus)
 		if qErr != nil {
 			return nil, fmt.Errorf("move tasks: %w", qErr)
 		}
@@ -789,13 +775,13 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 			return nil, nil
 		}
 		if len(skipIDs) == 0 {
-			_, err = tx.Exec(`UPDATE tasks SET status = ?, `+unclaimSet+` WHERE workspace = ? AND status = ?`,
-				toStatus, workspace, fromStatus)
+			_, err = tx.Exec(`UPDATE tasks SET status = ?, `+unclaimSet+` WHERE status = ?`,
+				toStatus, fromStatus)
 		} else {
 			skipPH, skipArgs := inPlaceholders(skipIDs)
-			args := []any{toStatus, workspace, fromStatus}
+			args := []any{toStatus, fromStatus}
 			args = append(args, skipArgs...)
-			_, err = tx.Exec(`UPDATE tasks SET status = ?, `+unclaimSet+` WHERE workspace = ? AND status = ? AND id NOT IN (`+skipPH+`)`,
+			_, err = tx.Exec(`UPDATE tasks SET status = ?, `+unclaimSet+` WHERE status = ? AND id NOT IN (`+skipPH+`)`,
 				args...)
 		}
 	}
@@ -813,13 +799,13 @@ func (d *DB) MoveTasks(ids []string, fromStatus, toStatus, workspace string) ([]
 	ph, phArgs := inPlaceholders(movedIDs)
 
 	// Find max sort_order in destination group excluding the moved tasks.
-	frag, fArgs := topLevelFilter(toStatus, workspace)
+	frag, fArgs := topLevelFilter(toStatus)
 	var destMax int
-	destArgs := []any{toStatus, workspace}
+	destArgs := []any{toStatus}
 	destArgs = append(destArgs, fArgs...)
 	destArgs = append(destArgs, phArgs...)
 	err = tx.QueryRow(
-		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND workspace = ? AND `+frag+` AND id NOT IN (`+ph+`)`,
+		`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE status = ? AND `+frag+` AND id NOT IN (`+ph+`)`,
 		destArgs...).Scan(&destMax)
 	if err != nil {
 		return nil, fmt.Errorf("move tasks dest max: %w", err)
@@ -860,21 +846,14 @@ const recoverStaleThreshold = 30 * time.Minute
 // RecoverStuckTasks finds in_progress tasks with dead PIDs and unclaims them.
 // For tasks claimed by a different host, PID checks are skipped and the task
 // is recovered if it has been in_progress longer than recoverStaleThreshold.
-func (d *DB) RecoverStuckTasks(workspace string) ([]model.Task, error) {
+func (d *DB) RecoverStuckTasks() ([]model.Task, error) {
 	tx, err := d.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("recover stuck tasks: %w", err)
 	}
 	defer tx.Rollback()
 
-	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'in_progress' AND claimed_pid IS NOT NULL`
-	var args []any
-	if workspace != "" {
-		query += ` AND workspace = ?`
-		args = append(args, workspace)
-	}
-
-	rows, err := tx.Query(query, args...)
+	rows, err := tx.Query(`SELECT ` + taskCols + ` FROM tasks WHERE status = 'in_progress' AND claimed_pid IS NOT NULL`)
 	if err != nil {
 		return nil, err
 	}
@@ -974,7 +953,7 @@ func scanTaskRow(s scanner) (model.Task, error) {
 	var claimedPID sql.NullInt64
 
 	err := s.Scan(&t.ID, &t.Title, &t.Body, &t.Status, &t.SortOrder,
-		&epicID, &t.Workspace, &t.Worktree, &t.CreatedIn, &t.IsEpic, &t.Spec,
+		&epicID, &t.Worktree, &t.CreatedIn, &t.IsEpic, &t.Spec,
 		&claimedPID, &t.ClaimedHost, &claimedAt, &closedAt, &t.CloseReason,
 		&t.CreatedAt, &t.UpdatedAt)
 	if err != nil {

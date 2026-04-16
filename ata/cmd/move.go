@@ -12,13 +12,11 @@ func Move(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("move", flag.ContinueOnError)
 	from := fs.String("from", "", "Source status (queue, backlog, in_progress)")
 	to := fs.String("to", "", "Target status (queue, backlog)")
-	workspace := fs.String("workspace", "", "Workspace path")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
-		"from":      true,
-		"to":        true,
-		"workspace": true,
+		"from": true,
+		"to":   true,
 	})
 
 	if err := fs.Parse(flagArgs); err != nil {
@@ -26,7 +24,7 @@ func Move(d *db.DB, args []string) error {
 	}
 
 	if *to == "" {
-		return exitUsage("usage: ata move --from STATUS --to STATUS [--workspace WS]\n       ata move ID [ID...] --to STATUS")
+		return exitUsage("usage: ata move --from STATUS --to STATUS\n       ata move ID [ID...] --to STATUS")
 	}
 
 	// Validate target status.
@@ -52,14 +50,7 @@ func Move(d *db.DB, args []string) error {
 	}
 
 	if len(positional) == 0 && *from == "" {
-		return exitUsage("usage: ata move --from STATUS --to STATUS [--workspace WS]\n       ata move ID [ID...] --to STATUS")
-	}
-
-	ws := *workspace
-	if ws == "" && len(positional) == 0 {
-		ws = detectWorkspace(d)
-	} else {
-		ws = resolveWorkspaceFlag(d, ws)
+		return exitUsage("usage: ata move --from STATUS --to STATUS\n       ata move ID [ID...] --to STATUS")
 	}
 
 	var tasks []model.Task
@@ -85,7 +76,7 @@ func Move(d *db.DB, args []string) error {
 			}
 		}
 		if len(nonEpicIDs) > 0 {
-			moved, err := d.MoveTasks(nonEpicIDs, "", *to, ws)
+			moved, err := d.MoveTasks(nonEpicIDs, "", *to)
 			if err != nil {
 				return err
 			}
@@ -93,7 +84,7 @@ func Move(d *db.DB, args []string) error {
 		}
 	} else {
 		var err error
-		tasks, err = d.MoveTasks(nil, *from, *to, ws)
+		tasks, err = d.MoveTasks(nil, *from, *to)
 		if err != nil {
 			return err
 		}

@@ -29,20 +29,17 @@ func Remote(args []string) error {
 
 func remoteAdd(args []string) error {
 	fs := flag.NewFlagSet("remote add", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Remote-side workspace path (if different from local)")
 	setDefault := fs.Bool("default", false, "Set as default remote")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	// Separate flags from positional args since flags may follow positionals.
-	flagsWithValue := map[string]bool{"workspace": true}
-	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) < 2 {
-		return fmt.Errorf("usage: ata remote add <name> <url> [--workspace <path>] [--default]")
+		return fmt.Errorf("usage: ata remote add <name> <url> [--default]")
 	}
 
 	name := positional[0]
@@ -57,12 +54,12 @@ func remoteAdd(args []string) error {
 		cfg.Remotes = make(map[string]config.RemoteConfig)
 	}
 
-	cfg.Remotes[name] = config.RemoteConfig{
-		URL:       url,
-		Workspace: *workspace,
-	}
+	cfg.Remotes[name] = config.RemoteConfig{URL: url}
 
 	if *setDefault {
+		cfg.DefaultRemote = name
+	} else if cfg.DefaultRemote == "" {
+		// First remote added becomes the default.
 		cfg.DefaultRemote = name
 	}
 
@@ -74,7 +71,7 @@ func remoteAdd(args []string) error {
 		return outputJSON(map[string]any{
 			"name":    name,
 			"url":     url,
-			"default": *setDefault || cfg.DefaultRemote == name,
+			"default": cfg.DefaultRemote == name,
 		})
 	}
 	fmt.Printf("added remote %q → %s\n", name, url)
@@ -144,17 +141,13 @@ func remoteList(args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tURL\tWORKSPACE\tDEFAULT\n")
+	fmt.Fprintf(w, "NAME\tURL\tDEFAULT\n")
 	for name, r := range cfg.Remotes {
 		def := ""
 		if name == cfg.DefaultRemote {
 			def = "*"
 		}
-		ws := r.Workspace
-		if ws == "" {
-			ws = "-"
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, r.URL, ws, def)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", name, r.URL, def)
 	}
 	return w.Flush()
 }
@@ -163,11 +156,10 @@ func remoteUsage() error {
 	return fmt.Errorf(`usage: ata remote <subcommand>
 
 Subcommands:
-  add <name> <url>   Add or update a remote
+  add <name> <url>   Add or update a remote (first one added becomes default)
   remove <name>      Remove a remote
   list               List configured remotes
 
 Flags for add:
-  --workspace <path>  Remote-side workspace path override
-  --default           Set as default remote`)
+  --default   Set as default remote`)
 }

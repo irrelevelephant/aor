@@ -9,12 +9,10 @@ import (
 
 func Unclaim(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("unclaim", flag.ContinueOnError)
-	workspace := fs.String("workspace", "", "Unclaim all in_progress tasks for workspace")
+	all := fs.Bool("all", false, "Unclaim every in_progress task")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
-		"workspace": true,
-	})
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
@@ -34,10 +32,11 @@ func Unclaim(d *db.DB, args []string) error {
 		return nil
 	}
 
-	// Otherwise, unclaim all in_progress for workspace.
-	ws := resolveOrDetectWorkspace(d, *workspace)
+	if !*all {
+		return exitUsage("usage: ata unclaim ID\n       ata unclaim --all")
+	}
 
-	tasks, err := d.UnclaimByWorkspace(ws)
+	tasks, err := d.UnclaimAll()
 	if err != nil {
 		return err
 	}
