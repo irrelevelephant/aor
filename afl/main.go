@@ -141,7 +141,7 @@ func resolveWorkspaceForRemote(cfg config.Config, args []string) string {
 // acceptsWorkspaceFlag returns true for subcommands that define a --workspace flag.
 func acceptsWorkspaceFlag(subcmd string) bool {
 	switch subcmd {
-	case "init", "domain", "flow", "path":
+	case "init", "domain", "flow", "path", "capture":
 		return true
 	}
 	return false
