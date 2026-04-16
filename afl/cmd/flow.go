@@ -6,6 +6,7 @@ import (
 
 	"aor/afl/db"
 	"aor/afl/model"
+	"aor/afl/parser"
 )
 
 // Flow routes flow subcommands.
@@ -23,6 +24,8 @@ func Flow(d *db.DB, args []string) error {
 		return flowShow(d, args[1:])
 	case "delete", "rm":
 		return flowDelete(d, args[1:])
+	case "import":
+		return flowImport(d, args[1:])
 	default:
 		return flowUsage()
 	}
@@ -196,6 +199,164 @@ func flowDelete(d *db.DB, args []string) error {
 	return nil
 }
 
+// importResult tracks what was created/skipped during an import.
+type importResult struct {
+	Domain         string   `json:"domain"`
+	DomainCreated  bool     `json:"domain_created"`
+	FlowsCreated   []string `json:"flows_created"`
+	FlowsSkipped   []string `json:"flows_skipped"`
+	PathsCreated   int      `json:"paths_created"`
+	PathsSkipped   int      `json:"paths_skipped"`
+	StepsCreated   int      `json:"steps_created"`
+	StepsSkipped   int      `json:"steps_skipped"`
+}
+
+func flowImport(d *db.DB, args []string) error {
+	fs := flag.NewFlagSet("flow import", flag.ContinueOnError)
+	workspace := fs.String("workspace", "", "Workspace")
+	jsonOut := fs.Bool("json", false, "Output JSON")
+
+	flagsWithValue := map[string]bool{"workspace": true}
+	flagArgs, positional := splitFlagsAndPositional(args, flagsWithValue)
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
+
+	if len(positional) < 1 {
+		return fmt.Errorf("usage: afl flow import <flows.md-path> [--workspace <ws>] [--json]")
+	}
+
+	filePath := positional[0]
+	ws := resolveOrDetectWorkspace(d, *workspace)
+
+	// Parse the flows.md file.
+	parsed, err := parser.ParseFlowsFile(filePath)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", filePath, err)
+	}
+
+	result := importResult{
+		Domain:       parsed.Slug,
+		FlowsCreated: []string{},
+		FlowsSkipped: []string{},
+	}
+
+	// Ensure domain exists.
+	dom, err := d.GetDomainBySlug(ws, parsed.Slug)
+	if err != nil {
+		return err
+	}
+	if dom == nil {
+		dom, err = d.CreateDomain(parsed.Slug, parsed.Name, ws)
+		if err != nil {
+			return fmt.Errorf("create domain %q: %w", parsed.Slug, err)
+		}
+		result.DomainCreated = true
+	}
+
+	// Import each flow.
+	for _, pf := range parsed.Flows {
+		flow, err := d.GetFlowByFlowID(dom.ID, pf.FlowID)
+		if err != nil {
+			return fmt.Errorf("check flow %s: %w", pf.FlowID, err)
+		}
+		if flow != nil {
+			result.FlowsSkipped = append(result.FlowsSkipped, pf.FlowID)
+			// Still import paths/steps for existing flows.
+		} else {
+			flow, err = d.CreateFlow(dom.ID, pf.FlowID, pf.Name)
+			if err != nil {
+				return fmt.Errorf("create flow %s: %w", pf.FlowID, err)
+			}
+			result.FlowsCreated = append(result.FlowsCreated, pf.FlowID)
+		}
+
+		// Import paths.
+		for pathIdx, pp := range pf.Paths {
+			existingPath, err := d.GetPathByName(flow.ID, pp.Name)
+			if err != nil {
+				return fmt.Errorf("check path %q in flow %s: %w", pp.Name, pf.FlowID, err)
+			}
+			if existingPath != nil {
+				result.PathsSkipped++
+				// Still try to import steps for existing paths.
+				for _, ps := range pp.Steps {
+					existingStep, err := d.GetStepByOrder(existingPath.ID, ps.Order)
+					if err != nil {
+						return fmt.Errorf("check step %d in path %q: %w", ps.Order, pp.Name, err)
+					}
+					if existingStep != nil {
+						result.StepsSkipped++
+					} else {
+						_, err = d.CreateStep(existingPath.ID, ps.Name, ps.Description, ps.Order)
+						if err != nil {
+							return fmt.Errorf("create step %d in path %q: %w", ps.Order, pp.Name, err)
+						}
+						result.StepsCreated++
+					}
+				}
+				continue
+			}
+
+			path, err := d.CreatePath(flow.ID, pp.PathType, pp.Name, pathIdx)
+			if err != nil {
+				return fmt.Errorf("create path %q in flow %s: %w", pp.Name, pf.FlowID, err)
+			}
+			result.PathsCreated++
+
+			// Import steps.
+			for _, ps := range pp.Steps {
+				existingStep, err := d.GetStepByOrder(path.ID, ps.Order)
+				if err != nil {
+					return fmt.Errorf("check step %d in path %q: %w", ps.Order, pp.Name, err)
+				}
+				if existingStep != nil {
+					result.StepsSkipped++
+					continue
+				}
+
+				_, err = d.CreateStep(path.ID, ps.Name, ps.Description, ps.Order)
+				if err != nil {
+					return fmt.Errorf("create step %d in path %q: %w", ps.Order, pp.Name, err)
+				}
+				result.StepsCreated++
+			}
+		}
+	}
+
+	if *jsonOut {
+		return outputJSON(result)
+	}
+
+	// Text output.
+	if result.DomainCreated {
+		fmt.Printf("created domain: %s\n", parsed.Slug)
+	} else {
+		fmt.Printf("domain exists: %s\n", parsed.Slug)
+	}
+	if len(result.FlowsCreated) > 0 {
+		fmt.Printf("created %d flow(s): %s\n", len(result.FlowsCreated), joinStrSlice(result.FlowsCreated, ", "))
+	}
+	if len(result.FlowsSkipped) > 0 {
+		fmt.Printf("skipped %d existing flow(s): %s\n", len(result.FlowsSkipped), joinStrSlice(result.FlowsSkipped, ", "))
+	}
+	fmt.Printf("paths: %d created, %d skipped\n", result.PathsCreated, result.PathsSkipped)
+	fmt.Printf("steps: %d created, %d skipped\n", result.StepsCreated, result.StepsSkipped)
+	return nil
+}
+
+// joinStrSlice joins a string slice with a separator.
+func joinStrSlice(parts []string, sep string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	result := parts[0]
+	for _, p := range parts[1:] {
+		result += sep + p
+	}
+	return result
+}
+
 func flowUsage() error {
 	return fmt.Errorf(`usage: afl flow <subcommand>
 
@@ -204,6 +365,7 @@ Subcommands:
   list [--domain <slug>]                  List flows
   show <FLOW-ID>                          Show flow details
   delete <FLOW-ID>                        Delete a flow
+  import <flows.md-path>                  Import flows from a flows.md file
 
 Flags:
   --domain <slug>    Filter by domain (for list)
