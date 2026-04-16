@@ -1,0 +1,156 @@
+package cmd
+
+import (
+	"bufio"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
+	"aor/afl/config"
+	"aor/afl/db"
+)
+
+func outputJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// GitToplevel returns the git rev-parse --show-toplevel path, or "" if not in a git repo.
+func GitToplevel() string {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// GitMainWorktree returns the main worktree path from `git worktree list --porcelain`.
+func GitMainWorktree() string {
+	out, err := exec.Command("git", "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		return ""
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "worktree ") {
+			return strings.TrimPrefix(line, "worktree ")
+		}
+	}
+	return ""
+}
+
+// envAflWorkspace is the environment variable that overrides workspace detection.
+const envAflWorkspace = "AFL_WORKSPACE"
+
+// detectWorkspace auto-detects the workspace path.
+// Priority: AFL_WORKSPACE env -> config directory mapping -> config default_workspace -> git auto-detection.
+func detectWorkspace(d *db.DB) string {
+	if ws := os.Getenv(envAflWorkspace); ws != "" {
+		return ws
+	}
+
+	toplevel := GitToplevel()
+	dir := toplevel
+	if dir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		dir = cwd
+	}
+
+	mainWT := ""
+	if toplevel != "" {
+		mainWT = GitMainWorktree()
+	}
+
+	cfg, _ := config.Load()
+	if ws := cfg.ResolveWorkspaceDir(dir, mainWT); ws != "" {
+		return resolveWorkspaceFlag(d, ws)
+	}
+
+	if toplevel == "" {
+		return dir
+	}
+	if ok, _ := d.IsRegisteredWorkspace(toplevel); ok {
+		return toplevel
+	}
+	if mainWT != "" && mainWT != toplevel {
+		if ok, _ := d.IsRegisteredWorkspace(mainWT); ok {
+			return mainWT
+		}
+	}
+	return toplevel
+}
+
+// resolveWorkspaceFlag resolves an explicit --workspace name-or-path via the DB.
+// Returns the input unchanged when empty or when resolution fails.
+func resolveWorkspaceFlag(d *db.DB, ws string) string {
+	if ws != "" {
+		if resolved, err := d.ResolveWorkspace(ws); err == nil {
+			return resolved
+		}
+	}
+	return ws
+}
+
+// resolveOrDetectWorkspace resolves an explicit --workspace value, or auto-detects
+// the workspace from the environment when ws is empty.
+func resolveOrDetectWorkspace(d *db.DB, ws string) string {
+	if ws == "" {
+		return detectWorkspace(d)
+	}
+	if resolved, err := d.ResolveWorkspace(ws); err == nil {
+		return resolved
+	}
+	return ws
+}
+
+// flagWasSet returns true if a flag was explicitly provided on the command line.
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
+func exitUsage(msg string) error {
+	return fmt.Errorf("%s\nRun 'afl <command> --help' for usage", msg)
+}
+
+// splitFlagsAndPositional separates flag arguments from positional arguments.
+// flagsWithValue is a set of flag names (without --) that take a value argument.
+func splitFlagsAndPositional(args []string, flagsWithValue map[string]bool) (flags, positional []string) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-") {
+			name := strings.TrimLeft(arg, "-")
+			// Handle --flag=value
+			if idx := strings.Index(name, "="); idx >= 0 {
+				flags = append(flags, arg)
+				continue
+			}
+			flags = append(flags, arg)
+			// If the flag takes a value, consume the next arg too.
+			if flagsWithValue[name] && i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+	return
+}
