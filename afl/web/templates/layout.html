@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{block "title" .}}afl{{end}}</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230d1117'/%3E%3Ctext x='256' y='310' font-family='system-ui,-apple-system,sans-serif' font-size='220' font-weight='700' fill='%2358a6ff' text-anchor='middle'%3Eafl%3C/text%3E%3C/svg%3E">
     <style>
         :root {
             --bg: #0d1117;
@@ -239,7 +240,53 @@
             color: var(--text-muted);
         }
         .empty-state h2 { color: var(--text-muted); margin-bottom: 8px; }
+
+        .header-prefs { margin-left: auto; position: relative; }
+        .prefs-button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            line-height: 1;
+        }
+        .prefs-button:hover { color: var(--text); background: var(--surface2); }
+        .prefs-popover {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 6px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            min-width: 220px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            z-index: 500;
+        }
+        .prefs-popover.active { display: block; }
+        .prefs-popover label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text);
+            cursor: pointer;
+            padding: 4px 0;
+        }
+        .prefs-popover input[type="checkbox"] { cursor: pointer; }
+
+        html.hide-web-desktop [data-platform="web-desktop"] { display: none; }
     </style>
+    <script>
+        try {
+            var p = JSON.parse(localStorage.getItem('afl.prefs')) || {};
+            if (p.hideWebDesktop) document.documentElement.classList.add('hide-web-desktop');
+        } catch (e) {}
+    </script>
 </head>
 <body>
     <div class="header">
@@ -248,6 +295,15 @@
             <a href="/">ata</a>
             {{block "nav" .}}{{end}}
         </nav>
+        <div class="header-prefs">
+            <button class="prefs-button" onclick="togglePrefs(event)" aria-label="Preferences" title="Preferences">&#9881;</button>
+            <div class="prefs-popover" id="prefs-popover">
+                <label>
+                    <input type="checkbox" id="pref-hide-web-desktop" onchange="setPref('hideWebDesktop', this.checked)">
+                    Hide web-desktop views
+                </label>
+            </div>
+        </div>
     </div>
     <div class="container">
         {{block "content" .}}{{end}}
@@ -260,11 +316,53 @@
         <div class="lightbox-meta" id="lightbox-meta"></div>
     </div>
     <script>
+        const PREFS_KEY = 'afl.prefs';
+        function loadPrefs() {
+            try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; }
+        }
+        function savePrefs(p) { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }
+        function applyPrefs() {
+            const p = loadPrefs();
+            document.documentElement.classList.toggle('hide-web-desktop', !!p.hideWebDesktop);
+            const cb = document.getElementById('pref-hide-web-desktop');
+            if (cb) cb.checked = !!p.hideWebDesktop;
+            document.querySelectorAll('[data-platforms]').forEach(grid => updateGridColumns(grid, p));
+        }
+        function setPref(key, value) {
+            const p = loadPrefs();
+            p[key] = value;
+            savePrefs(p);
+            applyPrefs();
+        }
+        function togglePrefs(e) {
+            e.stopPropagation();
+            document.getElementById('prefs-popover').classList.toggle('active');
+        }
+        document.addEventListener('click', function(e) {
+            const pop = document.getElementById('prefs-popover');
+            if (pop && !pop.parentElement.contains(e.target)) pop.classList.remove('active');
+        });
+
+        function updateGridColumns(grid, p) {
+            const all = (grid.dataset.platforms || '').split(',').filter(Boolean);
+            if (!all.length) return;
+            const visible = all.filter(pl => !(p.hideWebDesktop && pl === 'web-desktop'));
+            grid.style.gridTemplateColumns = 'minmax(180px, 1fr) ' + visible.map(() => 'minmax(100px, 1fr)').join(' ');
+        }
+
+        document.addEventListener('DOMContentLoaded', applyPrefs);
+
         let lbImages = [];
         let lbIndex = 0;
 
+        function visibleLightboxImages(images) {
+            const p = loadPrefs();
+            return images.filter(img => !(p.hideWebDesktop && img.platform === 'web-desktop'));
+        }
+
         function openLightbox(stepID, platform) {
-            const images = screenshotData[stepID] || [];
+            const all = screenshotData[stepID] || [];
+            const images = visibleLightboxImages(all);
             if (!images.length) return;
             lbImages = images;
             lbIndex = Math.max(0, images.findIndex(img => img.platform === platform));

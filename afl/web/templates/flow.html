@@ -23,11 +23,11 @@
 
 {{with .ActivePathData}}
 {{if .Steps}}
-<div class="grid" style="grid-template-columns: minmax(180px, 1fr) {{range $.Platforms}}minmax(100px, 1fr) {{end}};">
+<div class="grid" data-platforms="{{range $i, $p := $.Platforms}}{{if $i}},{{end}}{{$p}}{{end}}" style="grid-template-columns: minmax(180px, 1fr) {{range $.Platforms}}minmax(100px, 1fr) {{end}};">
     {{/* Header row */}}
     <div class="grid-header" style="text-align: left;">Step</div>
     {{range $.Platforms}}
-    <div class="grid-header">{{.}}</div>
+    <div class="grid-header" data-platform="{{.}}">{{.}}</div>
     {{end}}
 
     {{/* Step rows */}}
@@ -44,11 +44,11 @@
     {{range $pi, $platform := $.Platforms}}
         {{$ss := index $.ScreenshotMap $step.ID $platform}}
         {{if $ss}}
-        <div class="grid-cell" onclick="openLightbox('{{$step.ID}}', '{{$platform}}')">
+        <div class="grid-cell" data-platform="{{$platform}}" onclick="openLightbox('{{$step.ID}}', '{{$platform}}')">
             <img src="/afl/screenshots/{{$ss.ID}}" alt="{{$platform}} step {{$step.SortOrder}}" loading="lazy">
         </div>
         {{else}}
-        <div class="grid-cell">
+        <div class="grid-cell" data-platform="{{$platform}}">
             <span class="grid-cell-empty">&times;</span>
         </div>
         {{end}}

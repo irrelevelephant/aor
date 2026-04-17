@@ -30,11 +30,11 @@
             {{range $platform := $.Platforms}}
                 {{$count := index $pc.Coverage $platform}}
                 {{if eq $count $pc.TotalSteps}}
-                    <span class="badge badge-ok">{{$platform}}</span>
+                    <span class="badge badge-ok" data-platform="{{$platform}}">{{$platform}}</span>
                 {{else if gt $count 0}}
-                    <span class="badge badge-warn">{{$platform}} {{$count}}/{{$pc.TotalSteps}}</span>
+                    <span class="badge badge-warn" data-platform="{{$platform}}">{{$platform}} {{$count}}/{{$pc.TotalSteps}}</span>
                 {{else}}
-                    <span class="badge badge-miss">{{$platform}}</span>
+                    <span class="badge badge-miss" data-platform="{{$platform}}">{{$platform}}</span>
                 {{end}}
             {{end}}
         </div>
