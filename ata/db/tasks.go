@@ -442,9 +442,16 @@ func (d *DB) ReopenTask(id string) (*model.Task, error) {
 	return d.GetTask(id)
 }
 
-// PromoteToEpic promotes a task to an epic.
+// PromoteToEpic promotes a task to an epic. If spec is empty, the existing
+// body is moved into spec so the content is preserved (inverse of demote).
 func (d *DB) PromoteToEpic(id, spec string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET is_epic = 1, spec = ? WHERE id = ? AND is_epic = 0`, spec, id)
+	var res sql.Result
+	var err error
+	if spec == "" {
+		res, err = d.Exec(`UPDATE tasks SET is_epic = 1, spec = body, body = '' WHERE id = ? AND is_epic = 0`, id)
+	} else {
+		res, err = d.Exec(`UPDATE tasks SET is_epic = 1, spec = ? WHERE id = ? AND is_epic = 0`, spec, id)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("promote: %w", err)
 	}
@@ -466,8 +473,17 @@ func (d *DB) PromoteToEpic(id, spec string) (*model.Task, error) {
 }
 
 // DemoteToTask converts an epic back to a regular task, if it has no children.
+// The spec is folded into body so the content is preserved.
 func (d *DB) DemoteToTask(id string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET is_epic = 0 WHERE id = ? AND is_epic = 1
+	res, err := d.Exec(`UPDATE tasks SET
+			is_epic = 0,
+			body = CASE
+				WHEN spec = '' THEN body
+				WHEN body = '' THEN spec
+				ELSE body || char(10) || char(10) || spec
+			END,
+			spec = ''
+		WHERE id = ? AND is_epic = 1
 		AND NOT EXISTS (SELECT 1 FROM tasks WHERE epic_id = ?)`, id, id)
 	if err != nil {
 		return nil, fmt.Errorf("demote: %w", err)

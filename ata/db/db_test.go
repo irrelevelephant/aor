@@ -151,6 +151,82 @@ func TestPromoteToEpic(t *testing.T) {
 	}
 }
 
+// When promoting without an explicit spec, the existing body becomes the spec
+// so content is not lost — this is the inverse of demote's spec→body merge.
+func TestPromoteToEpicMovesBodyToSpec(t *testing.T) {
+	d := testDB(t)
+
+	task, _ := d.CreateTask("Candidate", "existing body", model.StatusQueue, "", "")
+
+	epic, err := d.PromoteToEpic(task.ID, "")
+	if err != nil {
+		t.Fatalf("PromoteToEpic: %v", err)
+	}
+	if epic.Spec != "existing body" {
+		t.Errorf("spec = %q, want %q", epic.Spec, "existing body")
+	}
+	if epic.Body != "" {
+		t.Errorf("body = %q, want empty", epic.Body)
+	}
+}
+
+// When an explicit spec is passed, the body is left untouched.
+func TestPromoteToEpicWithExplicitSpecKeepsBody(t *testing.T) {
+	d := testDB(t)
+
+	task, _ := d.CreateTask("Candidate", "existing body", model.StatusQueue, "", "")
+
+	epic, err := d.PromoteToEpic(task.ID, "# Spec")
+	if err != nil {
+		t.Fatalf("PromoteToEpic: %v", err)
+	}
+	if epic.Spec != "# Spec" {
+		t.Errorf("spec = %q", epic.Spec)
+	}
+	if epic.Body != "existing body" {
+		t.Errorf("body = %q", epic.Body)
+	}
+}
+
+// Demoting must preserve the spec by folding it into body.
+func TestDemoteToTaskPreservesSpec(t *testing.T) {
+	d := testDB(t)
+
+	tests := []struct {
+		name     string
+		body     string
+		spec     string
+		wantBody string
+	}{
+		{"spec only", "", "# Spec\nDetails", "# Spec\nDetails"},
+		{"body only", "body text", "", "body text"},
+		{"both", "body text", "# Spec\nDetails", "body text\n\n# Spec\nDetails"},
+		{"neither", "", "", ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			task, _ := d.CreateTask("T", tc.body, model.StatusQueue, "", "")
+			if _, err := d.PromoteToEpic(task.ID, tc.spec); err != nil {
+				t.Fatalf("PromoteToEpic: %v", err)
+			}
+			demoted, err := d.DemoteToTask(task.ID)
+			if err != nil {
+				t.Fatalf("DemoteToTask: %v", err)
+			}
+			if demoted.IsEpic {
+				t.Error("expected is_epic = false")
+			}
+			if demoted.Spec != "" {
+				t.Errorf("spec = %q, want empty", demoted.Spec)
+			}
+			if demoted.Body != tc.wantBody {
+				t.Errorf("body = %q, want %q", demoted.Body, tc.wantBody)
+			}
+		})
+	}
+}
+
 func TestEpicCloseEligible(t *testing.T) {
 	d := testDB(t)
 
