@@ -147,6 +147,15 @@ func treeCount(nodes []model.TaskTreeNode) int {
 	return n
 }
 
+func hasEpicGroup(nodes []model.TaskTreeNode) bool {
+	for _, n := range nodes {
+		if n.IsEpicGroup() {
+			return true
+		}
+	}
+	return false
+}
+
 // flattenTree extracts all tasks from tree nodes into a flat slice (all levels).
 func flattenTree(nodes []model.TaskTreeNode) []model.Task {
 	var tasks []model.Task
@@ -256,8 +265,9 @@ func initServer(d *db.DB, opts ...Option) (*Server, error) {
 		"tagFilterURL": func(baseURL, tag string) string {
 			return setTagQuery(baseURL, "tag", tag)
 		},
-		"formatBytes": db.FormatBytes,
-		"taskURL":     taskURL,
+		"formatBytes":  db.FormatBytes,
+		"taskURL":      taskURL,
+		"hasEpicGroup": hasEpicGroup,
 	}
 
 	pageFiles := []string{"tasks.html", "task.html", "epic.html"}

@@ -14,7 +14,7 @@
     <div class="epic-children-wrap" data-epic-id="{{.Node.ID}}">
     <div class="epic-children sortable" data-epic="{{.Node.ID}}" data-status="{{.Status}}">
         {{range .Node.Children}}
-        {{if and .IsEpic (or .Children (not .EpicID))}}
+        {{if .IsEpicGroup}}
             {{template "epic_group" (dict "Node" . "BlockedIDs" $.BlockedIDs "TagMap" $.TagMap "Status" $.Status)}}
         {{else}}
         <div class="task-row child-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">

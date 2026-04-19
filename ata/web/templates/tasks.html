@@ -55,11 +55,11 @@
     <div class="column">
         <div class="column-header">
             <h2>Queue <span class="count">{{.QueueCount}}</span></h2>
-            <button class="column-collapse-btn" onclick="toggleColumnEpics(this)" title="Collapse/expand all epics">▼</button>
+            {{if hasEpicGroup .Queue}}<button class="column-collapse-btn" onclick="toggleColumnEpics(this)" title="Collapse/expand all epics">▼</button>{{end}}
         </div>
         <div class="task-list sortable" id="queue-list" data-status="queue">
             {{range .Queue}}
-            {{if and .IsEpic (or .Children (not .EpicID))}}
+            {{if .IsEpicGroup}}
             {{template "epic_group" (dict "Node" . "BlockedIDs" $.BlockedIDs "TagMap" $.TagMap "Status" "queue")}}
             {{else}}
             <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">
@@ -79,11 +79,11 @@
     <div class="column">
         <div class="column-header">
             <h2>Backlog <span class="count">{{.BacklogCount}}</span></h2>
-            <button class="column-collapse-btn" onclick="toggleColumnEpics(this)" title="Collapse/expand all epics">▼</button>
+            {{if hasEpicGroup .Backlog}}<button class="column-collapse-btn" onclick="toggleColumnEpics(this)" title="Collapse/expand all epics">▼</button>{{end}}
         </div>
         <div class="task-list sortable" id="backlog-list" data-status="backlog">
             {{range .Backlog}}
-            {{if and .IsEpic (or .Children (not .EpicID))}}
+            {{if .IsEpicGroup}}
             {{template "epic_group" (dict "Node" . "BlockedIDs" $.BlockedIDs "TagMap" $.TagMap "Status" "backlog")}}
             {{else}}
             <div class="task-row{{if index $.BlockedIDs .ID}} task-blocked{{end}}" data-id="{{.ID}}" id="task-{{.ID}}">

@@ -49,6 +49,12 @@ type TaskTreeNode struct {
 	Children []TaskTreeNode
 }
 
+// IsEpicGroup reports whether this node should render as an epic group:
+// an epic with children, or a root-level epic with no parent.
+func (n TaskTreeNode) IsEpicGroup() bool {
+	return n.IsEpic && (len(n.Children) > 0 || n.EpicID == "")
+}
+
 // BuildTree assembles a flat list of tasks into a tree rooted at rootID.
 // Tasks whose EpicID equals rootID become top-level nodes; sub-epics recurse.
 // A visited set guards against cycles from data corruption.
