@@ -172,16 +172,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    var quickAdd = document.querySelector('.quick-add-input');
+
     // SSE: reload page when tasks change externally (e.g. CLI moves).
     var sseEl = document.querySelector('[data-sse-enabled]');
     if (sseEl) {
         var es = new EventSource('/events');
         var reloadTimer = null;
+        // Defer reload while the user is composing in quick-add, otherwise
+        // the reload clobbers their draft and steals focus.
+        function tryReload() {
+            if (quickAdd && (document.activeElement === quickAdd || quickAdd.value.trim() !== '')) {
+                reloadTimer = setTimeout(tryReload, 1000);
+                return;
+            }
+            window.location.reload();
+        }
         ['task_created', 'task_updated', 'task_closed', 'task_reordered'].forEach(function(evt) {
             es.addEventListener(evt, function() {
                 if (Date.now() < window._localActionUntil) return;
                 clearTimeout(reloadTimer);
-                reloadTimer = setTimeout(function() { window.location.reload(); }, 300);
+                reloadTimer = setTimeout(tryReload, 300);
             });
         });
         // Close SSE before navigating away to free the HTTP connection slot.
@@ -191,7 +202,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Quick-add textarea: Enter to submit, Shift+Enter for newline.
-    var quickAdd = document.querySelector('.quick-add-input');
     if (quickAdd) {
         quickAdd.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
