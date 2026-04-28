@@ -60,3 +60,19 @@ func TestMigrateV9MergesSpecIntoBody(t *testing.T) {
 		t.Errorf("spec column still present after v9")
 	}
 }
+
+// TestMigrateV9NoopOnFreshDB confirms v9 is a no-op when the spec column was
+// never created (post-v9 schema). Open() runs all migrations to current; calling
+// migrateV9 a second time on a fresh DB must not error.
+func TestMigrateV9NoopOnFreshDB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer d.Close()
+
+	if err := d.migrateV9(); err != nil {
+		t.Errorf("migrateV9 on fresh DB: %v", err)
+	}
+}

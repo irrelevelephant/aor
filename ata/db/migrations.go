@@ -106,7 +106,6 @@ CREATE TABLE tasks (
     epic_id     TEXT REFERENCES tasks(id),
     workspace   TEXT NOT NULL DEFAULT '',
     is_epic     BOOLEAN NOT NULL DEFAULT 0,
-    spec        TEXT NOT NULL DEFAULT '',
     claimed_pid INTEGER,
     claimed_at  TEXT,
     closed_at   TEXT,
@@ -224,7 +223,16 @@ DROP TABLE IF EXISTS workspaces;
 // line separator so no content is lost. The UPDATE clears spec as it goes so
 // a partially completed migration (UPDATE succeeds, DROP COLUMN fails) is safe
 // to retry — already-merged rows fail the WHERE spec != '' filter on rerun.
+//
+// No-op on fresh DBs created after v1's schema dropped the spec column.
 func (d *DB) migrateV9() error {
+	var n int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'spec'`).Scan(&n); err != nil {
+		return fmt.Errorf("check spec column: %w", err)
+	}
+	if n == 0 {
+		return nil
+	}
 	ddl := `
 UPDATE tasks
 SET body = CASE
