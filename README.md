@@ -23,15 +23,16 @@ Requires Go 1.23+.
 
 ## `ata` — Agent TAsks
 
-Task manager scoped to a workspace (auto-detected from the git root). Tasks move `backlog → queue → in_progress → closed`; epics group child tasks and carry structured specs.
+Task manager scoped to a workspace (auto-detected from the git root). Tasks move `backlog → queue → in_progress → closed`; epics group child tasks and share the same `body` field (markdown) used for tasks.
 
 ```bash
 ata create "Refactor auth middleware" --tag backend
+ata create "User onboarding redesign" --body-file plan.md
 ata list                    # active tasks in this workspace
 ata ready                   # queue tasks with no unresolved blockers
 ata claim <id>              # take a task (sets in_progress)
 ata close <id>              # mark complete
-ata promote <id> --spec-file spec.md   # turn into an epic
+ata promote <id>            # flip task to epic (body preserved)
 ata dep add <task> <blocker>           # dependency
 ata serve                   # htmx web UI on :4400
 ```

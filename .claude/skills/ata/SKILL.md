@@ -3,7 +3,7 @@ name: ata
 description: >
   Use ata (Agent TAsks) to manage tasks, epics, dependencies, and tags.
   Trigger when the user asks to create, list, show, edit, close, or organize tasks,
-  manage epics or specs, add dependencies or tags, or interact with the task backlog/queue.
+  manage epics, add dependencies or tags, or interact with the task backlog/queue.
   Also trigger on phrases like "what's ready", "show my tasks", "create a task",
   "add a dependency", "promote to epic", "clean up tasks", or "start the web UI".
 argument-hint: "[subcommand] [args...]"
@@ -29,7 +29,9 @@ backlog → queue → in_progress → closed
 ### Creating tasks
 ```bash
 ata create "TITLE"                              # defaults to backlog
-ata create "TITLE" --description "details here" # with description (--desc alias)
+ata create "TITLE" --body "details here"        # with body (markdown)
+ata create "TITLE" --body-file path/to/body.md  # body from file
+echo "details" | ata create "TITLE"             # body from stdin
 ata create "TITLE" --status queue               # directly to queue
 ata create "TITLE" --epic EPIC_ID               # under an epic
 ata create "TITLE" --tag backend,urgent         # with tags
@@ -50,10 +52,8 @@ ata ready --limit 5             # limit results
 ### Editing tasks
 ```bash
 ata edit ID --title "New title"
-ata edit ID --description "Updated desc"        # tasks only (--desc alias)
-ata edit ID --desc-file path/to/file.md         # tasks only
-ata edit ID --spec "Epic spec content"          # epics only
-ata edit ID --spec-file path/to/spec.md         # epics only
+ata edit ID --body "Updated body"               # tasks and epics
+ata edit ID --body-file path/to/file.md         # tasks and epics
 ata edit ID --epic EPIC_ID                      # reparent task to epic
 ata edit ID --epic none                         # remove from epic
 ```
@@ -78,17 +78,12 @@ ata unclaim                     # unclaim all in-progress for workspace
 ata recover                     # recover tasks with dead PIDs
 ```
 
-## Epics and specs
+## Epics
 
-Epics are tasks with `is_epic=true`. Epics have **specs** (structured requirements); regular tasks have **descriptions** (lightweight context). The `ata spec` command is epic-only.
+Epics are tasks with `is_epic=true`. Epics and tasks share a single markdown `body` field. `ata promote` is a pure type flip that preserves it; use `ata edit --body` / `--body-file` to update an epic's body. Child tasks inherit epic-level dependencies.
 
 ```bash
-ata promote ID                          # promote task to epic
-ata promote ID --spec "Goals: ..."      # promote with inline spec
-ata promote ID --spec-file arch.md      # promote with spec from file
-ata spec ID                             # view epic spec (epic-only)
-ata spec ID --set "Goals: ..."          # set epic spec inline (epic-only)
-ata spec ID --set-file spec.md          # set epic spec from file (epic-only)
+ata promote ID                          # promote task to epic (body preserved)
 ata epic-close-eligible                 # list epics eligible for close (all children closed)
 ata epic-close-eligible --close         # actually close eligible epics
 ```
@@ -200,8 +195,8 @@ ata create "Refactor auth middleware" --tag backend
 
 **Plan an epic:**
 ```bash
-ata create "User onboarding redesign" --status queue
-ata promote ID --spec-file onboarding-spec.md  # or --spec "inline text"
+ata create "User onboarding redesign" --body-file onboarding.md --status queue
+ata promote ID                                   # flip to epic; body is preserved
 ata create "Design new welcome flow" --epic ID --status queue
 ata create "Implement email verification" --epic ID --status queue
 ata dep add EMAIL_TASK WELCOME_TASK   # email depends on welcome flow
