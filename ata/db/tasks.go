@@ -44,15 +44,18 @@ func prefixCols(alias, cols string) string {
 	return strings.Join(parts, ", ")
 }
 
+// maxEpicDepth caps recursion in epic-tree CTEs to guard against runaway
+// recursion if the data ever contains a cycle.
+const maxEpicDepth = 20
+
 // epicDescendantSQL returns a SQL fragment and bind arg that matches an epic
-// and all its descendant epic IDs via recursive CTE. A depth limit of 20
-// guards against infinite recursion if the data contains cycles.
+// and all its descendant epic IDs via recursive CTE.
 func epicDescendantSQL(epicID string) (string, any) {
-	return `(WITH RECURSIVE epic_tree(id, depth) AS (
+	return fmt.Sprintf(`(WITH RECURSIVE epic_tree(id, depth) AS (
 		SELECT ?, 0
 		UNION ALL
-		SELECT t.id, et.depth + 1 FROM tasks t JOIN epic_tree et ON t.epic_id = et.id WHERE t.is_epic = 1 AND et.depth < 20
-	) SELECT id FROM epic_tree)`, epicID
+		SELECT t.id, et.depth + 1 FROM tasks t JOIN epic_tree et ON t.epic_id = et.id WHERE t.is_epic = 1 AND et.depth < %d
+	) SELECT id FROM epic_tree)`, maxEpicDepth), epicID
 }
 
 const taskCols = `id, title, body, status, sort_order, epic_id, worktree, created_in, is_epic, spec, claimed_pid, claimed_host, claimed_at, closed_at, close_reason, created_at, updated_at`
@@ -181,10 +184,11 @@ func (d *DB) ListTasks(status, epicID, tag, excludeTag string) ([]model.Task, er
 	return d.scanTasks(rows)
 }
 
-// ReadyTasks returns queue tasks that are not blocked, optionally filtered by epic and tag.
+// ReadyTasks returns queue tasks with no open blockers (direct or inherited
+// from any ancestor epic), optionally filtered by epic and tag.
 func (d *DB) ReadyTasks(epicID, tag string, limit int) ([]model.Task, error) {
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE status = 'queue' AND is_epic = 0`
-	query += ` AND id NOT IN (SELECT td.task_id FROM task_deps td JOIN tasks dep ON dep.id = td.depends_on WHERE dep.status != 'closed')`
+	query += ` AND id NOT IN ` + effectiveBlockedSubquery
 	var args []any
 
 	if epicID != "" {
@@ -216,8 +220,7 @@ func (d *DB) ReadyTasks(epicID, tag string, limit int) ([]model.Task, error) {
 // ClaimTask marks a task as in_progress with the given PID and hostname.
 // Rejects the claim if the task has unclosed dependencies.
 func (d *DB) ClaimTask(id string, pid int, host string) (*model.Task, error) {
-	// Check for blockers before claiming.
-	blockers, err := d.GetBlockers(id, true)
+	blockers, err := d.EffectiveBlockers(id)
 	if err != nil {
 		return nil, fmt.Errorf("check blockers: %w", err)
 	}

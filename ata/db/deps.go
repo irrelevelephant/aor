@@ -59,7 +59,25 @@ func (d *DB) RemoveDep(taskID, dependsOnID string) error {
 	return nil
 }
 
-// GetBlockers returns tasks that block taskID.
+// effectiveBlockedSubquery is a SQL subquery yielding task IDs blocked by
+// either their own deps or any ancestor epic's deps. A task inherits its
+// parent epic's blockers transitively. Use as `id [NOT] IN ` + effectiveBlockedSubquery.
+//
+// Implementation: seed with task IDs that have an unclosed direct dep, then
+// propagate down the epic tree via epic_id. This is proportional to the deps
+// set, which is typically much smaller than total tasks.
+var effectiveBlockedSubquery = fmt.Sprintf(`(WITH RECURSIVE blocked(id, depth) AS (
+	SELECT DISTINCT td.task_id, 0
+	FROM task_deps td JOIN tasks dep ON dep.id = td.depends_on
+	WHERE dep.status != 'closed'
+	UNION ALL
+	SELECT t.id, b.depth + 1 FROM tasks t JOIN blocked b ON t.epic_id = b.id WHERE b.depth < %d
+)
+SELECT DISTINCT id FROM blocked)`, maxEpicDepth)
+
+// GetBlockers returns tasks that block taskID via direct dependencies only.
+// Inherited blockers from ancestor epics are not included — use EffectiveBlockers
+// for the "can this task start?" check.
 // If activeOnly is true, only unclosed blockers are returned.
 func (d *DB) GetBlockers(taskID string, activeOnly bool) ([]model.Task, error) {
 	query := `SELECT ` + prefixCols("t", taskCols) + `
@@ -120,8 +138,34 @@ func (d *DB) PropagateDeps(sourceID, newID string) (int, error) {
 	return added, nil
 }
 
-// BlockedTaskIDs returns a set of task IDs that have unclosed dependencies.
-// Used for bulk-annotating task lists.
+// EffectiveBlockers returns unclosed tasks that block taskID, including
+// blockers inherited from ancestor epics. Used to decide whether a task can
+// be claimed.
+func (d *DB) EffectiveBlockers(taskID string) ([]model.Task, error) {
+	rows, err := d.Query(fmt.Sprintf(`
+		WITH RECURSIVE ancestry(id, depth) AS (
+			SELECT ?, 0
+			UNION ALL
+			SELECT t.epic_id, a.depth + 1
+			FROM tasks t JOIN ancestry a ON t.id = a.id
+			WHERE t.epic_id IS NOT NULL AND a.depth < %d
+		)
+		SELECT DISTINCT `+prefixCols("dep", taskCols)+`
+		FROM ancestry a
+		JOIN task_deps td ON td.task_id = a.id
+		JOIN tasks dep ON dep.id = td.depends_on
+		WHERE dep.status != 'closed'
+		ORDER BY dep.created_at ASC
+	`, maxEpicDepth), taskID)
+	if err != nil {
+		return nil, fmt.Errorf("effective blockers: %w", err)
+	}
+	defer rows.Close()
+	return d.scanTasks(rows)
+}
+
+// BlockedTaskIDs returns a set of task IDs that have unclosed dependencies,
+// either directly or via any ancestor epic. Used for bulk-annotating task lists.
 func (d *DB) BlockedTaskIDs(taskIDs []string) (map[string]bool, error) {
 	if len(taskIDs) == 0 {
 		return make(map[string]bool), nil
@@ -129,12 +173,7 @@ func (d *DB) BlockedTaskIDs(taskIDs []string) (map[string]bool, error) {
 
 	ph, args := inPlaceholders(taskIDs)
 
-	rows, err := d.Query(`
-		SELECT DISTINCT td.task_id
-		FROM task_deps td
-		JOIN tasks t ON t.id = td.depends_on
-		WHERE td.task_id IN (`+ph+`) AND t.status != 'closed'
-	`, args...)
+	rows, err := d.Query(`SELECT id FROM tasks WHERE id IN (`+ph+`) AND id IN `+effectiveBlockedSubquery, args...)
 	if err != nil {
 		return nil, err
 	}

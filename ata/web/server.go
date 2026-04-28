@@ -583,13 +583,7 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("GetBlocking %s: %v", id, err)
 	}
-	isBlocked := false
-	for _, b := range blockers {
-		if b.Status != model.StatusClosed {
-			isBlocked = true
-			break
-		}
-	}
+	isBlocked := s.effectiveIsBlocked(id)
 
 	tags, err := s.db.GetTags(id)
 	if err != nil {
@@ -696,13 +690,7 @@ func (s *Server) handleEpicDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("GetBlocking epic %s: %v", id, err)
 	}
-	isBlocked := false
-	for _, b := range blockers {
-		if b.Status != model.StatusClosed {
-			isBlocked = true
-			break
-		}
-	}
+	isBlocked := s.effectiveIsBlocked(id)
 
 	epicTitle := s.parentEpicTitle(task.EpicID)
 
@@ -1008,6 +996,15 @@ func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, taskDetailURL(task, id), http.StatusSeeOther)
+}
+
+func (s *Server) effectiveIsBlocked(id string) bool {
+	effective, err := s.db.EffectiveBlockers(id)
+	if err != nil {
+		log.Printf("EffectiveBlockers %s: %v", id, err)
+		return false
+	}
+	return len(effective) > 0
 }
 
 func (s *Server) renderDepsSection(w http.ResponseWriter, id string, task *model.Task) {
