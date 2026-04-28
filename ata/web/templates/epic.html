@@ -95,21 +95,20 @@
     </div>
     {{end}}
 
-    <div class="spec-section">
-        <h2>Spec</h2>
-        <div class="body-display" id="spec-display">
-            {{if .Spec}}
-            <div class="markdown-body spec-body">{{renderMarkdown .Spec}}</div>
+    <div class="task-body" id="task-body">
+        <div class="body-display" id="body-display">
+            {{if .Body}}
+            <div class="markdown-body">{{renderMarkdown .Body}}</div>
             {{else}}
-            <p class="empty body-placeholder">Click to add a spec...</p>
+            <p class="empty body-placeholder">Click to add a description...</p>
             {{end}}
         </div>
-        <form class="body-edit" id="spec-edit" style="display:none"
-              hx-post="/epic/{{.ID}}/spec" hx-swap="none">
-            <textarea name="spec" class="spec-editor">{{.Spec}}</textarea>
+        <form class="body-edit" id="body-edit" style="display:none"
+              hx-post="/task/{{.ID}}" hx-swap="none">
+            <textarea name="body" class="body-editor">{{.Body}}</textarea>
             <div class="body-edit-actions">
                 <button type="submit" class="btn btn-primary btn-sm">Save</button>
-                <button type="button" class="btn btn-sm" onclick="cancelEdit('spec')">Cancel</button>
+                <button type="button" class="btn btn-sm" onclick="cancelEdit('body')">Cancel</button>
             </div>
         </form>
     </div>

@@ -11,26 +11,29 @@ import (
 
 func Create(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
-	desc := fs.String("description", "", "Task description (markdown)")
-	fs.StringVar(desc, "desc", "", "Task description (markdown)")
+	body := fs.String("body", "", "Task body (markdown)")
+	bodyFile := fs.String("body-file", "", "Read body from file")
 	status := fs.String("status", "", "Initial status (backlog|queue, default: inherit from epic or queue)")
 	epicID := fs.String("epic", "", "Parent epic ID")
 	tagStr := fs.String("tag", "", "Tags (comma-separated)")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	// Separate flags from positional args since Go's flag stops at first non-flag.
 	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
-		"description": true, "desc": true, "status": true, "epic": true, "tag": true,
+		"body": true, "body-file": true, "status": true, "epic": true, "tag": true,
 	})
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
-	// Collect the title from positional args.
 	title := strings.TrimSpace(strings.Join(positional, " "))
 	if title == "" {
-		return exitUsage("usage: ata create TITLE [--description TEXT] [--status backlog|queue] [--epic ID] [--json]")
+		return exitUsage("usage: ata create TITLE [--body TEXT] [--body-file PATH] [--status backlog|queue] [--epic ID] [--json]")
+	}
+
+	bodyText, _, err := resolveBody(fs, body, bodyFile, true)
+	if err != nil {
+		return err
 	}
 
 	if *status != "" && *status != model.StatusBacklog && *status != model.StatusQueue {
@@ -38,12 +41,11 @@ func Create(d *db.DB, args []string) error {
 	}
 
 	createdIn := rawWorkingDir()
-	task, err := d.CreateTask(title, *desc, *status, *epicID, createdIn)
+	task, err := d.CreateTask(title, bodyText, *status, *epicID, createdIn)
 	if err != nil {
 		return err
 	}
 
-	// Add tags if provided.
 	for _, t := range db.SplitComma(*tagStr) {
 		d.AddTag(task.ID, t)
 	}

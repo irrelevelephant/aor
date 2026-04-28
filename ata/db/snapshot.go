@@ -118,10 +118,10 @@ func (d *DB) ImportAll(tasks []model.Task, comments []model.Comment, deps []mode
 	}
 
 	for _, t := range tasks {
-		_, err := tx.Exec(`INSERT INTO tasks (`+taskCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		_, err := tx.Exec(`INSERT INTO tasks (`+taskCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Body, t.Status, t.SortOrder,
 			nullStr(t.EpicID), "", t.CreatedIn,
-			t.IsEpic, t.Spec,
+			t.IsEpic,
 			nil, "", nil, nullStr(t.ClosedAt), t.CloseReason,
 			t.CreatedAt, t.UpdatedAt)
 		if err != nil {

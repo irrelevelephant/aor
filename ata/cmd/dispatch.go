@@ -32,8 +32,6 @@ func Dispatch(d *db.DB, subcmd string, args []string) error {
 		return Unclaim(d, args)
 	case "promote":
 		return Promote(d, args)
-	case "spec":
-		return Spec(d, args)
 	case "comment":
 		return Comment(d, args)
 	case "dep":

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -54,6 +55,45 @@ func readFileString(path string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// resolveBody returns the body string sourced from --body, --body-file, or
+// (when allowStdin is true and stdin is piped) stdin. The bool reports whether
+// any source set the body. Mutual-exclusion of --body and --body-file is
+// enforced.
+func resolveBody(fs *flag.FlagSet, body, bodyFile *string, allowStdin bool) (string, bool, error) {
+	bodySet := flagWasSet(fs, "body")
+	fileSet := flagWasSet(fs, "body-file")
+	if bodySet && fileSet {
+		return "", false, fmt.Errorf("--body and --body-file are mutually exclusive")
+	}
+	if fileSet {
+		s, err := readFileString(*bodyFile)
+		if err != nil {
+			return "", false, fmt.Errorf("read body file: %w", err)
+		}
+		return s, true, nil
+	}
+	if bodySet {
+		return *body, true, nil
+	}
+	if allowStdin && !isStdinTTY() {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", false, fmt.Errorf("read stdin: %w", err)
+		}
+		return string(data), true, nil
+	}
+	return "", false, nil
+}
+
+// isStdinTTY reports whether stdin is connected to a terminal (vs. piped).
+func isStdinTTY() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return true
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 func exitUsage(msg string) error {

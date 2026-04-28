@@ -66,7 +66,7 @@ func TestListClosedTasks_EpicSubtasksIncluded(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("my epic", "", model.StatusBacklog, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	sub, _ := d.CreateTask("subtask", "", model.StatusBacklog, epic.ID, "")
 
 	d.CloseTask(sub.ID, "done")
@@ -166,7 +166,7 @@ func TestGCClosedTasks_EpicRefCleared(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("epic", "", model.StatusBacklog, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	sub, _ := d.CreateTask("open sub", "", model.StatusBacklog, epic.ID, "")
 
 	d.CloseTask(epic.ID, "done")

@@ -105,14 +105,12 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 // fileFlagToInline maps file-based flags to their inline equivalents.
 // When proxying to a remote, the file is read locally and sent as the inline flag.
 var fileFlagToInline = map[string]string{
-	"--spec-file": "--spec",
-	"--desc-file": "--description",
-	"--set-file":  "--set",
+	"--body-file": "--body",
 }
 
-// resolveFileFlags reads any file-based flags (--spec-file, --desc-file, --set-file)
+// resolveFileFlags reads any file-based flags (--body-file)
 // from the local filesystem and replaces them with their inline equivalents
-// (--spec, --description, --set) so the remote server receives the content directly.
+// (--body) so the remote server receives the content directly.
 func resolveFileFlags(args []string) ([]string, error) {
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
@@ -192,14 +190,13 @@ Commands:
   create    Create a new task
   list      List tasks
   show      Show task details
-  edit      Edit task title, body, or spec
+  edit      Edit task title, body, or parent epic
   close     Close a task
   reopen    Reopen a closed task
   ready     List queue tasks (ready to work)
   claim     Claim a task (set in_progress)
   unclaim   Unclaim a task (reset to queue)
   promote   Promote a task to an epic
-  spec      View or set epic spec
   comment   Add a comment to a task
   dep       Manage task dependencies
   tag       Manage task tags

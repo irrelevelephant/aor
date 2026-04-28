@@ -32,7 +32,6 @@ type Task struct {
 	Worktree    string   `json:"worktree,omitempty"`
 	CreatedIn   string   `json:"created_in,omitempty"`
 	IsEpic      bool     `json:"is_epic"`
-	Spec        string   `json:"spec,omitempty"`
 	ClaimedPID  int      `json:"claimed_pid,omitempty"`
 	ClaimedHost string   `json:"claimed_host,omitempty"`
 	ClaimedAt   string   `json:"claimed_at,omitempty"`

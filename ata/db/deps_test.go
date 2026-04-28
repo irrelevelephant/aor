@@ -123,7 +123,7 @@ func TestEpicDepInheritance(t *testing.T) {
 
 	// Epic E with child task C; E depends on a separate task D.
 	e, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(e.ID, "")
+	d.PromoteToEpic(e.ID)
 	c, _ := d.CreateTask("Child", "", model.StatusQueue, e.ID, "")
 	dep, _ := d.CreateTask("Dep", "", model.StatusQueue, "", "")
 	if err := d.AddDep(e.ID, dep.ID); err != nil {

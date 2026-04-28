@@ -29,9 +29,9 @@ func testDB(t *testing.T) *DB {
 func makeNestedEpic(t *testing.T, d *DB) (root, sub, leaf *model.Task) {
 	t.Helper()
 	r, _ := d.CreateTask("Root", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(r.ID, "")
+	d.PromoteToEpic(r.ID)
 	s, _ := d.CreateTask("Sub", "", model.StatusQueue, r.ID, "")
-	d.PromoteToEpic(s.ID, "")
+	d.PromoteToEpic(s.ID)
 	l, _ := d.CreateTask("Leaf", "", model.StatusQueue, s.ID, "")
 	return r, s, l
 }
@@ -134,96 +134,66 @@ func TestCloseAndReopen(t *testing.T) {
 	}
 }
 
-func TestPromoteToEpic(t *testing.T) {
-	d := testDB(t)
-
-	task, _ := d.CreateTask("Epic candidate", "", model.StatusQueue, "", "")
-
-	epic, err := d.PromoteToEpic(task.ID, "# Spec\nDo things")
-	if err != nil {
-		t.Fatalf("PromoteToEpic: %v", err)
-	}
-	if !epic.IsEpic {
-		t.Error("expected is_epic = true")
-	}
-	if epic.Spec != "# Spec\nDo things" {
-		t.Errorf("spec = %q", epic.Spec)
-	}
-}
-
-// When promoting without an explicit spec, the existing body becomes the spec
-// so content is not lost — this is the inverse of demote's spec→body merge.
-func TestPromoteToEpicMovesBodyToSpec(t *testing.T) {
-	d := testDB(t)
-
-	task, _ := d.CreateTask("Candidate", "existing body", model.StatusQueue, "", "")
-
-	epic, err := d.PromoteToEpic(task.ID, "")
-	if err != nil {
-		t.Fatalf("PromoteToEpic: %v", err)
-	}
-	if epic.Spec != "existing body" {
-		t.Errorf("spec = %q, want %q", epic.Spec, "existing body")
-	}
-	if epic.Body != "" {
-		t.Errorf("body = %q, want empty", epic.Body)
-	}
-}
-
-// When an explicit spec is passed, the body is left untouched.
-func TestPromoteToEpicWithExplicitSpecKeepsBody(t *testing.T) {
-	d := testDB(t)
-
-	task, _ := d.CreateTask("Candidate", "existing body", model.StatusQueue, "", "")
-
-	epic, err := d.PromoteToEpic(task.ID, "# Spec")
-	if err != nil {
-		t.Fatalf("PromoteToEpic: %v", err)
-	}
-	if epic.Spec != "# Spec" {
-		t.Errorf("spec = %q", epic.Spec)
-	}
-	if epic.Body != "existing body" {
-		t.Errorf("body = %q", epic.Body)
-	}
-}
-
-// Demoting must preserve the spec by folding it into body.
-func TestDemoteToTaskPreservesSpec(t *testing.T) {
+// Promote and demote are pure type flips: body is preserved verbatim through
+// both directions of the round-trip.
+func TestPromoteAndDemotePreserveBody(t *testing.T) {
 	d := testDB(t)
 
 	tests := []struct {
-		name     string
-		body     string
-		spec     string
-		wantBody string
+		name string
+		body string
 	}{
-		{"spec only", "", "# Spec\nDetails", "# Spec\nDetails"},
-		{"body only", "body text", "", "body text"},
-		{"both", "body text", "# Spec\nDetails", "body text\n\n# Spec\nDetails"},
-		{"neither", "", "", ""},
+		{"empty", ""},
+		{"with text", "important description text"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			task, _ := d.CreateTask("T", tc.body, model.StatusQueue, "", "")
-			if _, err := d.PromoteToEpic(task.ID, tc.spec); err != nil {
+			epic, err := d.PromoteToEpic(task.ID)
+			if err != nil {
 				t.Fatalf("PromoteToEpic: %v", err)
 			}
+			if !epic.IsEpic {
+				t.Error("expected is_epic = true after promote")
+			}
+			if epic.Body != tc.body {
+				t.Errorf("epic body = %q, want %q", epic.Body, tc.body)
+			}
+
 			demoted, err := d.DemoteToTask(task.ID)
 			if err != nil {
 				t.Fatalf("DemoteToTask: %v", err)
 			}
 			if demoted.IsEpic {
-				t.Error("expected is_epic = false")
+				t.Error("expected is_epic = false after demote")
 			}
-			if demoted.Spec != "" {
-				t.Errorf("spec = %q, want empty", demoted.Spec)
-			}
-			if demoted.Body != tc.wantBody {
-				t.Errorf("body = %q, want %q", demoted.Body, tc.wantBody)
+			if demoted.Body != tc.body {
+				t.Errorf("demoted body = %q, want %q", demoted.Body, tc.body)
 			}
 		})
+	}
+}
+
+// UpdateTask sets the body on an epic the same way it does on a task.
+func TestUpdateTaskBodyOnEpic(t *testing.T) {
+	d := testDB(t)
+
+	task, _ := d.CreateTask("T", "old body", model.StatusQueue, "", "")
+	if _, err := d.PromoteToEpic(task.ID); err != nil {
+		t.Fatalf("PromoteToEpic: %v", err)
+	}
+
+	newBody := "new epic body"
+	updated, err := d.UpdateTask(task.ID, nil, &newBody)
+	if err != nil {
+		t.Fatalf("UpdateTask: %v", err)
+	}
+	if !updated.IsEpic {
+		t.Error("expected is_epic = true")
+	}
+	if updated.Body != newBody {
+		t.Errorf("body = %q, want %q", updated.Body, newBody)
 	}
 }
 
@@ -232,7 +202,7 @@ func TestEpicCloseEligible(t *testing.T) {
 
 	// Create epic with 2 children.
 	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 
 	c1, _ := d.CreateTask("Child 1", "", model.StatusQueue, epic.ID, "")
 	c2, _ := d.CreateTask("Child 2", "", model.StatusQueue, epic.ID, "")
@@ -262,7 +232,7 @@ func TestReadyTasksExcludesEpics(t *testing.T) {
 	// Create a regular task and an epic, both in queue.
 	task, _ := d.CreateTask("Regular Task", "", model.StatusQueue, "", "")
 	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "# Spec")
+	d.PromoteToEpic(epic.ID)
 
 	ready, err := d.ReadyTasks("", "", 0)
 	if err != nil {
@@ -288,10 +258,10 @@ func TestReadyTasksNestedEpics(t *testing.T) {
 	//     │   └── deep2 (task, queue)
 	//     └── shallow (task, queue)
 	root, _ := d.CreateTask("Root Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(root.ID, "# Root Spec")
+	d.PromoteToEpic(root.ID)
 
 	sub, _ := d.CreateTask("Sub Epic", "", model.StatusQueue, root.ID, "")
-	d.PromoteToEpic(sub.ID, "# Sub Spec")
+	d.PromoteToEpic(sub.ID)
 
 	deep1, _ := d.CreateTask("Deep Task 1", "", model.StatusQueue, sub.ID, "")
 	deep2, _ := d.CreateTask("Deep Task 2", "", model.StatusQueue, sub.ID, "")
@@ -336,13 +306,13 @@ func TestReadyTasksTripleNestedEpics(t *testing.T) {
 
 	// Three levels of nesting: root → mid → leaf (epic) → task
 	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(root.ID, "")
+	d.PromoteToEpic(root.ID)
 
 	mid, _ := d.CreateTask("Mid", "", model.StatusQueue, root.ID, "")
-	d.PromoteToEpic(mid.ID, "")
+	d.PromoteToEpic(mid.ID)
 
 	leaf, _ := d.CreateTask("Leaf Epic", "", model.StatusQueue, mid.ID, "")
-	d.PromoteToEpic(leaf.ID, "")
+	d.PromoteToEpic(leaf.ID)
 
 	task, _ := d.CreateTask("Deep Task", "", model.StatusQueue, leaf.ID, "")
 
@@ -363,7 +333,7 @@ func TestCloseEpicWithOpenSubtasks(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("My Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 
 	c1, _ := d.CreateTask("Child 1", "", model.StatusQueue, epic.ID, "")
 	d.CreateTask("Child 2", "", model.StatusQueue, epic.ID, "")
@@ -442,10 +412,10 @@ func TestListTasksNestedEpic(t *testing.T) {
 	// root (epic) → sub (epic) → deep task
 	//             → shallow task
 	root, _ := d.CreateTask("Root", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(root.ID, "")
+	d.PromoteToEpic(root.ID)
 
 	sub, _ := d.CreateTask("Sub", "", model.StatusQueue, root.ID, "")
-	d.PromoteToEpic(sub.ID, "")
+	d.PromoteToEpic(sub.ID)
 
 	deep, _ := d.CreateTask("Deep", "", model.StatusQueue, sub.ID, "")
 	shallow, _ := d.CreateTask("Shallow", "", model.StatusQueue, root.ID, "")
@@ -722,7 +692,7 @@ func TestTags(t *testing.T) {
 
 	t.Run("ListTagsForEpic", func(t *testing.T) {
 		epic, _ := d.CreateTask("Tag Epic", "", model.StatusQueue, "", "")
-		d.PromoteToEpic(epic.ID, "")
+		d.PromoteToEpic(epic.ID)
 		child, _ := d.CreateTask("Tag Child", "", model.StatusQueue, epic.ID, "")
 		d.AddTag(child.ID, "epic-tag")
 
@@ -849,7 +819,7 @@ func TestReorderInEpic(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 
 	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
 	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
@@ -977,7 +947,7 @@ func TestReorderInEpicOpts(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 
 	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
 	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
@@ -1030,7 +1000,7 @@ func TestSetEpicID(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	task, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "")
 
 	// Move task into epic.
@@ -1048,7 +1018,7 @@ func TestSetEpicIDClear(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	child, _ := d.CreateTask("Child", "", model.StatusQueue, epic.ID, "")
 
 	// Remove from epic.
@@ -1085,7 +1055,7 @@ func TestListTaskTree(t *testing.T) {
 
 	// Create an epic with children and a standalone task.
 	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
 	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
 	standalone, _ := d.CreateTask("Standalone", "", model.StatusQueue, "", "")
@@ -1135,7 +1105,7 @@ func TestListTaskTreeOrphanedChildren(t *testing.T) {
 
 	// Epic in backlog, child moved to queue — child should appear as top-level in queue.
 	epic, _ := d.CreateTask("Epic", "", model.StatusBacklog, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	child, _ := d.CreateTask("Orphan Child", "", model.StatusBacklog, epic.ID, "")
 	d.Exec(`UPDATE tasks SET status = ? WHERE id = ?`, model.StatusQueue, child.ID)
 
@@ -1201,7 +1171,7 @@ func TestReopenEpicChildSortOrder(t *testing.T) {
 	d := testDB(t)
 
 	epic, _ := d.CreateTask("Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	c1, _ := d.CreateTask("Child1", "", model.StatusQueue, epic.ID, "")
 	c2, _ := d.CreateTask("Child2", "", model.StatusQueue, epic.ID, "")
 
@@ -1268,13 +1238,13 @@ func TestReorderOrphanTaskAboveEpic(t *testing.T) {
 
 	// Create an epic with a child, then close the epic — the child becomes an orphan.
 	epic, _ := d.CreateTask("Parent Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic.ID, "")
+	d.PromoteToEpic(epic.ID)
 	orphan, _ := d.CreateTask("Orphan Child", "", model.StatusQueue, epic.ID, "")
 	d.CloseTask(epic.ID, "done")
 
 	// Create a top-level epic (like jg3 in the bug report).
 	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(topEpic.ID, "")
+	d.PromoteToEpic(topEpic.ID)
 
 	// Reorder orphan above the top-level epic (position 0).
 	if err := d.Reorder(orphan.ID, 0, ""); err != nil {
@@ -1294,18 +1264,18 @@ func TestReorderTwoOrphansAboveEpic(t *testing.T) {
 
 	// Create two orphan tasks (children of closed epics).
 	epic1, _ := d.CreateTask("Closed Epic 1", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic1.ID, "")
+	d.PromoteToEpic(epic1.ID)
 	orphan1, _ := d.CreateTask("Orphan 1", "", model.StatusQueue, epic1.ID, "")
 	d.CloseTask(epic1.ID, "done")
 
 	epic2, _ := d.CreateTask("Closed Epic 2", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(epic2.ID, "")
+	d.PromoteToEpic(epic2.ID)
 	orphan2, _ := d.CreateTask("Orphan 2", "", model.StatusQueue, epic2.ID, "")
 	d.CloseTask(epic2.ID, "done")
 
 	// Create a top-level epic.
 	topEpic, _ := d.CreateTask("Top Epic", "", model.StatusQueue, "", "")
-	d.PromoteToEpic(topEpic.ID, "")
+	d.PromoteToEpic(topEpic.ID)
 
 	// Move orphan1 above topEpic (position 0).
 	if err := d.Reorder(orphan1.ID, 0, ""); err != nil {

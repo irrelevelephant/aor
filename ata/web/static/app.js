@@ -216,9 +216,8 @@ document.addEventListener('DOMContentLoaded', function() {
     initChipInputs();
     initInlineTagForms();
 
-    // Inline editing for body (task detail) and spec (epic detail).
+    // Inline editing for body (task and epic detail).
     initClickToEdit('body-display', 'body-edit');
-    initClickToEdit('spec-display', 'spec-edit');
 });
 
 // Deterministic tag hue matching the Go tagHue() implementation.
@@ -342,7 +341,7 @@ function copyMarkdown(text) {
     });
 }
 
-// Generic click-to-edit initializer for body and spec sections.
+// Generic click-to-edit initializer for body sections.
 function initClickToEdit(displayId, editId) {
     var display = document.getElementById(displayId);
     var edit = document.getElementById(editId);

@@ -9,40 +9,20 @@ import (
 
 func Promote(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("promote", flag.ContinueOnError)
-	specFlag := fs.String("spec", "", "Spec text (markdown)")
-	specFile := fs.String("spec-file", "", "Path to spec file (markdown)")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
-		"spec": true, "spec-file": true,
-	})
+	flagArgs, positional := splitFlagsAndPositional(args, nil)
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
 	if len(positional) == 0 {
-		return exitUsage("usage: ata promote ID [--spec TEXT] [--spec-file PATH]")
-	}
-
-	if flagWasSet(fs, "spec") && flagWasSet(fs, "spec-file") {
-		return fmt.Errorf("--spec and --spec-file are mutually exclusive")
+		return exitUsage("usage: ata promote ID [--json]")
 	}
 
 	id := positional[0]
-
-	spec := ""
-	if flagWasSet(fs, "spec") {
-		spec = *specFlag
-	} else if *specFile != "" {
-		var err error
-		spec, err = readFileString(*specFile)
-		if err != nil {
-			return fmt.Errorf("read spec file: %w", err)
-		}
-	}
-
-	task, err := d.PromoteToEpic(id, spec)
+	task, err := d.PromoteToEpic(id)
 	if err != nil {
 		return err
 	}

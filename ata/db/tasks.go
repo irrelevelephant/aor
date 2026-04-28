@@ -58,7 +58,7 @@ func epicDescendantSQL(epicID string) (string, any) {
 	) SELECT id FROM epic_tree)`, maxEpicDepth), epicID
 }
 
-const taskCols = `id, title, body, status, sort_order, epic_id, worktree, created_in, is_epic, spec, claimed_pid, claimed_host, claimed_at, closed_at, close_reason, created_at, updated_at`
+const taskCols = `id, title, body, status, sort_order, epic_id, worktree, created_in, is_epic, claimed_pid, claimed_host, claimed_at, closed_at, close_reason, created_at, updated_at`
 
 // unclaimSet is the SQL SET fragment used whenever a task is unclaimed, closed,
 // or moved out of in_progress. Centralised to keep the four fields in sync.
@@ -445,16 +445,9 @@ func (d *DB) ReopenTask(id string) (*model.Task, error) {
 	return d.GetTask(id)
 }
 
-// PromoteToEpic promotes a task to an epic. If spec is empty, the existing
-// body is moved into spec so the content is preserved (inverse of demote).
-func (d *DB) PromoteToEpic(id, spec string) (*model.Task, error) {
-	var res sql.Result
-	var err error
-	if spec == "" {
-		res, err = d.Exec(`UPDATE tasks SET is_epic = 1, spec = body, body = '' WHERE id = ? AND is_epic = 0`, id)
-	} else {
-		res, err = d.Exec(`UPDATE tasks SET is_epic = 1, spec = ? WHERE id = ? AND is_epic = 0`, spec, id)
-	}
+// PromoteToEpic promotes a task to an epic. Body is preserved as-is.
+func (d *DB) PromoteToEpic(id string) (*model.Task, error) {
+	res, err := d.Exec(`UPDATE tasks SET is_epic = 1 WHERE id = ? AND is_epic = 0`, id)
 	if err != nil {
 		return nil, fmt.Errorf("promote: %w", err)
 	}
@@ -476,16 +469,9 @@ func (d *DB) PromoteToEpic(id, spec string) (*model.Task, error) {
 }
 
 // DemoteToTask converts an epic back to a regular task, if it has no children.
-// The spec is folded into body so the content is preserved.
+// Body is preserved as-is.
 func (d *DB) DemoteToTask(id string) (*model.Task, error) {
-	res, err := d.Exec(`UPDATE tasks SET
-			is_epic = 0,
-			body = CASE
-				WHEN spec = '' THEN body
-				WHEN body = '' THEN spec
-				ELSE body || char(10) || char(10) || spec
-			END,
-			spec = ''
+	res, err := d.Exec(`UPDATE tasks SET is_epic = 0
 		WHERE id = ? AND is_epic = 1
 		AND NOT EXISTS (SELECT 1 FROM tasks WHERE epic_id = ?)`, id, id)
 	if err != nil {
@@ -509,7 +495,7 @@ func (d *DB) DemoteToTask(id string) (*model.Task, error) {
 }
 
 // UpdateTask updates task fields dynamically. nil pointer = no change, non-nil = set value.
-func (d *DB) UpdateTask(id string, title, body, spec *string) (*model.Task, error) {
+func (d *DB) UpdateTask(id string, title, body *string) (*model.Task, error) {
 	var setClauses []string
 	var args []any
 
@@ -520,10 +506,6 @@ func (d *DB) UpdateTask(id string, title, body, spec *string) (*model.Task, erro
 	if body != nil {
 		setClauses = append(setClauses, "body = ?")
 		args = append(args, *body)
-	}
-	if spec != nil {
-		setClauses = append(setClauses, "spec = ?")
-		args = append(args, *spec)
 	}
 
 	if len(setClauses) == 0 {
@@ -972,7 +954,7 @@ func scanTaskRow(s scanner) (model.Task, error) {
 	var claimedPID sql.NullInt64
 
 	err := s.Scan(&t.ID, &t.Title, &t.Body, &t.Status, &t.SortOrder,
-		&epicID, &t.Worktree, &t.CreatedIn, &t.IsEpic, &t.Spec,
+		&epicID, &t.Worktree, &t.CreatedIn, &t.IsEpic,
 		&claimedPID, &t.ClaimedHost, &claimedAt, &closedAt, &t.CloseReason,
 		&t.CreatedAt, &t.UpdatedAt)
 	if err != nil {

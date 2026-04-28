@@ -438,23 +438,6 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .progress-fill { height: 100%; background: var(--green); transition: width 0.3s; }
 .progress-text { font-size: 0.85rem; color: var(--text-dim); }
 
-/* Spec */
-.spec-section { margin-bottom: 2rem; }
-.spec-editor {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--text);
-    font-family: monospace;
-    font-size: 0.9rem;
-    resize: vertical;
-    margin-top: 0.5rem;
-    field-sizing: content;
-    min-height: 12lh;
-}
-
 /* Dependencies */
 .deps-section { margin-bottom: 1.5rem; }
 .deps-section h3 { font-size: 0.9rem; color: var(--text-dim); margin-bottom: 0.5rem; margin-top: 0.75rem; }

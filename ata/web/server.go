@@ -321,7 +321,6 @@ func (srv *Server) registerAtaRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /task/{id}/promote", srv.handlePromoteTask)
 	mux.HandleFunc("POST /task/{id}/demote", srv.handleDemoteEpic)
 	mux.HandleFunc("POST /task/{id}/comments", srv.handleAddComment)
-	mux.HandleFunc("POST /epic/{id}/spec", srv.handleUpdateSpec)
 	mux.HandleFunc("POST /task/{id}/deps", srv.handleAddDep)
 	mux.HandleFunc("POST /task/{id}/deps/remove", srv.handleRemoveDep)
 	mux.HandleFunc("POST /task/{id}/tags", srv.handleAddTag)
@@ -776,19 +775,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if pBody != nil {
-		existing, err := s.db.GetTask(id)
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		if existing.IsEpic {
-			http.Error(w, "use spec for epics, not description", 400)
-			return
-		}
-	}
-
-	task, err := s.db.UpdateTask(id, pTitle, pBody, nil)
+	task, err := s.db.UpdateTask(id, pTitle, pBody)
 	if err != nil {
 		http.Error(w, "not found", 404)
 		return
@@ -875,7 +862,7 @@ func (s *Server) handleReopenTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePromoteTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_, err := s.db.PromoteToEpic(id, "")
+	_, err := s.db.PromoteToEpic(id)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -919,29 +906,6 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
-}
-
-func (s *Server) handleUpdateSpec(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	r.ParseForm()
-	spec := r.FormValue("spec")
-
-	existing, err := s.db.GetTask(id)
-	if err != nil {
-		http.Error(w, "not found", 404)
-		return
-	}
-	if !existing.IsEpic {
-		http.Error(w, "spec is only for epics", 400)
-		return
-	}
-
-	if _, err := s.db.UpdateTask(id, nil, nil, &spec); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	s.hxRedirect(w, r, "/epic/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {

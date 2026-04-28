@@ -2,7 +2,7 @@ package db
 
 import "fmt"
 
-const schemaVersion = 8
+const schemaVersion = 9
 
 // SchemaVersion returns the current schema version for use in snapshot metadata.
 func SchemaVersion() int { return schemaVersion }
@@ -69,6 +69,12 @@ func (d *DB) migrate() error {
 	if current < 8 {
 		if err := d.migrateV8(); err != nil {
 			return fmt.Errorf("v8: %w", err)
+		}
+	}
+
+	if current < 9 {
+		if err := d.migrateV9(); err != nil {
+			return fmt.Errorf("v9: %w", err)
 		}
 	}
 
@@ -208,6 +214,26 @@ func (d *DB) migrateV8() error {
 DROP INDEX IF EXISTS idx_tasks_workspace_status;
 ALTER TABLE tasks DROP COLUMN workspace;
 DROP TABLE IF EXISTS workspaces;
+`
+	_, err := d.Exec(ddl)
+	return err
+}
+
+// migrateV9 collapses the spec column into body: epics no longer carry a
+// separate spec field. Existing spec text is appended to body with a blank
+// line separator so no content is lost. The UPDATE clears spec as it goes so
+// a partially completed migration (UPDATE succeeds, DROP COLUMN fails) is safe
+// to retry — already-merged rows fail the WHERE spec != '' filter on rerun.
+func (d *DB) migrateV9() error {
+	ddl := `
+UPDATE tasks
+SET body = CASE
+    WHEN body = '' THEN spec
+    ELSE body || char(10) || char(10) || spec
+END,
+spec = ''
+WHERE spec != '';
+ALTER TABLE tasks DROP COLUMN spec;
 `
 	_, err := d.Exec(ddl)
 	return err
