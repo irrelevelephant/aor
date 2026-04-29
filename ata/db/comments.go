@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 
 	"aor/ata/model"
@@ -54,4 +55,33 @@ func (d *DB) getComment(id int) (*model.Comment, error) {
 		return nil, fmt.Errorf("get comment: %w", err)
 	}
 	return c, nil
+}
+
+// UpdateComment replaces the body of an existing comment.
+func (d *DB) UpdateComment(id int, body string) (*model.Comment, error) {
+	c := &model.Comment{}
+	err := d.QueryRow(
+		`UPDATE comments SET body = ? WHERE id = ? RETURNING id, task_id, body, author, created_at`,
+		body, id,
+	).Scan(&c.ID, &c.TaskID, &c.Body, &c.Author, &c.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("comment %d not found", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update comment: %w", err)
+	}
+	return c, nil
+}
+
+// DeleteComment removes a comment by id. Returns the parent task id so callers
+// can refresh views or broadcast events keyed on the task.
+func (d *DB) DeleteComment(id int) (string, error) {
+	var taskID string
+	if err := d.QueryRow(`SELECT task_id FROM comments WHERE id = ?`, id).Scan(&taskID); err != nil {
+		return "", fmt.Errorf("comment %d not found", id)
+	}
+	if _, err := d.Exec(`DELETE FROM comments WHERE id = ?`, id); err != nil {
+		return "", fmt.Errorf("delete comment: %w", err)
+	}
+	return taskID, nil
 }

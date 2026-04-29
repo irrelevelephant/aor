@@ -197,7 +197,7 @@ Commands:
   claim     Claim a task (set in_progress)
   unclaim   Unclaim a task (reset to queue)
   promote   Promote a task to an epic
-  comment   Add a comment to a task
+  comment   Add, edit, or delete a comment (subcommands: edit, rm)
   dep       Manage task dependencies
   tag       Manage task tags
   reorder   Reorder a task (--position, --before, --after, --top, --bottom)

@@ -321,6 +321,8 @@ func (srv *Server) registerAtaRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /task/{id}/promote", srv.handlePromoteTask)
 	mux.HandleFunc("POST /task/{id}/demote", srv.handleDemoteEpic)
 	mux.HandleFunc("POST /task/{id}/comments", srv.handleAddComment)
+	mux.HandleFunc("POST /comment/{id}", srv.handleUpdateComment)
+	mux.HandleFunc("POST /comment/{id}/delete", srv.handleDeleteComment)
 	mux.HandleFunc("POST /task/{id}/deps", srv.handleAddDep)
 	mux.HandleFunc("POST /task/{id}/deps/remove", srv.handleRemoveDep)
 	mux.HandleFunc("POST /task/{id}/tags", srv.handleAddTag)
@@ -906,6 +908,56 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/task/"+id, http.StatusSeeOther)
+}
+
+func (s *Server) handleUpdateComment(w http.ResponseWriter, r *http.Request) {
+	cid, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid comment id", 400)
+		return
+	}
+	r.ParseForm()
+	body := strings.TrimSpace(r.FormValue("body"))
+	if body == "" {
+		http.Error(w, "body required", 400)
+		return
+	}
+
+	comment, err := s.db.UpdateComment(cid, body)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	s.hub.Broadcast("comment_updated", comment.TaskID)
+
+	if r.Header.Get("HX-Request") == "true" {
+		s.partials.ExecuteTemplate(w, "comment.html", comment)
+		return
+	}
+	http.Redirect(w, r, "/task/"+comment.TaskID, http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
+	cid, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid comment id", 400)
+		return
+	}
+
+	taskID, err := s.db.DeleteComment(cid)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	s.hub.Broadcast("comment_deleted", taskID)
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/task/"+taskID, http.StatusSeeOther)
 }
 
 func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {

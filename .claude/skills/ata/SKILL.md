@@ -114,7 +114,11 @@ ata tag list                    # all tags in workspace
 ata comment ID "message"                    # default author: human
 ata comment ID "message" --author agent     # agent-authored
 ata comment ID "message" --author system    # system-authored
+ata comment edit COMMENT_ID "new body"      # edit a comment by numeric id
+ata comment rm COMMENT_ID                   # delete a comment
 ```
+
+Comment IDs are numeric and visible in `ata show ID --json` output.
 
 ## Reordering and batch moves
 

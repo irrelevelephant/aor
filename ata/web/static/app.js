@@ -364,6 +364,20 @@ function cancelEdit(prefix) {
     document.getElementById(prefix + '-edit').style.display = 'none';
 }
 
+// Toggle a comment between display and edit modes.
+function toggleCommentEdit(id) {
+    var display = document.getElementById('comment-' + id + '-display');
+    var form = document.getElementById('comment-' + id + '-edit');
+    if (!display || !form) return;
+    var editing = form.style.display !== 'none';
+    display.style.display = editing ? '' : 'none';
+    form.style.display = editing ? 'none' : '';
+    if (!editing) {
+        var ta = form.querySelector('textarea');
+        if (ta) { ta.focus(); ta.selectionStart = ta.value.length; }
+    }
+}
+
 // Tag filter: include tags via URL param.
 function includeTagFilter(tag) {
     var u = new URL(window.location.href);

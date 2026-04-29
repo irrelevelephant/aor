@@ -1,9 +1,27 @@
 {{define "comment.html"}}
-<div class="comment">
+<div class="comment" id="comment-{{.ID}}">
     <div class="comment-meta">
         <span class="comment-author {{.Author}}">{{.Author}}</span>
         <span class="comment-time">{{.CreatedAt}}</span>
+        <span class="comment-actions">
+            <button type="button" class="btn-icon comment-edit-toggle" title="Edit"
+                    onclick="toggleCommentEdit({{.ID}})">&#9998;</button>
+            <form action="/comment/{{.ID}}/delete" method="POST" style="display:inline"
+                  hx-post="/comment/{{.ID}}/delete"
+                  hx-target="#comment-{{.ID}}" hx-swap="delete"
+                  hx-confirm="Delete this comment?">
+                <button type="submit" class="btn-icon" title="Delete">&times;</button>
+            </form>
+        </span>
     </div>
-    <div class="comment-body">{{renderMarkdown .Body}}</div>
+    <div class="comment-body" id="comment-{{.ID}}-display">{{renderMarkdown .Body}}</div>
+    <form class="comment-edit-form" id="comment-{{.ID}}-edit" style="display:none"
+          hx-post="/comment/{{.ID}}" hx-target="#comment-{{.ID}}" hx-swap="outerHTML">
+        <textarea name="body" rows="3" required>{{.Body}}</textarea>
+        <div class="comment-edit-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            <button type="button" class="btn btn-sm" onclick="toggleCommentEdit({{.ID}})">Cancel</button>
+        </div>
+    </form>
 </div>
 {{end}}

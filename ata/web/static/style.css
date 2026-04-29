@@ -696,7 +696,8 @@ button.tag-badge { cursor: pointer; }
     flex-direction: column;
     gap: 0.5rem;
 }
-.comment-form textarea {
+.comment-form textarea,
+.comment-edit-form textarea {
     width: 100%;
     padding: 0.5rem;
     border: 1px solid var(--border);
@@ -708,5 +709,10 @@ button.tag-badge { cursor: pointer; }
     resize: vertical;
     transition: border-color 0.15s;
 }
-.comment-form textarea:focus { border-color: var(--accent); outline: none; }
+.comment-form textarea:focus,
+.comment-edit-form textarea:focus { border-color: var(--accent); outline: none; }
 .comment-form .btn { align-self: flex-end; }
+.comment-actions { margin-left: auto; display: flex; gap: 0.25rem; opacity: 0; transition: opacity 0.15s; }
+.comment:hover .comment-actions { opacity: 1; }
+.comment-edit-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
+.comment-edit-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }

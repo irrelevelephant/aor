@@ -478,6 +478,56 @@ func TestComments(t *testing.T) {
 	}
 }
 
+func TestUpdateComment(t *testing.T) {
+	d := testDB(t)
+
+	task, _ := d.CreateTask("Task", "", model.StatusQueue, "", "")
+	c, _ := d.AddComment(task.ID, "original", model.AuthorHuman)
+
+	updated, err := d.UpdateComment(c.ID, "edited")
+	if err != nil {
+		t.Fatalf("UpdateComment: %v", err)
+	}
+	if updated.Body != "edited" {
+		t.Errorf("body = %q, want %q", updated.Body, "edited")
+	}
+	if updated.ID != c.ID {
+		t.Errorf("id = %d, want %d", updated.ID, c.ID)
+	}
+
+	if _, err := d.UpdateComment(99999, "x"); err == nil {
+		t.Errorf("UpdateComment on missing id: want error")
+	}
+}
+
+func TestDeleteComment(t *testing.T) {
+	d := testDB(t)
+
+	task, _ := d.CreateTask("Task", "", model.StatusQueue, "", "")
+	c, _ := d.AddComment(task.ID, "to delete", model.AuthorHuman)
+	d.AddComment(task.ID, "to keep", model.AuthorHuman)
+
+	taskID, err := d.DeleteComment(c.ID)
+	if err != nil {
+		t.Fatalf("DeleteComment: %v", err)
+	}
+	if taskID != task.ID {
+		t.Errorf("taskID = %q, want %q", taskID, task.ID)
+	}
+
+	comments, _ := d.ListComments(task.ID)
+	if len(comments) != 1 {
+		t.Errorf("got %d comments after delete, want 1", len(comments))
+	}
+	if comments[0].Body != "to keep" {
+		t.Errorf("remaining body = %q", comments[0].Body)
+	}
+
+	if _, err := d.DeleteComment(99999); err == nil {
+		t.Errorf("DeleteComment on missing id: want error")
+	}
+}
+
 func TestReorder(t *testing.T) {
 	d := testDB(t)
 
