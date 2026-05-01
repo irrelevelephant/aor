@@ -268,6 +268,7 @@ func initServer(d *db.DB, opts ...Option) (*Server, error) {
 		"formatBytes":  db.FormatBytes,
 		"taskURL":      taskURL,
 		"hasEpicGroup": hasEpicGroup,
+		"treeCount":    treeCount,
 	}
 
 	pageFiles := []string{"tasks.html", "task.html", "epic.html"}
