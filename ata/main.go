@@ -156,15 +156,20 @@ func resolveFileFlags(args []string) ([]string, error) {
 }
 
 var stdinBodyCommands = map[string]bool{
-	"create": true,
-	"edit":   true,
+	"create":  true,
+	"edit":    true,
+	"comment": true,
 }
 
-// resolveStdinBody reads piped stdin and prepends it as --body for commands
+// resolveStdinBody reads piped stdin and appends it as --body for commands
 // that accept a body, when no --body or --body-file flag is already present
-// and stdin is not a TTY.
+// and stdin is not a TTY. Append (not prepend) so the first arg can still be
+// a subcommand token (e.g. "edit", "rm") that downstream dispatchers route on.
 func resolveStdinBody(subcmd string, args []string) ([]string, error) {
 	if !stdinBodyCommands[subcmd] {
+		return args, nil
+	}
+	if subcmd == "comment" && len(args) > 0 && cmd.IsCommentDeleteSubcommand(args[0]) {
 		return args, nil
 	}
 	if hasFlag(args, "body") || hasFlag(args, "body-file") {
@@ -180,7 +185,7 @@ func resolveStdinBody(subcmd string, args []string) ([]string, error) {
 	if len(data) == 0 {
 		return args, nil
 	}
-	return append([]string{"--body", string(data)}, args...), nil
+	return append(args, "--body", string(data)), nil
 }
 
 // injectClaimClientContext adds --host and --pid defaults resolved on the

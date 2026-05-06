@@ -113,9 +113,12 @@ ata tag list                    # all tags in workspace
 
 ```bash
 ata comment ID "message"                    # default author: human
+ata comment ID --body-file path/to/body.md  # body from file
+echo "message" | ata comment ID             # body from stdin
 ata comment ID "message" --author agent     # agent-authored
 ata comment ID "message" --author system    # system-authored
 ata comment edit COMMENT_ID "new body"      # edit a comment by numeric id
+echo "new body" | ata comment edit COMMENT_ID
 ata comment rm COMMENT_ID                   # delete a comment
 ```
 

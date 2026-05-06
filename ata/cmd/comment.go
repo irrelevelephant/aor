@@ -14,36 +14,53 @@ func Comment(d *db.DB, args []string) error {
 		switch args[0] {
 		case "edit":
 			return commentEdit(d, args[1:])
-		case "rm", "remove", "delete":
+		}
+		if IsCommentDeleteSubcommand(args[0]) {
 			return commentDelete(d, args[1:])
 		}
 	}
 	return commentAdd(d, args)
 }
 
+// IsCommentDeleteSubcommand reports whether arg is one of the comment-delete
+// aliases (rm, remove, delete). Used by the remote-proxy code to skip stdin
+// injection on delete.
+func IsCommentDeleteSubcommand(arg string) bool {
+	switch arg {
+	case "rm", "remove", "delete":
+		return true
+	}
+	return false
+}
+
 func commentAdd(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("comment", flag.ContinueOnError)
 	author := fs.String("author", "human", "Comment author (human|agent|system)")
+	body := fs.String("body", "", "Comment body (markdown)")
+	bodyFile := fs.String("body-file", "", "Read body from file")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
 	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
-		"author": true,
+		"author": true, "body": true, "body-file": true,
 	})
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
-	if len(positional) < 2 {
-		return exitUsage(`usage: ata comment ID BODY [--author human|agent|system]
-       ata comment edit COMMENT_ID BODY
+	if len(positional) < 1 {
+		return exitUsage(`usage: ata comment ID [BODY | --body TEXT | --body-file PATH | <stdin] [--author human|agent|system]
+       ata comment edit COMMENT_ID [BODY | --body TEXT | --body-file PATH | <stdin]
        ata comment rm COMMENT_ID`)
 	}
 
 	id := positional[0]
-	body := strings.Join(positional[1:], " ")
+	commentBody, err := resolveCommentBody(fs, body, bodyFile, positional[1:])
+	if err != nil {
+		return err
+	}
 
-	comment, err := d.AddComment(id, body, *author)
+	comment, err := d.AddComment(id, commentBody, *author)
 	if err != nil {
 		return err
 	}
@@ -58,24 +75,32 @@ func commentAdd(d *db.DB, args []string) error {
 
 func commentEdit(d *db.DB, args []string) error {
 	fs := flag.NewFlagSet("comment edit", flag.ContinueOnError)
+	body := fs.String("body", "", "Comment body (markdown)")
+	bodyFile := fs.String("body-file", "", "Read body from file")
 	jsonOut := fs.Bool("json", false, "Output JSON")
 
-	flagArgs, positional := splitFlagsAndPositional(args, nil)
+	flagArgs, positional := splitFlagsAndPositional(args, map[string]bool{
+		"body": true, "body-file": true,
+	})
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 
-	if len(positional) < 2 {
-		return exitUsage("usage: ata comment edit COMMENT_ID BODY")
+	if len(positional) < 1 {
+		return exitUsage("usage: ata comment edit COMMENT_ID [BODY | --body TEXT | --body-file PATH | <stdin]")
 	}
 
 	cid, err := strconv.Atoi(positional[0])
 	if err != nil {
 		return fmt.Errorf("invalid comment id %q", positional[0])
 	}
-	body := strings.Join(positional[1:], " ")
 
-	comment, err := d.UpdateComment(cid, body)
+	commentBody, err := resolveCommentBody(fs, body, bodyFile, positional[1:])
+	if err != nil {
+		return err
+	}
+
+	comment, err := d.UpdateComment(cid, commentBody)
 	if err != nil {
 		return err
 	}
@@ -86,6 +111,22 @@ func commentEdit(d *db.DB, args []string) error {
 
 	fmt.Printf("edited comment %d on %s\n", comment.ID, comment.TaskID)
 	return nil
+}
+
+// resolveCommentBody picks the comment body from --body / --body-file / stdin
+// (via resolveBody) when set, otherwise from the trailing positional args.
+func resolveCommentBody(fs *flag.FlagSet, body, bodyFile *string, positional []string) (string, error) {
+	bodyText, bodySet, err := resolveBody(fs, body, bodyFile, true)
+	if err != nil {
+		return "", err
+	}
+	if bodySet {
+		return bodyText, nil
+	}
+	if len(positional) > 0 {
+		return strings.Join(positional, " "), nil
+	}
+	return "", exitUsage("comment body is required (positional, --body, --body-file, or piped stdin)")
 }
 
 func commentDelete(d *db.DB, args []string) error {
