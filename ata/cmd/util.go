@@ -82,6 +82,9 @@ func resolveBody(fs *flag.FlagSet, body, bodyFile *string, allowStdin bool) (str
 		if err != nil {
 			return "", false, fmt.Errorf("read stdin: %w", err)
 		}
+		if len(data) == 0 {
+			return "", false, nil
+		}
 		return string(data), true, nil
 	}
 	return "", false, nil

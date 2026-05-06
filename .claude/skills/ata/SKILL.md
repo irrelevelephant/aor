@@ -54,6 +54,7 @@ ata ready --limit 5             # limit results
 ata edit ID --title "New title"
 ata edit ID --body "Updated body"               # tasks and epics
 ata edit ID --body-file path/to/file.md         # tasks and epics
+echo "updated body" | ata edit ID               # body from stdin
 ata edit ID --epic EPIC_ID                      # reparent task to epic
 ata edit ID --epic none                         # remove from epic
 ```

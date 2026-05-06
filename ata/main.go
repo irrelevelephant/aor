@@ -157,6 +157,7 @@ func resolveFileFlags(args []string) ([]string, error) {
 
 var stdinBodyCommands = map[string]bool{
 	"create": true,
+	"edit":   true,
 }
 
 // resolveStdinBody reads piped stdin and prepends it as --body for commands

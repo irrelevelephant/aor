@@ -30,7 +30,7 @@ func Edit(d *db.DB, args []string) error {
 
 	id := positional[0]
 
-	bodyText, bodySet, err := resolveBody(fs, body, bodyFile, false)
+	bodyText, bodySet, err := resolveBody(fs, body, bodyFile, true)
 	if err != nil {
 		return err
 	}
