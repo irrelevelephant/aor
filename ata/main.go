@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -86,6 +87,13 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 		return 1, true
 	}
 
+	// Mirror the local-path stdin handling in cmd/util.go's resolveBody.
+	execArgs, err = resolveStdinBody(subcmd, execArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1, true
+	}
+
 	execArgs = injectClaimClientContext(subcmd, execArgs)
 
 	stdout, stderr, exitCode, err := c.Exec(subcmd, execArgs)
@@ -145,6 +153,33 @@ func resolveFileFlags(args []string) ([]string, error) {
 		out = append(out, arg)
 	}
 	return out, nil
+}
+
+var stdinBodyCommands = map[string]bool{
+	"create": true,
+}
+
+// resolveStdinBody reads piped stdin and prepends it as --body for commands
+// that accept a body, when no --body or --body-file flag is already present
+// and stdin is not a TTY.
+func resolveStdinBody(subcmd string, args []string) ([]string, error) {
+	if !stdinBodyCommands[subcmd] {
+		return args, nil
+	}
+	if hasFlag(args, "body") || hasFlag(args, "body-file") {
+		return args, nil
+	}
+	if cmd.IsStdinTTY() {
+		return args, nil
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, fmt.Errorf("read stdin: %w", err)
+	}
+	if len(data) == 0 {
+		return args, nil
+	}
+	return append([]string{"--body", string(data)}, args...), nil
 }
 
 // injectClaimClientContext adds --host and --pid defaults resolved on the

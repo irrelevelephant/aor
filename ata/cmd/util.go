@@ -77,7 +77,7 @@ func resolveBody(fs *flag.FlagSet, body, bodyFile *string, allowStdin bool) (str
 	if bodySet {
 		return *body, true, nil
 	}
-	if allowStdin && !isStdinTTY() {
+	if allowStdin && !IsStdinTTY() {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return "", false, fmt.Errorf("read stdin: %w", err)
@@ -87,8 +87,8 @@ func resolveBody(fs *flag.FlagSet, body, bodyFile *string, allowStdin bool) (str
 	return "", false, nil
 }
 
-// isStdinTTY reports whether stdin is connected to a terminal (vs. piped).
-func isStdinTTY() bool {
+// IsStdinTTY reports whether stdin is connected to a terminal (vs. piped).
+func IsStdinTTY() bool {
 	fi, err := os.Stdin.Stat()
 	if err != nil {
 		return true
