@@ -170,7 +170,7 @@
                 <span class="status-badge {{statusColor .Status}}">{{.Status}}</span>
                 {{if .IsEpic}}<span class="badge epic-badge">epic</span>{{end}}
                 {{if index $.BlockedIDs .ID}}<span class="badge blocked-badge" title="Has unresolved dependencies">blocked</span>{{end}}
-                {{range index $.TagMap .ID}}<a href="{{tagFilterURL $.EpicURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}
+                {{with index $.TagMap .ID}}<span class="task-tags">{{range .}}<a href="{{tagFilterURL $.EpicURL .}}" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}">{{.}}</a>{{end}}</span>{{end}}
             </div>
             {{end}}
             {{end}}
