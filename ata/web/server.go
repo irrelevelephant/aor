@@ -831,7 +831,13 @@ func (s *Server) handleCloseTask(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	reason := r.FormValue("reason")
 
-	task, err := s.db.CloseTask(id, reason)
+	var task *model.Task
+	var err error
+	if r.FormValue("cascade") == "1" {
+		task, err = s.db.CloseTaskCascade(id, reason)
+	} else {
+		task, err = s.db.CloseTask(id, reason)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return

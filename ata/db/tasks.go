@@ -64,6 +64,10 @@ const taskCols = `id, title, body, status, sort_order, epic_id, worktree, create
 // or moved out of in_progress. Centralised to keep the four fields in sync.
 const unclaimSet = `claimed_pid = NULL, claimed_host = '', claimed_at = NULL, worktree = ''`
 
+// closeSetClause is the SQL SET fragment that marks a task closed and clears
+// any active claim. Bind args (in order): close_reason, closed_at.
+const closeSetClause = `status = 'closed', close_reason = ?, closed_at = ?, ` + unclaimSet
+
 // CreateTask inserts a new task, generating a unique ID.
 func (d *DB) CreateTask(title, body, status, epicID, createdIn string) (*model.Task, error) {
 	id, err := d.generateUniqueID(3)
@@ -351,7 +355,7 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := tx.Exec(`UPDATE tasks SET status = 'closed', close_reason = ?, closed_at = ?, `+unclaimSet+`
+	res, err := tx.Exec(`UPDATE tasks SET `+closeSetClause+`
 		WHERE id = ? AND status != 'closed'
 		AND NOT (is_epic = 1 AND EXISTS (
 			SELECT 1 FROM tasks AS sub WHERE sub.epic_id = tasks.id AND sub.status != 'closed'
@@ -385,6 +389,54 @@ func (d *DB) CloseTask(id, reason string) (*model.Task, error) {
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("close task commit: %w", err)
+	}
+	return d.GetTask(id)
+}
+
+// CloseTaskCascade closes a task plus all of its open descendants in a single
+// transaction. Used when the caller has explicitly opted in to closing an epic
+// together with its still-open subtasks.
+func (d *DB) CloseTaskCascade(id, reason string) (*model.Task, error) {
+	tx, err := d.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("close cascade: %w", err)
+	}
+	defer tx.Rollback()
+
+	var epicID sql.NullString
+	var oldStatus string
+	err = tx.QueryRow(`SELECT epic_id, status FROM tasks WHERE id = ?`, id).Scan(&epicID, &oldStatus)
+	if err != nil {
+		return nil, fmt.Errorf("task %s not found", id)
+	}
+	if oldStatus == model.StatusClosed {
+		return nil, fmt.Errorf("task %s is already closed", id)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Seed the CTE with the target itself so a single UPDATE closes the task
+	// and every open descendant — bypassing the epic-with-open-subtasks guard
+	// that CloseTask enforces.
+	_, err = tx.Exec(fmt.Sprintf(`
+		WITH RECURSIVE descendants(id, depth) AS (
+			SELECT ?, 0
+			UNION ALL
+			SELECT t.id, d.depth + 1 FROM tasks t JOIN descendants d ON t.epic_id = d.id WHERE d.depth < %d
+		)
+		UPDATE tasks SET `+closeSetClause+`
+		WHERE id IN (SELECT id FROM descendants) AND status != 'closed'`, maxEpicDepth),
+		id, reason, now)
+	if err != nil {
+		return nil, fmt.Errorf("close cascade update: %w", err)
+	}
+
+	if err := recompactSiblings(tx, epicID, oldStatus); err != nil {
+		return nil, fmt.Errorf("recompact after cascade close: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("close cascade commit: %w", err)
 	}
 	return d.GetTask(id)
 }

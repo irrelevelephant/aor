@@ -58,8 +58,10 @@
     </div>
 
     {{if ne .Status "closed"}}
+    {{$cascade := and $.Progress (gt $.Progress.Open 0)}}
     <div class="task-actions">
-        <form action="/task/{{.ID}}/close" method="POST" style="display:inline">
+        <form action="/task/{{.ID}}/close" method="POST" style="display:inline"{{if $cascade}} onsubmit="return confirm('Close this epic and all of its open subtasks ({{$.Progress.Open}} direct subtask{{if ne $.Progress.Open 1}}s{{end}})?')"{{end}}>
+            {{if $cascade}}<input type="hidden" name="cascade" value="1">{{end}}
             <input type="text" name="reason" placeholder="Close reason..." class="input-sm">
             <button type="submit" class="btn btn-sm btn-close">Close</button>
         </form>

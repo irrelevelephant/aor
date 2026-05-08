@@ -355,6 +355,39 @@ func TestCloseEpicWithOpenSubtasks(t *testing.T) {
 	}
 }
 
+func TestCloseTaskCascade(t *testing.T) {
+	d := testDB(t)
+	root, sub, leaf := makeNestedEpic(t, d)
+	sibling, _ := d.CreateTask("Sibling", "", model.StatusQueue, root.ID, "")
+
+	closed, err := d.CloseTaskCascade(root.ID, "shipped")
+	if err != nil {
+		t.Fatalf("CloseTaskCascade: %v", err)
+	}
+	if closed.Status != model.StatusClosed {
+		t.Errorf("root status = %q, want closed", closed.Status)
+	}
+
+	for _, id := range []string{root.ID, sub.ID, leaf.ID, sibling.ID} {
+		got, err := d.GetTask(id)
+		if err != nil {
+			t.Fatalf("GetTask %s: %v", id, err)
+		}
+		if got.Status != model.StatusClosed {
+			t.Errorf("task %s status = %q, want closed", id, got.Status)
+		}
+	}
+}
+
+func TestCloseTaskCascadeAlreadyClosed(t *testing.T) {
+	d := testDB(t)
+	task, _ := d.CreateTask("solo", "", model.StatusQueue, "", "")
+	d.CloseTask(task.ID, "done")
+	if _, err := d.CloseTaskCascade(task.ID, "again"); err == nil {
+		t.Fatal("expected error closing already-closed task")
+	}
+}
+
 func TestEpicCloseEligibleCascadesWithNesting(t *testing.T) {
 	d := testDB(t)
 	root, sub, task := makeNestedEpic(t, d)
