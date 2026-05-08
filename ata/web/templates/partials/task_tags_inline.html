@@ -1,5 +1,9 @@
 {{define "task_tags_inline.html"}}
+{{if .Tags}}
+<span class="task-tags">
 {{range .Tags}}
 <button type="button" class="badge tag-badge" style="color:{{tagColor .}};background:{{tagBgColor .}}" data-tag="{{.}}" onclick="includeTagFilter(this.dataset.tag)">{{.}}</button>
+{{end}}
+</span>
 {{end}}
 {{end}}
