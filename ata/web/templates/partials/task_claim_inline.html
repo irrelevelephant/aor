@@ -1,0 +1,8 @@
+{{define "task_claim_inline.html"}}
+{{if and (eq .Status "in_progress") (or .ClaimedPID .Worktree)}}
+<span class="claim-info">
+{{if .ClaimedPID}}<span class="badge agent-badge">pid:{{.ClaimedPID}}{{if .ClaimedHost}}@{{.ClaimedHost}}{{end}}</span>{{end}}
+{{if .Worktree}}<span class="badge worktree-badge" title="{{.Worktree}}">wt</span>{{end}}
+</span>
+{{end}}
+{{end}}

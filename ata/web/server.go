@@ -273,7 +273,7 @@ func initServer(d *db.DB, opts ...Option) (*Server, error) {
 
 	pageFiles := []string{"tasks.html", "task.html", "epic.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
-	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html", "templates/partials/epic_group.html", "templates/partials/deps_section.html"}
+	sharedFiles := []string{"templates/layout.html", "templates/partials/task_row.html", "templates/partials/task_list.html", "templates/partials/comment.html", "templates/partials/tag_filter_bar.html", "templates/partials/task_tags_inline.html", "templates/partials/task_claim_inline.html", "templates/partials/epic_group.html", "templates/partials/deps_section.html"}
 	for _, page := range pageFiles {
 		t, err := template.New("").Funcs(funcMap).ParseFS(content, append(sharedFiles, "templates/"+page)...)
 		if err != nil {
