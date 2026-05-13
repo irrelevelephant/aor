@@ -2,9 +2,10 @@ package cmd
 
 import (
 	"flag"
-	"fmt"
+	"slices"
 
 	"aor/ata/db"
+	"aor/ata/model"
 )
 
 func Reopen(d *db.DB, args []string) error {
@@ -17,21 +18,21 @@ func Reopen(d *db.DB, args []string) error {
 		return err
 	}
 
-	if len(positional) == 0 {
-		return exitUsage("usage: ata reopen ID")
-	}
-
-	id := positional[0]
-
-	task, err := d.ReopenTask(id)
+	stdinIDs, err := readIDsFromStdin()
 	if err != nil {
 		return err
 	}
+	ids := append(slices.Clone(positional), stdinIDs...)
 
-	if *jsonOut {
-		return outputJSON(task)
+	if len(ids) == 0 {
+		return exitUsage("usage: ata reopen ID [ID...]\n       <ID list> | ata reopen")
 	}
 
-	fmt.Printf("reopened %s: %s\n", task.ID, task.Title)
-	return nil
+	reopened, err := collectTasks(ids, func(id string) (*model.Task, error) {
+		return d.ReopenTask(id)
+	})
+	if err != nil {
+		return err
+	}
+	return emitTasks("reopened", reopened, *jsonOut)
 }

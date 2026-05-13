@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"aor/ata/model"
 )
 
 func outputJSON(v any) error {
@@ -88,6 +90,59 @@ func resolveBody(fs *flag.FlagSet, body, bodyFile *string, allowStdin bool) (str
 		return string(data), true, nil
 	}
 	return "", false, nil
+}
+
+// readIDsFromStdin returns whitespace-separated task IDs from stdin when
+// stdin is piped (not a TTY). Returns nil when stdin is a TTY or contains
+// no non-empty tokens.
+func readIDsFromStdin() ([]string, error) {
+	if IsStdinTTY() {
+		return nil, nil
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, fmt.Errorf("read stdin: %w", err)
+	}
+	return strings.Fields(string(data)), nil
+}
+
+// resolveIDsFlag returns IDs from --ids when set, else from stdin. Used by
+// close and tag where positional args carry non-ID meaning, so the remote
+// proxy must pass a flag rather than appending positional.
+func resolveIDsFlag(fs *flag.FlagSet, ids *string) ([]string, error) {
+	if flagWasSet(fs, "ids") {
+		return strings.Fields(*ids), nil
+	}
+	return readIDsFromStdin()
+}
+
+// collectTasks applies fn to each ID, returning the produced tasks. Stops at
+// the first error.
+func collectTasks(ids []string, fn func(string) (*model.Task, error)) ([]model.Task, error) {
+	out := make([]model.Task, 0, len(ids))
+	for _, id := range ids {
+		t, err := fn(id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *t)
+	}
+	return out, nil
+}
+
+// emitTasks prints "<verb> id: title" per task, or JSON. A single task emits
+// as a JSON object; multiple tasks emit as an array.
+func emitTasks(verb string, tasks []model.Task, jsonOut bool) error {
+	if jsonOut {
+		if len(tasks) == 1 {
+			return outputJSON(tasks[0])
+		}
+		return outputJSON(tasks)
+	}
+	for _, t := range tasks {
+		fmt.Printf("%s %s: %s\n", verb, t.ID, t.Title)
+	}
+	return nil
 }
 
 // IsStdinTTY reports whether stdin is connected to a terminal (vs. piped).

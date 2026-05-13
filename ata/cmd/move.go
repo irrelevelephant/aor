@@ -3,6 +3,7 @@ package cmd
 import (
 	"flag"
 	"fmt"
+	"slices"
 
 	"aor/ata/db"
 	"aor/ata/model"
@@ -49,8 +50,14 @@ func Move(d *db.DB, args []string) error {
 		return fmt.Errorf("source and target status are the same (%s)", *from)
 	}
 
+	stdinIDs, err := readIDsFromStdin()
+	if err != nil {
+		return err
+	}
+	positional = append(slices.Clone(positional), stdinIDs...)
+
 	if len(positional) == 0 && *from == "" {
-		return exitUsage("usage: ata move --from STATUS --to STATUS\n       ata move ID [ID...] --to STATUS")
+		return exitUsage("usage: ata move --from STATUS --to STATUS\n       ata move ID [ID...] --to STATUS\n       <ID list> | ata move --to STATUS")
 	}
 
 	var tasks []model.Task

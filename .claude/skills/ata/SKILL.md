@@ -45,6 +45,8 @@ ata list --status queue         # filter by status
 ata list --epic EPIC_ID         # tasks under an epic
 ata list --tag backend          # filter by tag
 ata show ID                     # full task details
+ata show ID1 ID2                # show multiple tasks
+echo "id1 id2" | ata show --json    # show IDs piped from stdin
 ata ready                       # queue tasks with no unresolved blockers
 ata ready --limit 5             # limit results
 ```
@@ -63,11 +65,15 @@ ata edit ID --epic none                         # remove from epic
 ```bash
 ata close ID                    # mark complete
 ata close ID "reason text"      # with close reason
+echo "id1 id2" | ata close      # bulk close from stdin
+echo "id1 id2" | ata close "reason"   # bulk close with shared reason
 ```
 
 ### Reopening tasks
 ```bash
 ata reopen ID                   # move closed task back to backlog
+ata reopen ID1 ID2              # bulk reopen
+echo "id1 id2" | ata reopen     # reopen IDs piped from stdin
 ```
 
 ### Claiming
@@ -75,7 +81,9 @@ ata reopen ID                   # move closed task back to backlog
 ata claim ID                    # set to in_progress, store PID
 ata claim ID --pid 12345        # override PID
 ata unclaim ID                  # reset to queue
-ata unclaim                     # unclaim all in-progress for workspace
+ata unclaim ID1 ID2             # bulk unclaim
+echo "id1 id2" | ata unclaim    # unclaim IDs piped from stdin
+ata unclaim --all               # unclaim all in-progress for workspace
 ata recover                     # recover tasks with dead PIDs
 ```
 
@@ -106,6 +114,8 @@ Free-form, case-insensitive labels.
 ```bash
 ata tag add TASK tag1 tag2      # add tags
 ata tag rm TASK tag1            # remove tag
+echo "id1 id2" | ata tag add tag1   # bulk-tag IDs from stdin
+echo "id1 id2" | ata tag rm tag1    # bulk-untag IDs from stdin
 ata tag list                    # all tags in workspace
 ```
 
@@ -130,6 +140,7 @@ Comment IDs are numeric and visible in `ata show ID --json` output.
 ata reorder ID --position 1     # set queue/backlog position
 ata move --from backlog --to queue          # move all from one status to another
 ata move ID1 ID2 --to queue                 # move specific tasks
+echo "id1 id2" | ata move --to queue        # move IDs piped from stdin
 ```
 
 ## Workspace management
@@ -220,6 +231,21 @@ ata ready
 ata list --status in_progress
 ata list --epic EPIC_ID
 ```
+
+## Piping IDs from stdin
+
+`move`, `close`, `reopen`, `unclaim`, `show`, and `tag add`/`tag rm` accept
+task IDs from stdin (whitespace-separated). Combine with `ata list --json | jq`
+to bulk-operate on a filtered set:
+
+```bash
+ata list --status queue --tag stale --json | jq -r '.[].id' | ata move --to backlog
+ata list --status in_progress --json | jq -r '.[].id' | ata unclaim
+ata list --epic ABC --json | jq -r '.[].id' | ata tag add migrated
+```
+
+For `close` and `tag add`/`rm`, positional args become the reason / tag names
+when IDs are supplied via stdin.
 
 ## Tips
 

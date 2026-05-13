@@ -3,8 +3,10 @@ package cmd
 import (
 	"flag"
 	"fmt"
+	"slices"
 
 	"aor/ata/db"
+	"aor/ata/model"
 )
 
 func Unclaim(d *db.DB, args []string) error {
@@ -18,38 +20,37 @@ func Unclaim(d *db.DB, args []string) error {
 		return err
 	}
 
-	// If an ID is given, unclaim that specific task.
-	if len(positional) > 0 {
-		id := positional[0]
-		task, err := d.UnclaimTask(id)
+	stdinIDs, err := readIDsFromStdin()
+	if err != nil {
+		return err
+	}
+	ids := append(slices.Clone(positional), stdinIDs...)
+
+	if len(ids) > 0 {
+		unclaimed, err := collectTasks(ids, func(id string) (*model.Task, error) {
+			return d.UnclaimTask(id)
+		})
 		if err != nil {
 			return err
 		}
-		if *jsonOut {
-			return outputJSON(task)
-		}
-		fmt.Printf("unclaimed %s: %s\n", task.ID, task.Title)
-		return nil
+		return emitTasks("unclaimed", unclaimed, *jsonOut)
 	}
 
 	if !*all {
-		return exitUsage("usage: ata unclaim ID\n       ata unclaim --all")
+		return exitUsage("usage: ata unclaim ID [ID...]\n       <ID list> | ata unclaim\n       ata unclaim --all")
 	}
 
 	tasks, err := d.UnclaimAll()
 	if err != nil {
 		return err
 	}
-
 	if *jsonOut {
 		return outputJSON(tasks)
 	}
-
 	if len(tasks) == 0 {
 		fmt.Println("no in-progress tasks found")
 		return nil
 	}
-
 	for _, t := range tasks {
 		fmt.Printf("unclaimed %s: %s\n", t.ID, t.Title)
 	}

@@ -94,6 +94,13 @@ func tryRemote(subcmd string, args []string) (int, bool) {
 		return 1, true
 	}
 
+	// Mirror local stdin-IDs handling for bulk commands.
+	execArgs, err = resolveStdinIDs(subcmd, execArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1, true
+	}
+
 	execArgs = injectClaimClientContext(subcmd, execArgs)
 
 	stdout, stderr, exitCode, err := c.Exec(subcmd, execArgs)
@@ -186,6 +193,58 @@ func resolveStdinBody(subcmd string, args []string) ([]string, error) {
 		return args, nil
 	}
 	return append(args, "--body", string(data)), nil
+}
+
+// stdinIDsAsPositional commands accept piped task IDs as additional
+// positional args (unambiguous: all positional are IDs).
+var stdinIDsAsPositional = map[string]bool{
+	"move":    true,
+	"reopen":  true,
+	"unclaim": true,
+	"show":    true,
+}
+
+// stdinIDsAsFlag commands accept piped task IDs via an explicit --ids flag,
+// because their positional args carry non-ID meaning (close reason, tag names).
+var stdinIDsAsFlag = map[string]bool{
+	"close": true,
+}
+
+// resolveStdinIDs reads piped stdin and forwards IDs to the remote.
+// Unambiguous commands receive IDs as appended positional args; commands
+// with overloaded positional semantics receive them via --ids.
+func resolveStdinIDs(subcmd string, args []string) ([]string, error) {
+	asPositional := stdinIDsAsPositional[subcmd]
+	asFlag := stdinIDsAsFlag[subcmd]
+	asTag := subcmd == "tag" && len(args) > 0 && cmd.IsTagBulkSubcommand(args[0])
+
+	if !asPositional && !asFlag && !asTag {
+		return args, nil
+	}
+	if hasFlag(args, "ids") {
+		return args, nil
+	}
+	if cmd.IsStdinTTY() {
+		return args, nil
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, fmt.Errorf("read stdin: %w", err)
+	}
+	ids := strings.Fields(string(data))
+	if len(ids) == 0 {
+		return args, nil
+	}
+	if asPositional {
+		return append(args, ids...), nil
+	}
+	// asFlag or asTag: insert --ids "id1 id2 ..." (preserve tag subcommand at args[0]).
+	idArg := strings.Join(ids, " ")
+	if asTag {
+		out := append([]string{args[0]}, "--ids", idArg)
+		return append(out, args[1:]...), nil
+	}
+	return append(args, "--ids", idArg), nil
 }
 
 // injectClaimClientContext adds --host and --pid defaults resolved on the

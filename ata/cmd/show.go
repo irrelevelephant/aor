@@ -3,9 +3,11 @@ package cmd
 import (
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
 	"aor/ata/db"
+	"aor/ata/model"
 )
 
 func Show(d *db.DB, args []string) error {
@@ -18,33 +20,52 @@ func Show(d *db.DB, args []string) error {
 		return err
 	}
 
-	if len(positional) == 0 {
-		return exitUsage("usage: ata show ID [--json]")
-	}
-
-	id := positional[0]
-	twc, err := d.GetTaskWithComments(id)
+	stdinIDs, err := readIDsFromStdin()
 	if err != nil {
 		return err
 	}
+	ids := append(slices.Clone(positional), stdinIDs...)
 
-	// Load tags.
-	tags, _ := d.GetTags(id)
-
-	// Load attachments.
-	attachments, _ := d.ListAttachments(id)
-
-	if *jsonOut {
-		twc.Tags = tags
-		twc.Attachments = attachments
-		return outputJSON(twc)
+	if len(ids) == 0 {
+		return exitUsage("usage: ata show ID [ID...] [--json]\n       <ID list> | ata show [--json]")
 	}
 
+	tagMap, _ := d.GetTagsForTasks(ids)
+
+	twcs := make([]*model.TaskWithComments, 0, len(ids))
+	for _, id := range ids {
+		twc, err := d.GetTaskWithComments(id)
+		if err != nil {
+			return err
+		}
+		attachments, _ := d.ListAttachments(id)
+		twc.Tags = tagMap[id]
+		twc.Attachments = attachments
+		twcs = append(twcs, twc)
+	}
+
+	if *jsonOut {
+		if len(twcs) == 1 {
+			return outputJSON(twcs[0])
+		}
+		return outputJSON(twcs)
+	}
+
+	for i, twc := range twcs {
+		if i > 0 {
+			fmt.Println("\n---")
+		}
+		printTaskText(d, twc)
+	}
+	return nil
+}
+
+func printTaskText(d *db.DB, twc *model.TaskWithComments) {
 	t := twc.Task
 	fmt.Printf("%s: %s\n", t.ID, t.Title)
 	fmt.Printf("Status: %s\n", t.Status)
-	if len(tags) > 0 {
-		fmt.Printf("Tags: %s\n", strings.Join(tags, ", "))
+	if len(twc.Tags) > 0 {
+		fmt.Printf("Tags: %s\n", strings.Join(twc.Tags, ", "))
 	}
 	if t.EpicID != "" {
 		fmt.Printf("Epic: %s\n", t.EpicID)
@@ -53,8 +74,7 @@ func Show(d *db.DB, args []string) error {
 		fmt.Println("Type: epic")
 	}
 
-	// Show dependency info.
-	blockers, _ := d.GetBlockers(id, true)
+	blockers, _ := d.GetBlockers(t.ID, true)
 	if len(blockers) > 0 {
 		fmt.Print("Blocked by:")
 		for _, b := range blockers {
@@ -62,7 +82,7 @@ func Show(d *db.DB, args []string) error {
 		}
 		fmt.Println()
 	}
-	blocking, _ := d.GetBlocking(id)
+	blocking, _ := d.GetBlocking(t.ID)
 	if len(blocking) > 0 {
 		fmt.Print("Blocks:")
 		for _, b := range blocking {
@@ -83,5 +103,4 @@ func Show(d *db.DB, args []string) error {
 			fmt.Printf("[%s] %s: %s\n", c.CreatedAt, c.Author, c.Body)
 		}
 	}
-	return nil
 }
