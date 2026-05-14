@@ -185,3 +185,65 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     padding: 3rem 1rem;
     color: var(--text-dim);
 }
+
+/* --- terminal page --- */
+
+main:has(.terminal-page) {
+    max-width: none;
+    padding: 0;
+    height: calc(100vh - 49px);
+    display: flex;
+    flex-direction: column;
+}
+
+.terminal-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg);
+}
+
+.terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.9rem;
+}
+.terminal-back {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    padding: 2px 8px;
+    border-radius: var(--radius);
+}
+.terminal-back:hover { background: var(--surface2); color: var(--text); text-decoration: none; }
+.terminal-stripe {
+    display: inline-block;
+    width: 4px;
+    height: 1em;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+.terminal-machine { font-weight: 600; color: var(--text); }
+.terminal-sep { color: var(--text-dim); }
+.terminal-window-index {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text-dim);
+}
+.terminal-window-name {
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.terminal-host {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 6px 0 6px;
+    overflow: hidden;
+}
+.terminal-host .xterm { height: 100%; }

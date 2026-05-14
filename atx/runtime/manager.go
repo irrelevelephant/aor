@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"aor/atx/config"
@@ -83,4 +84,31 @@ func (m *Manager) MachineState(name string) (MachineState, bool) {
 		return MachineState{}, false
 	}
 	return mch.State(), true
+}
+
+// AcquireMirror starts (or attaches to) a per-window output mirror.
+func (m *Manager) AcquireMirror(ctx context.Context, machine string, windowIdx int) (*Mirror, chan []byte, error) {
+	mch, ok := m.machines[machine]
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown machine: %s", machine)
+	}
+	return mch.AcquireMirror(ctx, windowIdx)
+}
+
+// ReleaseMirror unsubscribes ch from a previously acquired mirror.
+func (m *Manager) ReleaseMirror(machine string, windowIdx int, ch chan []byte) {
+	mch, ok := m.machines[machine]
+	if !ok {
+		return
+	}
+	mch.ReleaseMirror(windowIdx, ch)
+}
+
+// SendKeys writes bytes verbatim into the given window's tmux pane.
+func (m *Manager) SendKeys(machine string, windowIdx int, data []byte) error {
+	mch, ok := m.machines[machine]
+	if !ok {
+		return fmt.Errorf("unknown machine: %s", machine)
+	}
+	return mch.SendKeys(windowIdx, data)
 }

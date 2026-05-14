@@ -3,10 +3,12 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"aor/atx/config"
@@ -56,10 +58,17 @@ type WindowView struct {
 }
 
 func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Option) *Server {
-	pageFiles := []string{"machines.html", "windows.html"}
+	funcMap := template.FuncMap{
+		"json": func(v any) template.JS {
+			b, _ := json.Marshal(v)
+			return template.JS(b)
+		},
+	}
+
+	pageFiles := []string{"machines.html", "windows.html", "terminal.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
 	for _, p := range pageFiles {
-		t, err := template.New("").ParseFS(content, "templates/layout.html", "templates/"+p)
+		t, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/layout.html", "templates/"+p)
 		if err != nil {
 			log.Fatalf("parse atx template %s: %v", p, err)
 		}
@@ -73,6 +82,8 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Op
 
 	mux.HandleFunc("GET /atx/{$}", srv.handleMachines)
 	mux.HandleFunc("GET /atx/m/{machine}", srv.handleWindows)
+	mux.HandleFunc("GET /atx/m/{machine}/w/{window}", srv.handleTerminal)
+	mux.HandleFunc("GET /atx/ws", srv.handleWS)
 
 	mux.HandleFunc("GET /atx/manifest.json", serveEmbedded("static/manifest.json", "application/manifest+json"))
 	mux.HandleFunc("GET /atx/sw.js", serveEmbedded("static/sw.js", "application/javascript"))
@@ -108,6 +119,49 @@ func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "machines.html", map[string]any{
 		"Title":    "machines",
 		"Machines": views,
+	})
+}
+
+func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("machine")
+	idxStr := r.PathValue("window")
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	state, ok := s.machineState(name)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	var win runtime.Window
+	found := false
+	for _, ww := range state.Windows {
+		if ww.Index == idx {
+			win = ww
+			found = true
+			break
+		}
+	}
+	if !found {
+		win = runtime.Window{Index: idx, Name: fmt.Sprintf("w%d", idx)}
+	}
+
+	s.render(w, "terminal.html", map[string]any{
+		"Title": fmt.Sprintf("%s · %d %s", state.Display, idx, win.Name),
+		"Machine": MachineView{
+			Name:    state.Name,
+			Display: state.Display,
+			Color:   state.Color,
+			Online:  state.Online,
+		},
+		"Window": WindowView{
+			Index: win.Index,
+			Name:  win.Name,
+		},
 	})
 }
 

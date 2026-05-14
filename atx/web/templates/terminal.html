@@ -1,0 +1,23 @@
+{{define "content"}}
+<div class="terminal-page">
+    <div class="terminal-header">
+        <a href="/atx/m/{{.Machine.Name}}" class="terminal-back">←</a>
+        <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
+        <span class="terminal-machine">{{.Machine.Display}}</span>
+        <span class="terminal-sep">·</span>
+        <span class="terminal-window-index">{{.Window.Index}}</span>
+        <span class="terminal-window-name">{{.Window.Name}}</span>
+    </div>
+    <div id="terminal" class="terminal-host"></div>
+</div>
+<script>
+window.atxView = {
+    machine: {{.Machine.Name | json}},
+    window: {{.Window.Index}}
+};
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="/atx/static/terminal.js"></script>
+{{end}}

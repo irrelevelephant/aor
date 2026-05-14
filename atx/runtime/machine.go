@@ -33,6 +33,18 @@ type Machine struct {
 
 	mu    sync.RWMutex
 	state MachineState
+
+	// connState is everything tied to the current SSH connection — mirrors
+	// and the input channel die together with the SSH client on reconnect.
+	// Held under connMu, separate from the state RWMutex above.
+	connMu  sync.Mutex
+	conn    *machineConn
+}
+
+type machineConn struct {
+	client  *ssh.Client
+	input   *inputChannel
+	mirrors map[int]*Mirror // window index → mirror
 }
 
 func newMachine(c config.Machine, notify func(string)) *Machine {
@@ -45,6 +57,100 @@ func newMachine(c config.Machine, notify func(string)) *Machine {
 			Color:   c.Color,
 		},
 	}
+}
+
+func (m *Machine) setConn(c *machineConn) {
+	m.connMu.Lock()
+	m.conn = c
+	m.connMu.Unlock()
+}
+
+func (m *Machine) tearDownConn() {
+	m.connMu.Lock()
+	c := m.conn
+	m.conn = nil
+	m.connMu.Unlock()
+	if c == nil {
+		return
+	}
+	for _, mir := range c.mirrors {
+		mir.Stop()
+	}
+}
+
+// AcquireMirror returns (and lazily starts) a mirror for the given window
+// index. The caller subscribes to receive output and must call
+// ReleaseMirror with the same channel when done.
+func (m *Machine) AcquireMirror(ctx context.Context, windowIdx int) (*Mirror, chan []byte, error) {
+	target := fmt.Sprintf("%s:%d", m.cfg.TmuxSession, windowIdx)
+
+	m.connMu.Lock()
+	conn := m.conn
+	if conn == nil {
+		m.connMu.Unlock()
+		return nil, nil, fmt.Errorf("machine %s offline", m.cfg.Name)
+	}
+	mir, ok := conn.mirrors[windowIdx]
+	if ok && mir.Dead() {
+		delete(conn.mirrors, windowIdx)
+		ok = false
+	}
+	if !ok {
+		mir = newMirror(m.cfg.Name, windowIdx, target, conn.client)
+		conn.mirrors[windowIdx] = mir
+	}
+	m.connMu.Unlock()
+
+	if !ok {
+		if err := mir.Start(ctx); err != nil {
+			m.connMu.Lock()
+			if m.conn == conn {
+				delete(conn.mirrors, windowIdx)
+			}
+			m.connMu.Unlock()
+			return nil, nil, err
+		}
+	}
+	return mir, mir.Subscribe(), nil
+}
+
+// ReleaseMirror unsubscribes ch from the window's mirror. When the last
+// subscriber for a window leaves, the mirror sits idle for 5 minutes
+// before tearing down.
+func (m *Machine) ReleaseMirror(windowIdx int, ch chan []byte) {
+	m.connMu.Lock()
+	conn := m.conn
+	m.connMu.Unlock()
+	if conn == nil {
+		return
+	}
+	mir, ok := conn.mirrors[windowIdx]
+	if !ok {
+		return
+	}
+	mir.Unsubscribe(ch, func() {
+		m.connMu.Lock()
+		defer m.connMu.Unlock()
+		if m.conn != conn {
+			return // reconnected; the new conn owns its own mirrors
+		}
+		if cur, ok := conn.mirrors[windowIdx]; ok && cur == mir {
+			cur.Stop()
+			delete(conn.mirrors, windowIdx)
+		}
+	})
+}
+
+// SendKeys forwards bytes verbatim to the given window via tmux send-keys.
+func (m *Machine) SendKeys(windowIdx int, data []byte) error {
+	m.connMu.Lock()
+	conn := m.conn
+	m.connMu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("machine %s offline", m.cfg.Name)
+	}
+	target := fmt.Sprintf("%s:%d", m.cfg.TmuxSession, windowIdx)
+	return conn.input.SendKeys(target, data)
 }
 
 // State returns the latest snapshot. Windows is a copy.
@@ -121,6 +227,17 @@ func (m *Machine) runOnce(ctx context.Context) error {
 		return fmt.Errorf("control session: %w", err)
 	}
 	defer control.Close()
+
+	// One persistent input channel per machine. Mirror state is per-window
+	// and lazily created on first viewer.
+	input, err := startInputChannel(client)
+	if err != nil {
+		return fmt.Errorf("input channel: %w", err)
+	}
+	defer input.Close()
+
+	m.setConn(&machineConn{client: client, input: input, mirrors: make(map[int]*Mirror)})
+	defer m.tearDownConn()
 
 	events := make(chan tmuxEvent, 64)
 	parseErr := make(chan error, 1)

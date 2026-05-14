@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/coder/websocket v1.8.14
 	golang.org/x/crypto v0.51.0
 	modernc.org/sqlite v1.34.5
 )
