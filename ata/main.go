@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -182,12 +181,9 @@ func resolveStdinBody(subcmd string, args []string) ([]string, error) {
 	if hasFlag(args, "body") || hasFlag(args, "body-file") {
 		return args, nil
 	}
-	if cmd.IsStdinTTY() {
-		return args, nil
-	}
-	data, err := io.ReadAll(os.Stdin)
+	data, err := cmd.ReadStdinIfReady()
 	if err != nil {
-		return nil, fmt.Errorf("read stdin: %w", err)
+		return nil, err
 	}
 	if len(data) == 0 {
 		return args, nil
@@ -224,12 +220,9 @@ func resolveStdinIDs(subcmd string, args []string) ([]string, error) {
 	if hasFlag(args, "ids") {
 		return args, nil
 	}
-	if cmd.IsStdinTTY() {
-		return args, nil
-	}
-	data, err := io.ReadAll(os.Stdin)
+	data, err := cmd.ReadStdinIfReady()
 	if err != nil {
-		return nil, fmt.Errorf("read stdin: %w", err)
+		return nil, err
 	}
 	ids := strings.Fields(string(data))
 	if len(ids) == 0 {

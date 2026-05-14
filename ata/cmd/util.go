@@ -79,29 +79,41 @@ func resolveBody(fs *flag.FlagSet, body, bodyFile *string, allowStdin bool) (str
 	if bodySet {
 		return *body, true, nil
 	}
-	if allowStdin && !IsStdinTTY() {
-		data, err := io.ReadAll(os.Stdin)
+	if allowStdin {
+		data, err := ReadStdinIfReady()
 		if err != nil {
-			return "", false, fmt.Errorf("read stdin: %w", err)
+			return "", false, err
 		}
-		if len(data) == 0 {
-			return "", false, nil
+		if len(data) > 0 {
+			return string(data), true, nil
 		}
-		return string(data), true, nil
 	}
 	return "", false, nil
 }
 
-// readIDsFromStdin returns whitespace-separated task IDs from stdin when
-// stdin is piped (not a TTY). Returns nil when stdin is a TTY or contains
-// no non-empty tokens.
-func readIDsFromStdin() ([]string, error) {
-	if IsStdinTTY() {
+// ReadStdinIfReady returns stdin's contents when a read would not block —
+// data is available, or the peer has closed (EOF). Returns (nil, nil) when
+// stdin is a TTY with no pending input or an open pipe with no producer.
+//
+// We poll rather than just checking for a TTY because agent shells (e.g.
+// Claude Code's Bash tool) often run subprocesses with an open pipe as
+// stdin — neither a TTY nor a closed/written-to fd. A naive io.ReadAll
+// would block forever waiting for an EOF that never comes.
+func ReadStdinIfReady() ([]byte, error) {
+	if !StdinHasInput() {
 		return nil, nil
 	}
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return nil, fmt.Errorf("read stdin: %w", err)
+	}
+	return data, nil
+}
+
+func readIDsFromStdin() ([]string, error) {
+	data, err := ReadStdinIfReady()
+	if err != nil {
+		return nil, err
 	}
 	return strings.Fields(string(data)), nil
 }
@@ -145,8 +157,8 @@ func emitTasks(verb string, tasks []model.Task, jsonOut bool) error {
 	return nil
 }
 
-// IsStdinTTY reports whether stdin is connected to a terminal (vs. piped).
-func IsStdinTTY() bool {
+// isStdinTTY reports whether stdin is connected to a terminal (vs. piped).
+func isStdinTTY() bool {
 	fi, err := os.Stdin.Stat()
 	if err != nil {
 		return true
