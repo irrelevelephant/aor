@@ -16,6 +16,8 @@ import (
 	atacmd "aor/ata/cmd"
 	atadb "aor/ata/db"
 	ataweb "aor/ata/web"
+
+	atxweb "aor/atx/web"
 )
 
 // Hub is a shared SSE event broadcaster for both ata and afl.
@@ -111,6 +113,9 @@ func Serve(args []string) error {
 		aflweb.WithSSE(hub),
 	)
 
+	// Register atx routes at /atx/.
+	atxweb.RegisterRoutes(mux, atxweb.WithSSE(hub))
+
 	// Shared SSE endpoint.
 	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
@@ -169,6 +174,7 @@ func Serve(args []string) error {
 	fmt.Printf("aor web server: %s://localhost:%d\n", scheme, *port)
 	fmt.Printf("  ata UI:  %s://localhost:%d/\n", scheme, *port)
 	fmt.Printf("  afl UI:  %s://localhost:%d/afl/\n", scheme, *port)
+	fmt.Printf("  atx UI:  %s://localhost:%d/atx/\n", scheme, *port)
 	fmt.Printf("  ata API: %s://localhost:%d/api/v1/exec\n", scheme, *port)
 	fmt.Printf("  afl API: %s://localhost:%d/api/v1/afl/exec\n", scheme, *port)
 

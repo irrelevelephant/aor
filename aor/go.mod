@@ -5,11 +5,13 @@ go 1.23
 require (
 	aor/afl v0.0.0
 	aor/ata v0.0.0
+	aor/atx v0.0.0
 )
 
 replace (
 	aor/afl => ../afl
 	aor/ata => ../ata
+	aor/atx => ../atx
 )
 
 require (
