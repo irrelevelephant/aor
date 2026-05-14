@@ -4,6 +4,9 @@
 # persistent SSH connection per machine and a `tmux -CC` control-mode session
 # to track windows.
 #
+# `tmux_session` defaults to "0" (tmux's default name when you run `tmux`
+# with no -s). Override per-machine if your session is named differently.
+#
 # Colors come from ~/dev-vm/configs/tmux.local/<host>.conf so the web UI
 # stripe matches each machine's tmux status bar.
 

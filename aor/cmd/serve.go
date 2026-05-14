@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -19,6 +20,7 @@ import (
 
 	atxconfig "aor/atx/config"
 	atxdb "aor/atx/db"
+	atxruntime "aor/atx/runtime"
 	atxweb "aor/atx/web"
 )
 
@@ -139,8 +141,17 @@ func Serve(args []string) error {
 		aflweb.WithSSE(hub),
 	)
 
+	// Start the atx runtime (SSH + tmux control mode per machine) and
+	// pass it to the web layer so handlers see live state.
+	atxRT := atxruntime.NewManager(atxCfg, hub)
+	atxRT.Start(context.Background())
+	defer atxRT.Stop()
+
 	// Register atx routes at /atx/.
-	atxweb.RegisterRoutes(mux, atxDB, atxCfg, atxweb.WithSSE(hub))
+	atxweb.RegisterRoutes(mux, atxDB, atxCfg,
+		atxweb.WithSSE(hub),
+		atxweb.WithRuntime(atxRT),
+	)
 
 	// Shared SSE endpoint.
 	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) {

@@ -13,12 +13,13 @@ import (
 
 // Machine is one entry in atx.toml's [[machine]] array.
 type Machine struct {
-	Name       string `toml:"name"`
-	Display    string `toml:"display"`
-	Color      string `toml:"color"`
-	SSHHost    string `toml:"ssh_host"`
-	SSHUser    string `toml:"ssh_user"`
-	AutoCreate bool   `toml:"auto_create"`
+	Name        string `toml:"name"`
+	Display     string `toml:"display"`
+	Color       string `toml:"color"`
+	SSHHost     string `toml:"ssh_host"`
+	SSHUser     string `toml:"ssh_user"`
+	TmuxSession string `toml:"tmux_session"`
+	AutoCreate  bool   `toml:"auto_create"`
 }
 
 type Config struct {
@@ -59,6 +60,9 @@ func Load(path string) (*Config, error) {
 		}
 		if m.SSHHost == "" {
 			cfg.Machines[i].SSHHost = m.Name
+		}
+		if m.TmuxSession == "" {
+			cfg.Machines[i].TmuxSession = "0"
 		}
 	}
 

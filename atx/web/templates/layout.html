@@ -18,7 +18,8 @@
         <a href="/" class="topnav-link">ata</a>
         <a href="/afl/" class="topnav-link">afl</a>
     </nav>
-    <main>{{template "content" .}}</main>
+    <main id="atx-main">{{template "content" .}}</main>
+    <script src="/atx/static/app.js"></script>
     <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/atx/sw.js', {scope: '/atx/'});</script>
 </body>
 </html>

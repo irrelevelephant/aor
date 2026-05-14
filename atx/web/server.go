@@ -3,12 +3,15 @@ package web
 
 import (
 	"embed"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"time"
 
 	"aor/atx/config"
 	"aor/atx/db"
+	"aor/atx/runtime"
 )
 
 //go:embed templates/*.html static/*
@@ -24,9 +27,14 @@ func WithSSE(b SSEBroadcaster) Option {
 	return func(s *Server) { s.sse = b }
 }
 
+func WithRuntime(r *runtime.Manager) Option {
+	return func(s *Server) { s.rt = r }
+}
+
 type Server struct {
 	db    *db.DB
 	cfg   *config.Config
+	rt    *runtime.Manager
 	sse   SSEBroadcaster
 	pages map[string]*template.Template
 }
@@ -47,7 +55,6 @@ type WindowView struct {
 	LastActivity string
 }
 
-// RegisterRoutes registers atx routes on the given mux under the /atx/ prefix.
 func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Option) *Server {
 	pageFiles := []string{"machines.html", "windows.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
@@ -97,17 +104,7 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 }
 
 func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
-	views := make([]MachineView, 0, len(s.cfg.Machines))
-	for _, m := range s.cfg.Machines {
-		views = append(views, MachineView{
-			Name:         m.Name,
-			Display:      m.Display,
-			Color:        m.Color,
-			Online:       true,
-			WindowCount:  4,
-			LastActivity: "just now",
-		})
-	}
+	views := s.machineViews()
 	s.render(w, "machines.html", map[string]any{
 		"Title":    "machines",
 		"Machines": views,
@@ -116,33 +113,96 @@ func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWindows(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("machine")
-	var m *config.Machine
-	for i := range s.cfg.Machines {
-		if s.cfg.Machines[i].Name == name {
-			m = &s.cfg.Machines[i]
-			break
-		}
-	}
-	if m == nil {
+	state, ok := s.machineState(name)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
-	windows := []WindowView{
-		{Index: 0, Name: "shell", Active: true, LastActivity: "now"},
-		{Index: 1, Name: "build", Active: false, LastActivity: "2m ago"},
-		{Index: 2, Name: "claude", Active: false, LastActivity: "12s ago"},
-		{Index: 3, Name: "logs", Active: false, LastActivity: "1h ago"},
+	wins := make([]WindowView, 0, len(state.Windows))
+	for _, win := range state.Windows {
+		wins = append(wins, WindowView{
+			Index:        win.Index,
+			Name:         win.Name,
+			LastActivity: relativeTime(win.LastActivity),
+		})
 	}
 
 	s.render(w, "windows.html", map[string]any{
-		"Title": m.Display,
+		"Title": state.Display,
 		"Machine": MachineView{
-			Name:    m.Name,
-			Display: m.Display,
-			Color:   m.Color,
-			Online:  true,
+			Name:    state.Name,
+			Display: state.Display,
+			Color:   state.Color,
+			Online:  state.Online,
 		},
-		"Windows": windows,
+		"Windows": wins,
 	})
+}
+
+func (s *Server) machineViews() []MachineView {
+	if s.rt == nil {
+		out := make([]MachineView, 0, len(s.cfg.Machines))
+		for _, m := range s.cfg.Machines {
+			out = append(out, MachineView{Name: m.Name, Display: m.Display, Color: m.Color})
+		}
+		return out
+	}
+	states := s.rt.Snapshot()
+	out := make([]MachineView, 0, len(states))
+	for _, st := range states {
+		out = append(out, MachineView{
+			Name:         st.Name,
+			Display:      st.Display,
+			Color:        st.Color,
+			Online:       st.Online,
+			WindowCount:  len(st.Windows),
+			LastActivity: machineActivity(st),
+		})
+	}
+	return out
+}
+
+func (s *Server) machineState(name string) (runtime.MachineState, bool) {
+	if s.rt != nil {
+		return s.rt.MachineState(name)
+	}
+	for _, m := range s.cfg.Machines {
+		if m.Name == name {
+			return runtime.MachineState{Name: m.Name, Display: m.Display, Color: m.Color}, true
+		}
+	}
+	return runtime.MachineState{}, false
+}
+
+func machineActivity(st runtime.MachineState) string {
+	if !st.Online {
+		if st.LastError != "" {
+			return "offline"
+		}
+		return "connecting…"
+	}
+	if len(st.Windows) == 0 {
+		return "no windows"
+	}
+	return "live"
+}
+
+func relativeTime(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	d := time.Since(t)
+	switch {
+	case d < 5*time.Second:
+		return "now"
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours())/24)
+	}
 }
