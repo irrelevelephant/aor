@@ -1,0 +1,40 @@
+# atx configuration. Copy to ~/.config/atx/atx.toml.
+#
+# Each [[machine]] block describes one Tailnet host. atx will open one
+# persistent SSH connection per machine and a `tmux -CC` control-mode session
+# to track windows.
+#
+# Colors come from ~/dev-vm/configs/tmux.local/<host>.conf so the web UI
+# stripe matches each machine's tmux status bar.
+
+[[machine]]
+name        = "pie"
+display     = "pie"
+color       = "#c678dd"     # purple
+ssh_host    = "pie"
+ssh_user    = "tjs"
+auto_create = true
+
+[[machine]]
+name        = "mac-mini"
+display     = "mac-mini"
+color       = "#e8913a"     # orange
+ssh_host    = "mac-mini"
+ssh_user    = "tjs"
+auto_create = true
+
+[[machine]]
+name        = "dev"
+display     = "dev"
+color       = "#56b6c2"     # cyan
+ssh_host    = "dev"
+ssh_user    = "tjs"
+auto_create = true
+
+[[machine]]
+name        = "donut"
+display     = "donut"
+color       = "#61afef"     # blue
+ssh_host    = "donut"
+ssh_user    = "tjs"
+auto_create = true

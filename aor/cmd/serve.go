@@ -17,6 +17,8 @@ import (
 	atadb "aor/ata/db"
 	ataweb "aor/ata/web"
 
+	atxconfig "aor/atx/config"
+	atxdb "aor/atx/db"
 	atxweb "aor/atx/web"
 )
 
@@ -95,6 +97,30 @@ func Serve(args []string) error {
 	}
 	defer aflDB.Close()
 
+	// Open atx database.
+	atxDBPath, err := atxdb.DefaultDBPath()
+	if err != nil {
+		return fmt.Errorf("atx db path: %w", err)
+	}
+	atxDB, err := atxdb.Open(atxDBPath)
+	if err != nil {
+		return fmt.Errorf("open atx db: %w", err)
+	}
+	defer atxDB.Close()
+
+	// Load atx config (machine list). Missing file → empty machine list with a warning.
+	atxCfgPath, err := atxconfig.DefaultConfigPath()
+	if err != nil {
+		return fmt.Errorf("atx config path: %w", err)
+	}
+	atxCfg, err := atxconfig.Load(atxCfgPath)
+	if err != nil {
+		return fmt.Errorf("load atx config: %w", err)
+	}
+	if len(atxCfg.Machines) == 0 {
+		log.Printf("atx: no machines configured; copy atx/atx.toml.example to %s", atxCfgPath)
+	}
+
 	// Shared SSE hub.
 	hub := newHub()
 
@@ -114,7 +140,7 @@ func Serve(args []string) error {
 	)
 
 	// Register atx routes at /atx/.
-	atxweb.RegisterRoutes(mux, atxweb.WithSSE(hub))
+	atxweb.RegisterRoutes(mux, atxDB, atxCfg, atxweb.WithSSE(hub))
 
 	// Shared SSE endpoint.
 	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) {
