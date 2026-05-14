@@ -81,6 +81,12 @@ func Restore(d *db.DB, args []string) error {
 		}
 	}
 
+	backupPath, err := writeAutoBackup(d, "restore")
+	if err != nil {
+		return fmt.Errorf("safety snapshot: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "safety snapshot: %s\n", backupPath)
+
 	// Remove any pre-existing attachment files so we don't leave orphans.
 	if attDir != "" {
 		existingTasks, _ := d.ListTasks("", "", "", "")

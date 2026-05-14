@@ -130,6 +130,12 @@ func cleanClosed(d *db.DB, olderThan string, force, jsonOut bool) error {
 		}
 	}
 
+	backupPath, err := writeAutoBackup(d, "clean-closed")
+	if err != nil {
+		return fmt.Errorf("safety snapshot: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "safety snapshot: %s\n", backupPath)
+
 	// Delete from DB.
 	deleted, err := d.GCClosedTasks(taskIDs)
 	if err != nil {
@@ -168,6 +174,12 @@ func cleanAll(d *db.DB, force bool) error {
 			return nil
 		}
 	}
+
+	backupPath, err := writeAutoBackup(d, "clean-all")
+	if err != nil {
+		return fmt.Errorf("safety snapshot: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "safety snapshot: %s\n", backupPath)
 
 	if _, err := d.Exec(`DELETE FROM tasks`); err != nil {
 		return fmt.Errorf("delete tasks: %w", err)

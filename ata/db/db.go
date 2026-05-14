@@ -32,6 +32,16 @@ func AttachmentsDir() (string, error) {
 	return filepath.Join(home, ".ata", "attachments"), nil
 }
 
+// AutoBackupsDir returns the directory holding pre-destructive-op snapshots
+// (~/.ata/backups). Created on demand.
+func AutoBackupsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("get home dir: %w", err)
+	}
+	return filepath.Join(home, ".ata", "backups"), nil
+}
+
 // FormatBytes returns a human-readable file size string.
 func FormatBytes(b int64) string {
 	switch {
