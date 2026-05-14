@@ -1,0 +1,25 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>atx{{if .Title}} — {{.Title}}{{end}}</title>
+    <link rel="stylesheet" href="/atx/static/style.css">
+    <link rel="manifest" href="/atx/manifest.json">
+    <meta name="theme-color" content="#161b22">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/atx/static/apple-touch-icon.png">
+    <link rel="icon" href="/atx/static/icon.svg" type="image/svg+xml">
+</head>
+<body>
+    <nav class="topnav">
+        <a href="/atx/" class="logo">atx</a>
+        <a href="/" class="topnav-link">ata</a>
+        <a href="/afl/" class="topnav-link">afl</a>
+    </nav>
+    <main>{{template "content" .}}</main>
+    <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/atx/sw.js', {scope: '/atx/'});</script>
+</body>
+</html>
+{{end}}

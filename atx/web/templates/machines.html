@@ -1,0 +1,24 @@
+{{define "content"}}
+<h1>machines</h1>
+{{if .Machines}}
+<div class="machine-grid">
+    {{range .Machines}}
+    <a href="/atx/m/{{.Name}}" class="machine-card">
+        <div class="machine-stripe" style="background: {{.Color}}"></div>
+        <div class="machine-body">
+            <div class="machine-head">
+                <span class="machine-name">{{.Display}}</span>
+                <span class="machine-dot {{if .Online}}dot-online{{else}}dot-offline{{end}}"></span>
+            </div>
+            <div class="machine-meta">{{.WindowCount}} window{{if ne .WindowCount 1}}s{{end}} · {{.LastActivity}}</div>
+        </div>
+    </a>
+    {{end}}
+</div>
+{{else}}
+<div class="empty-state">
+    <p>No machines configured.</p>
+    <p>Copy <code>atx/atx.toml.example</code> to <code>~/.config/atx/atx.toml</code>.</p>
+</div>
+{{end}}
+{{end}}

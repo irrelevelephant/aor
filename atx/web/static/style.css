@@ -1,0 +1,187 @@
+:root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --radius: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* --- top nav --- */
+
+.topnav {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.logo {
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: var(--text);
+}
+.logo:hover { text-decoration: none; }
+
+.topnav-link {
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    padding: 4px 8px;
+    border-radius: var(--radius);
+}
+.topnav-link:hover { color: var(--text); background: var(--surface2); text-decoration: none; }
+.topnav-link.active { color: var(--text); background: var(--surface2); }
+
+main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem;
+}
+
+h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
+
+/* --- machine list --- */
+
+.machine-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+}
+
+.machine-card {
+    display: flex;
+    align-items: stretch;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.15s;
+    color: var(--text);
+}
+.machine-card:hover { border-color: var(--text-dim); text-decoration: none; }
+
+.machine-stripe {
+    width: 6px;
+    flex-shrink: 0;
+}
+
+.machine-body {
+    flex: 1;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.machine-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.machine-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text);
+}
+.machine-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+}
+.machine-dot-lg {
+    width: 10px;
+    height: 10px;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+.dot-online  { background: var(--green); }
+.dot-offline { background: var(--text-dim); opacity: 0.6; }
+
+.machine-meta {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+}
+
+/* --- window list (one machine) --- */
+
+.window-list { display: flex; flex-direction: column; gap: 6px; }
+
+.window-row {
+    display: grid;
+    grid-template-columns: 2rem 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+}
+.window-row:hover { border-color: var(--accent); text-decoration: none; }
+
+.window-index {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+}
+.window-name {
+    font-size: 0.95rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.window-activity {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.activity-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+.breadcrumb {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+}
+.breadcrumb a { color: var(--text-dim); }
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-dim);
+}

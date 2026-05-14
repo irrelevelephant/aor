@@ -1,0 +1,14 @@
+{
+  "name": "atx",
+  "short_name": "atx",
+  "start_url": "/atx/",
+  "scope": "/atx/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#161b22",
+  "icons": [
+    { "src": "/atx/static/icon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/atx/static/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/atx/static/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}
