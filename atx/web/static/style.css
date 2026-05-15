@@ -347,14 +347,10 @@ body:has(.terminal-page) > main {
 .terminal-host {
     flex: 1;
     min-height: 0;
-    padding: 6px 6px 0 6px;
+    padding: 6px;
     overflow: hidden;
 }
 .terminal-host .xterm { height: 100%; }
-
-.terminal-host {
-    padding-bottom: 6px;
-}
 
 /* When the server-rendered helper bar is present (mobile UA), reserve
  * space for it so it doesn't clip the bottom of the xterm content. */
