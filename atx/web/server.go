@@ -49,23 +49,23 @@ type Server struct {
 }
 
 type MachineView struct {
-	Name         string
-	Display      string
-	Color        string
-	Online       bool
-	WindowCount  int
-	LastActivity string
-	// Windows is only populated when this view is passed to the
-	// "window-list" template block (e.g. by handleMachineWindowsAPI);
-	// the unified-view list render leaves it nil and lets the client
-	// lazy-fetch via the API on expand.
-	Windows []WindowView
+	Name         string `json:"name"`
+	Display      string `json:"display"`
+	Color        string `json:"color"`
+	Online       bool   `json:"online"`
+	WindowCount  int    `json:"windowCount"`
+	LastActivity string `json:"lastActivity,omitempty"`
+	// Windows is populated when this view feeds the "window-list"
+	// template block (handleMachineWindowsAPI) or the JSON machines
+	// API consumed by the terminal-view picker. The unified-view list
+	// render leaves it nil and the client lazy-fetches on expand.
+	Windows []WindowView `json:"windows,omitempty"`
 }
 
 type WindowView struct {
-	Index    int
-	Name     string
-	Notified string
+	Index    int    `json:"index"`
+	Name     string `json:"name"`
+	Notified string `json:"notified,omitempty"`
 }
 
 func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Option) *Server {
@@ -97,6 +97,7 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Op
 	mux.HandleFunc("GET /atx/ws", srv.handleWS)
 
 	mux.HandleFunc("GET /atx/api/m/{machine}/windows", srv.handleMachineWindowsAPI)
+	mux.HandleFunc("GET /atx/api/machines", srv.handleMachinesAPI)
 
 	mux.HandleFunc("GET /atx/api/push/vapid-public-key", srv.handleVAPIDPublicKey)
 	mux.HandleFunc("POST /atx/api/push/subscribe", srv.handlePushSubscribe)
@@ -144,7 +145,7 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 }
 
 func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
-	machines, offlineStart := s.machineListView()
+	machines, offlineStart := s.machineListView(false)
 	s.render(w, "machines.html", map[string]any{
 		"Title":        "machines",
 		"Machines":     machines,
@@ -177,23 +178,18 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 
 	var win runtime.Window
 	found := false
-	var prevIdx, nextIdx = -1, -1
-	for i, ww := range state.Windows {
+	for _, ww := range state.Windows {
 		if ww.Index == idx {
 			win = ww
 			found = true
-			if i > 0 {
-				prevIdx = state.Windows[i-1].Index
-			}
-			if i+1 < len(state.Windows) {
-				nextIdx = state.Windows[i+1].Index
-			}
 			break
 		}
 	}
 	if !found {
 		win = runtime.Window{Index: idx, Name: fmt.Sprintf("w%d", idx)}
 	}
+
+	machines, _ := s.machineListView(true)
 
 	s.render(w, "terminal.html", map[string]any{
 		"Title": fmt.Sprintf("%s · %d %s", state.Display, idx, win.Name),
@@ -207,8 +203,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 			Index: win.Index,
 			Name:  win.Name,
 		},
-		"PrevWindow": prevIdx,
-		"NextWindow": nextIdx,
+		"Machines": machines,
 	})
 }
 
@@ -253,9 +248,13 @@ func (s *Server) windowViews(state runtime.MachineState) []WindowView {
 
 // machineListView returns machines ordered online-first, offline-after
 // (config order preserved within each group). offlineStart is the index
-// of the first offline machine, or len(out) if none. Windows are not
-// populated — the client lazy-fetches per machine via the API on expand.
-func (s *Server) machineListView() ([]MachineView, int) {
+// of the first offline machine, or len(out) if none.
+//
+// withWindows controls whether each machine's Windows slice is populated
+// with lightweight {Index, Name} entries. Callers that need per-window
+// notification timestamps must use windowViews() directly — populating
+// Notified in this loop would issue an N+1 DB query per snapshot.
+func (s *Server) machineListView(withWindows bool) ([]MachineView, int) {
 	if s.rt == nil {
 		out := make([]MachineView, 0, len(s.cfg.Machines))
 		for _, m := range s.cfg.Machines {
@@ -275,6 +274,13 @@ func (s *Server) machineListView() ([]MachineView, int) {
 			WindowCount:  len(st.Windows),
 			LastActivity: machineActivity(st),
 		}
+		if withWindows {
+			wins := make([]WindowView, 0, len(st.Windows))
+			for _, w := range st.Windows {
+				wins = append(wins, WindowView{Index: w.Index, Name: w.Name})
+			}
+			mv.Windows = wins
+		}
 		if st.Online {
 			online = append(online, mv)
 		} else {
@@ -282,6 +288,11 @@ func (s *Server) machineListView() ([]MachineView, int) {
 		}
 	}
 	return append(online, offline...), len(online)
+}
+
+func (s *Server) handleMachinesAPI(w http.ResponseWriter, r *http.Request) {
+	machines, _ := s.machineListView(true)
+	writeJSON(w, http.StatusOK, map[string]any{"machines": machines})
 }
 
 func (s *Server) machineState(name string) (runtime.MachineState, bool) {

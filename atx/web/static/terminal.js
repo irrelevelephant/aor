@@ -250,6 +250,145 @@
         dockBar();
     }
 
+    // --- window-nav arrows + machine picker ---
+
+    const MACHINE_LAST_KEY = 'atx.machineLastWindow';
+
+    function readMachineLast() {
+        try {
+            const obj = JSON.parse(localStorage.getItem(MACHINE_LAST_KEY) || '{}');
+            return obj && typeof obj === 'object' ? obj : {};
+        } catch (_) { return {}; }
+    }
+    function writeMachineLast(obj) {
+        try { localStorage.setItem(MACHINE_LAST_KEY, JSON.stringify(obj)); } catch (_) {}
+    }
+    // app.js writes to atx.lastWindow only when a .window-row in the
+    // unified view is clicked; arriving here via the picker, the header
+    // arrows, swipe, a deep link, or a push notification all skip that
+    // path, so record arrival here.
+    (function () {
+        const obj = readMachineLast();
+        obj[view.machine] = view.window;
+        writeMachineLast(obj);
+    })();
+
+    if (!Array.isArray(view.machines)) view.machines = [];
+
+    function currentMachineEntry() {
+        return view.machines.find((m) => m.name === view.machine);
+    }
+
+    function navigateDelta(delta) {
+        const m = currentMachineEntry();
+        if (!m || !m.windows || m.windows.length === 0) return;
+        const i = m.windows.findIndex((w) => w.index === view.window);
+        if (i < 0) return;
+        const n = m.windows.length;
+        const next = m.windows[((i + delta) % n + n) % n];
+        if (!next || next.index === view.window) return;
+        location.href = `/atx/m/${encodeURIComponent(view.machine)}/w/${next.index}`;
+    }
+
+    document.getElementById('terminal-nav-prev').addEventListener('click', () => navigateDelta(-1));
+    document.getElementById('terminal-nav-next').addEventListener('click', () => navigateDelta(1));
+
+    const picker = document.getElementById('terminal-picker');
+    const popover = document.getElementById('terminal-picker-popover');
+
+    function machineDestination(m) {
+        if (!m.windows || m.windows.length === 0) {
+            return `/atx/m/${encodeURIComponent(m.name)}`;
+        }
+        const last = readMachineLast()[m.name];
+        const target = m.windows.find((w) => w.index === last) || m.windows[0];
+        return `/atx/m/${encodeURIComponent(m.name)}/w/${target.index}`;
+    }
+
+    function renderPopover() {
+        if (view.machines.length === 0) {
+            popover.innerHTML = '<div class="picker-empty">No machines.</div>';
+            return;
+        }
+        const parts = [];
+        for (const m of view.machines) {
+            const isCurrent = m.name === view.machine;
+            const disabled = !m.online;
+            const count = m.windowCount || 0;
+            const countLabel = count + ' window' + (count === 1 ? '' : 's');
+            const cls = [
+                'picker-row',
+                isCurrent ? 'is-current' : '',
+                disabled ? 'is-disabled' : '',
+            ].filter(Boolean).join(' ');
+            const tag = disabled ? 'div' : 'a';
+            const href = disabled ? '' : ` href="${machineDestination(m)}"`;
+            parts.push(
+                `<${tag} class="${cls}"${href} role="menuitem"${disabled ? ' aria-disabled="true"' : ''}>` +
+                    `<span class="picker-dot ${isCurrent ? 'picker-dot-current' : ''}" aria-hidden="true"></span>` +
+                    `<span class="picker-stripe" style="background:${m.color}" aria-hidden="true"></span>` +
+                    `<span class="picker-name">${escapeHTML(m.display || m.name)}</span>` +
+                    `<span class="picker-count">${countLabel}</span>` +
+                `</${tag}>`
+            );
+        }
+        popover.innerHTML = parts.join('');
+    }
+
+    function escapeHTML(s) {
+        return String(s).replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[c]));
+    }
+
+    let popoverOpen = false;
+    function setPopoverOpen(open) {
+        popoverOpen = open;
+        popover.hidden = !open;
+        picker.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    async function refreshMachines() {
+        try {
+            const r = await fetch('/atx/api/machines', { cache: 'no-store' });
+            if (!r.ok) return;
+            const data = await r.json();
+            if (!data || !Array.isArray(data.machines)) return;
+            view.machines = data.machines;
+            if (popoverOpen) renderPopover();
+        } catch (_) { /* keep stale data */ }
+    }
+
+    picker.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (popoverOpen) {
+            setPopoverOpen(false);
+            return;
+        }
+        renderPopover();
+        setPopoverOpen(true);
+        refreshMachines();
+    });
+
+    // Enabled rows are <a>; the default href navigates. Disabled rows
+    // are <div>s with no href.
+    popover.addEventListener('click', (e) => {
+        const row = e.target.closest('.picker-row');
+        if (!row) return;
+        if (row.classList.contains('is-disabled')) {
+            e.preventDefault();
+            return;
+        }
+        setPopoverOpen(false);
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!popoverOpen) return;
+        if (e.target.closest('#terminal-picker-popover')) return;
+        if (e.target.closest('#terminal-picker')) return;
+        setPopoverOpen(false);
+    });
+
     // --- touch on the terminal area: vertical drag scrolls scrollback,
     //     horizontal flick navigates prev/next window ---
 
@@ -283,11 +422,7 @@
         const dy = Math.abs(t.clientY - touchStartY);
         const dt = Date.now() - touchStartT;
         if (Math.abs(dx) < SWIPE_MIN_X || dy > SWIPE_MAX_Y || dt > SWIPE_MAX_MS) return;
-        if (dx > 0 && view.prevWindow >= 0) {
-            location.href = `/atx/m/${view.machine}/w/${view.prevWindow}`;
-        } else if (dx < 0 && view.nextWindow >= 0) {
-            location.href = `/atx/m/${view.machine}/w/${view.nextWindow}`;
-        }
+        navigateDelta(dx > 0 ? -1 : 1);
     }, { passive: true });
 
     // --- detach on hidden, reattach on visible ---

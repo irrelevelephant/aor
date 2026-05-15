@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"encoding/json"
 	"html/template"
 	"strings"
 	"testing"
@@ -14,7 +15,10 @@ import (
 // can't see.
 func TestTemplatesRender(t *testing.T) {
 	funcMap := template.FuncMap{
-		"json": func(v any) template.JS { return template.JS("null") },
+		"json": func(v any) template.JS {
+			b, _ := json.Marshal(v)
+			return template.JS(b)
+		},
 	}
 	parse := func(page string) *template.Template {
 		tmpl, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/layout.html", "templates/"+page)
@@ -105,16 +109,30 @@ func TestTemplatesRender(t *testing.T) {
 
 	buf.Reset()
 	terminalData := map[string]any{
-		"Title":      "desktop · 1 editor",
-		"Machine":    MachineView{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true},
-		"Window":     WindowView{Index: 1, Name: "editor"},
-		"PrevWindow": -1,
-		"NextWindow": 2,
+		"Title":   "desktop · 1 editor",
+		"Machine": MachineView{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true},
+		"Window":  WindowView{Index: 1, Name: "editor"},
+		"Machines": []MachineView{
+			{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true, WindowCount: 1, Windows: []WindowView{{Index: 1, Name: "editor"}}},
+		},
 	}
 	if err := terminalT.ExecuteTemplate(&buf, "layout", terminalData); err != nil {
 		t.Fatalf("execute terminal.html: %v", err)
 	}
-	if !strings.Contains(buf.String(), `href="/atx/#m-desktop"`) {
-		t.Errorf("terminal.html back link not pointing at unified view anchor")
+	terminalOut := buf.String()
+	for _, want := range []string{
+		`id="terminal-nav-prev"`,
+		`id="terminal-nav-next"`,
+		`id="terminal-picker"`,
+		`id="terminal-picker-popover"`,
+		`"name":"desktop"`,
+		`"index":1`,
+	} {
+		if !strings.Contains(terminalOut, want) {
+			t.Errorf("rendered terminal.html missing %q", want)
+		}
+	}
+	if strings.Contains(terminalOut, "terminal-back") {
+		t.Errorf("terminal.html should no longer render the back-link element")
 	}
 }

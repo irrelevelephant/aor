@@ -1,12 +1,18 @@
 {{define "content"}}
 <div class="terminal-page">
     <div class="terminal-header">
-        <a href="/atx/#m-{{.Machine.Name}}" class="terminal-back">←</a>
-        <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
-        <span class="terminal-machine">{{.Machine.Display}}</span>
-        <span class="terminal-sep">·</span>
-        <span class="terminal-window-index">{{.Window.Index}}</span>
-        <span class="terminal-window-name">{{.Window.Name}}</span>
+        <button class="terminal-nav" id="terminal-nav-prev" type="button" aria-label="Previous window">◀</button>
+        <div class="terminal-id">
+            <button class="terminal-picker" id="terminal-picker" type="button" aria-haspopup="true" aria-expanded="false">
+                <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
+                <span class="terminal-machine">{{.Machine.Display}}</span>
+                <span class="terminal-picker-caret" aria-hidden="true">▾</span>
+            </button>
+            <span class="terminal-sep">·</span>
+            <span class="terminal-window-name">{{.Window.Name}}</span>
+        </div>
+        <button class="terminal-nav" id="terminal-nav-next" type="button" aria-label="Next window">▶</button>
+        <div class="terminal-picker-popover" id="terminal-picker-popover" hidden role="menu" aria-labelledby="terminal-picker"></div>
     </div>
     <div id="terminal" class="terminal-host"></div>
     <div class="helperbar" id="helperbar">
@@ -42,8 +48,7 @@
 window.atxView = {
     machine: {{.Machine.Name | json}},
     window: {{.Window.Index}},
-    prevWindow: {{.PrevWindow}},
-    nextWindow: {{.NextWindow}}
+    machines: {{.Machines | json}}
 };
 </script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
