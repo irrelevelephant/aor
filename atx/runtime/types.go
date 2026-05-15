@@ -5,12 +5,11 @@ package runtime
 import "time"
 
 // Window mirrors a tmux window: index in its session, tmux window id (@N),
-// current name, and a coarse last-activity timestamp updated on rename/add.
+// and current name.
 type Window struct {
-	Index        int
-	ID           string
-	Name         string
-	LastActivity time.Time
+	Index int
+	ID    string
+	Name  string
 }
 
 // MachineState is the snapshot the web layer renders for one machine.

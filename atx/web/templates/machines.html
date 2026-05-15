@@ -6,7 +6,7 @@
     <a href="/atx/m/{{$m}}/w/{{.Index}}" class="window-row" data-machine="{{$m}}" data-window="{{.Index}}">
         <span class="window-index">{{.Index}}</span>
         <span class="window-name">{{.Name}}</span>
-        <span class="window-activity">{{.LastActivity}}</span>
+        {{if .Notified}}<span class="window-activity">{{.Notified}}</span>{{end}}
     </a>
     {{end}}
 </div>

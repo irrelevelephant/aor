@@ -330,7 +330,6 @@ func (m *Machine) refreshWindows(client *ssh.Client) error {
 		if !ok {
 			continue
 		}
-		w.LastActivity = time.Now()
 		ws = append(ws, w)
 	}
 	sort.Slice(ws, func(i, j int) bool { return ws[i].Index < ws[j].Index })

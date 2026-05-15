@@ -61,9 +61,9 @@ type MachineView struct {
 }
 
 type WindowView struct {
-	Index        int
-	Name         string
-	LastActivity string
+	Index    int
+	Name     string
+	Notified string
 }
 
 func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Option) *Server {
@@ -243,19 +243,27 @@ func (s *Server) handleMachineWindowsAPI(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.pages["machines.html"].ExecuteTemplate(w, "window-list", MachineView{
 		Name:    state.Name,
-		Windows: windowViews(state),
+		Windows: s.windowViews(state),
 	}); err != nil {
 		log.Printf("atx window-list render %s: %v", state.Name, err)
 	}
 }
 
-func windowViews(state runtime.MachineState) []WindowView {
+func (s *Server) windowViews(state runtime.MachineState) []WindowView {
+	lastNotified, err := s.db.LastNotifiedByWindow(state.Name)
+	if err != nil {
+		log.Printf("atx last-notified %s: %v", state.Name, err)
+	}
 	wins := make([]WindowView, 0, len(state.Windows))
 	for _, win := range state.Windows {
+		var notified string
+		if ts, ok := lastNotified[strconv.Itoa(win.Index)]; ok {
+			notified = relativeTime(time.Unix(ts, 0))
+		}
 		wins = append(wins, WindowView{
-			Index:        win.Index,
-			Name:         win.Name,
-			LastActivity: relativeTime(win.LastActivity),
+			Index:    win.Index,
+			Name:     win.Name,
+			Notified: notified,
 		})
 	}
 	return wins
@@ -287,7 +295,7 @@ func (s *Server) machineListView(expanded map[string]bool) ([]MachineView, int) 
 		}
 		if expanded[st.Name] {
 			mv.Expanded = true
-			mv.Windows = windowViews(st)
+			mv.Windows = s.windowViews(st)
 		}
 		if st.Online {
 			online = append(online, mv)
