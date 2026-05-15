@@ -92,6 +92,8 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Op
 	mux.HandleFunc("GET /atx/m/{machine}/w/{window}", srv.handleTerminal)
 	mux.HandleFunc("GET /atx/ws", srv.handleWS)
 
+	mux.HandleFunc("GET /atx/api/m/{machine}/windows", srv.handleMachineWindowsAPI)
+
 	mux.HandleFunc("GET /atx/api/push/vapid-public-key", srv.handleVAPIDPublicKey)
 	mux.HandleFunc("POST /atx/api/push/subscribe", srv.handlePushSubscribe)
 	mux.HandleFunc("POST /atx/api/push/unsubscribe", srv.handlePushUnsubscribe)
@@ -225,15 +227,6 @@ func (s *Server) handleWindows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wins := make([]WindowView, 0, len(state.Windows))
-	for _, win := range state.Windows {
-		wins = append(wins, WindowView{
-			Index:        win.Index,
-			Name:         win.Name,
-			LastActivity: relativeTime(win.LastActivity),
-		})
-	}
-
 	s.render(w, "windows.html", map[string]any{
 		"Title": state.Display,
 		"Machine": MachineView{
@@ -242,8 +235,30 @@ func (s *Server) handleWindows(w http.ResponseWriter, r *http.Request) {
 			Color:   state.Color,
 			Online:  state.Online,
 		},
-		"Windows": wins,
+		"Windows": windowViews(state),
 	})
+}
+
+func (s *Server) handleMachineWindowsAPI(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("machine")
+	state, ok := s.machineState(name)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, windowViews(state))
+}
+
+func windowViews(state runtime.MachineState) []WindowView {
+	wins := make([]WindowView, 0, len(state.Windows))
+	for _, win := range state.Windows {
+		wins = append(wins, WindowView{
+			Index:        win.Index,
+			Name:         win.Name,
+			LastActivity: relativeTime(win.LastActivity),
+		})
+	}
+	return wins
 }
 
 func (s *Server) machineViews() []MachineView {
