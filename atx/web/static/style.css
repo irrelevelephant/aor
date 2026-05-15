@@ -263,17 +263,13 @@ main:has(.terminal-page) {
 .terminal-host .xterm { height: 100%; }
 
 .terminal-host {
-    /* Reserve space for the helper bar by default. Wide viewports / fine
-     * pointers below override this back to a small bottom padding. */
-    padding-bottom: calc(44px + max(4px, env(safe-area-inset-bottom)));
+    padding-bottom: 6px;
 }
 
-/* Hide the helper bar — and reclaim its reserved padding — whenever the
- * device has a mouse/trackpad, OR has a tablet-or-wider viewport. Touch
- * phones in portrait or landscape keep it. */
-@media (any-pointer: fine), (min-width: 1024px) {
-    .helperbar { display: none; }
-    .terminal-host { padding-bottom: 6px; }
+/* When the server-rendered helper bar is present (mobile UA), reserve
+ * space for it so it doesn't clip the bottom of the xterm content. */
+body:has(.helperbar) .terminal-host {
+    padding-bottom: calc(44px + max(4px, env(safe-area-inset-bottom)));
 }
 
 /* --- helper bar --- */

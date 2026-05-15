@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"aor/atx/config"
@@ -193,7 +194,27 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		},
 		"PrevWindow": prevIdx,
 		"NextWindow": nextIdx,
+		"IsMobile":   isMobileUA(r.Header.Get("User-Agent")),
 	})
+}
+
+// isMobileUA reports whether the UA looks like a phone or small touch
+// device. Errs on the side of "desktop" — better to omit the helper bar
+// from a borderline device than to show it where a real keyboard exists.
+func isMobileUA(ua string) bool {
+	if ua == "" {
+		return false
+	}
+	// Standard Mobile/Android/iPhone tokens cover Chrome on Android,
+	// Safari on iPhone, Firefox mobile, and most others. iPads
+	// deliberately masquerade as desktop now, which is the right call:
+	// the user wants the bar off on iPad too.
+	for _, t := range []string{"Mobile", "Android", "iPhone", "iPod"} {
+		if strings.Contains(ua, t) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleWindows(w http.ResponseWriter, r *http.Request) {

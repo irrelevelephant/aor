@@ -9,6 +9,7 @@
         <span class="terminal-window-name">{{.Window.Name}}</span>
     </div>
     <div id="terminal" class="terminal-host"></div>
+    {{if .IsMobile}}
     <div class="helperbar" id="helperbar">
         <div class="helperbar-row" data-tab="keys">
             <button class="hb-btn" data-key="">Esc</button>
@@ -32,6 +33,7 @@
         </div>
         <button class="hb-btn hb-tab-switch" id="hb-tab-switch" aria-label="Switch helper-bar tab">⇄</button>
     </div>
+    {{end}}
     <div class="ios-install-banner" id="ios-install-banner" hidden>
         <span>For full functionality, tap <strong>Share</strong> → <strong>Add to Home Screen</strong>.</span>
         <button class="hb-btn" id="ios-install-dismiss" aria-label="Dismiss">×</button>
