@@ -15,13 +15,16 @@ import (
 )
 
 // clientMsg is the inbound (browser → server) text-frame envelope.
-// stdin uses binary frames, not this struct.
+// stdin uses binary frames, not this struct. `Payload` carries per-type
+// fields (e.g. copy-mode coordinates) without bloating the top-level shape.
 type clientMsg struct {
-	Type    string `json:"type"`
-	Machine string `json:"machine,omitempty"`
-	Window  int    `json:"window,omitempty"`
-	Cols    uint32 `json:"cols,omitempty"`
-	Rows    uint32 `json:"rows,omitempty"`
+	Type    string          `json:"type"`
+	Machine string          `json:"machine,omitempty"`
+	Window  int             `json:"window,omitempty"`
+	Cols    uint32          `json:"cols,omitempty"`
+	Rows    uint32          `json:"rows,omitempty"`
+	ReqId   string          `json:"reqId,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
 // serverMsg is one outbound text-frame envelope. stdout uses binary frames.
@@ -30,6 +33,30 @@ type serverMsg struct {
 	Machine string `json:"machine,omitempty"`
 	Window  int    `json:"window,omitempty"`
 	Error   string `json:"error,omitempty"`
+	ReqId   string `json:"reqId,omitempty"`
+	Payload any    `json:"payload,omitempty"`
+}
+
+// Copy-mode payload shapes; tags match what terminal.js sends.
+
+type copyMovePayload struct {
+	FromRow int `json:"fromRow"`
+	FromCol int `json:"fromCol"`
+	ToRow   int `json:"toRow"`
+	ToCol   int `json:"toCol"`
+}
+
+type copyActionPayload struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type pastePayload struct {
+	Text string `json:"text"`
+}
+
+type copiedPayload struct {
+	Text string `json:"text"`
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +122,7 @@ func (c *wsClient) run() {
 func (c *wsClient) handleControl(data []byte) {
 	var msg clientMsg
 	if err := json.Unmarshal(data, &msg); err != nil {
-		c.sendErr("invalid json")
+		c.sendErrReq("", "invalid json")
 		return
 	}
 	switch msg.Type {
@@ -103,7 +130,7 @@ func (c *wsClient) handleControl(data []byte) {
 		// No state change; client is just announcing itself.
 	case "view":
 		if msg.Machine == "" {
-			c.sendErr("view: machine required")
+			c.sendErrReq("", "view: machine required")
 			return
 		}
 		c.startViewing(msg.Machine, msg.Window, msg.Cols, msg.Rows)
@@ -113,14 +140,134 @@ func (c *wsClient) handleControl(data []byte) {
 		c.mu.Lock()
 		machine := c.machine
 		idx := c.windowIx
-		hasView := c.mirror != nil
+		mirror := c.mirror
 		c.mu.Unlock()
-		if hasView && msg.Cols > 0 && msg.Rows > 0 {
+		if mirror != nil && msg.Cols > 0 && msg.Rows > 0 {
 			if err := c.rt.ResizeMirror(machine, idx, msg.Cols, msg.Rows); err != nil {
 				log.Printf("atx ws: resize %s/w%d: %v", machine, idx, err)
 			}
 		}
+	case "copy_enter":
+		c.handleCopyEnter(msg.ReqId)
+	case "copy_move":
+		c.handleCopyMove(msg.ReqId, msg.Payload)
+	case "copy_action":
+		c.handleCopyAction(msg.ReqId, msg.Payload)
+	case "copy_yank":
+		c.handleCopyYank(msg.ReqId)
+	case "copy_cancel":
+		c.handleCopyCancel(msg.ReqId)
+	case "paste_clipboard":
+		c.handlePasteClipboard(msg.ReqId, msg.Payload)
 	}
+}
+
+func (c *wsClient) currentMirror() *runtime.Mirror {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.mirror
+}
+
+func (c *wsClient) handleCopyEnter(reqId string) {
+	mirror := c.currentMirror()
+	if mirror == nil {
+		c.sendErrReq(reqId, "not viewing")
+		return
+	}
+	st, err := mirror.CopyEnter()
+	if err != nil {
+		c.sendErrReq(reqId, err.Error())
+		return
+	}
+	c.sendCopyState(reqId, st)
+}
+
+func (c *wsClient) handleCopyMove(reqId string, raw json.RawMessage) {
+	mirror := c.currentMirror()
+	if mirror == nil {
+		c.sendErrReq(reqId, "not viewing")
+		return
+	}
+	var p copyMovePayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		c.sendErrReq(reqId, "bad copy_move payload")
+		return
+	}
+	st, err := mirror.CopyMove(p.FromRow, p.FromCol, p.ToRow, p.ToCol)
+	if err != nil {
+		c.sendErrReq(reqId, err.Error())
+		return
+	}
+	c.sendCopyState(reqId, st)
+}
+
+func (c *wsClient) handleCopyAction(reqId string, raw json.RawMessage) {
+	mirror := c.currentMirror()
+	if mirror == nil {
+		c.sendErrReq(reqId, "not viewing")
+		return
+	}
+	var p copyActionPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		c.sendErrReq(reqId, "bad copy_action payload")
+		return
+	}
+	st, err := mirror.CopyAction(p.Name, p.Count)
+	if err != nil {
+		c.sendErrReq(reqId, err.Error())
+		return
+	}
+	c.sendCopyState(reqId, st)
+}
+
+func (c *wsClient) handleCopyYank(reqId string) {
+	mirror := c.currentMirror()
+	if mirror == nil {
+		c.sendErrReq(reqId, "not viewing")
+		return
+	}
+	text, err := mirror.CopyYank()
+	if err != nil {
+		c.sendErrReq(reqId, err.Error())
+		return
+	}
+	c.sendCopied(reqId, text)
+}
+
+func (c *wsClient) handleCopyCancel(reqId string) {
+	mirror := c.currentMirror()
+	if mirror == nil {
+		c.sendErrReq(reqId, "not viewing")
+		return
+	}
+	st, err := mirror.CopyAction("cancel", 1)
+	if err != nil {
+		c.sendErrReq(reqId, err.Error())
+		return
+	}
+	c.sendCopyState(reqId, st)
+}
+
+func (c *wsClient) handlePasteClipboard(reqId string, raw json.RawMessage) {
+	mirror := c.currentMirror()
+	if mirror == nil {
+		c.sendErrReq(reqId, "not viewing")
+		return
+	}
+	var p pastePayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		c.sendErrReq(reqId, "bad paste_clipboard payload")
+		return
+	}
+	if p.Text == "" {
+		c.sendAckReq(reqId, "pasted")
+		return
+	}
+	if err := mirror.PasteClipboard(p.Text); err != nil {
+		c.sendErrReq(reqId, err.Error())
+		return
+	}
+	c.sendAckReq(reqId, "pasted")
 }
 
 func (c *wsClient) handleStdin(data []byte) {
@@ -142,7 +289,7 @@ func (c *wsClient) startViewing(machine string, windowIdx int, cols, rows uint32
 
 	mirror, ch, err := c.rt.AcquireMirror(c.ctx, machine, windowIdx, cols, rows)
 	if err != nil {
-		c.sendErr(err.Error())
+		c.sendErrReq("", err.Error())
 		return
 	}
 
@@ -152,6 +299,15 @@ func (c *wsClient) startViewing(machine string, windowIdx int, cols, rows uint32
 	c.mirror = mirror
 	c.output = ch
 	c.mu.Unlock()
+
+	// Resync any stale copy mode from a previous tab off the hot path —
+	// it's one SSH round-trip (sometimes two) and the user's first
+	// mirrored frame shouldn't wait for it.
+	go func() {
+		if st, err := mirror.CopyResync(); err == nil {
+			c.sendCopyState("", st)
+		}
+	}()
 
 	go c.forwardOutput(ch)
 }
@@ -185,8 +341,28 @@ func (c *wsClient) forwardOutput(ch chan []byte) {
 	}
 }
 
-func (c *wsClient) sendErr(msg string) {
-	payload, _ := json.Marshal(serverMsg{Type: "error", Error: msg})
+func (c *wsClient) sendErrReq(reqId, msg string) {
+	c.writeJSON(serverMsg{Type: "error", Error: msg, ReqId: reqId})
+}
+
+func (c *wsClient) sendCopyState(reqId string, st runtime.CopyState) {
+	c.writeJSON(serverMsg{Type: "copy_state", ReqId: reqId, Payload: st})
+}
+
+func (c *wsClient) sendCopied(reqId, text string) {
+	c.writeJSON(serverMsg{Type: "copied", ReqId: reqId, Payload: copiedPayload{Text: text}})
+}
+
+func (c *wsClient) sendAckReq(reqId, kind string) {
+	c.writeJSON(serverMsg{Type: kind, ReqId: reqId})
+}
+
+func (c *wsClient) writeJSON(msg serverMsg) {
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("atx ws: marshal %s: %v", msg.Type, err)
+		return
+	}
 	writeCtx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
 	c.writeMu.Lock()
