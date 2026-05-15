@@ -327,8 +327,11 @@ body:has(.terminal-page) > main {
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.terminal-nav:hover { background: var(--surface2); color: var(--text); }
+@media (hover: hover) {
+    .terminal-nav:hover { background: var(--surface2); color: var(--text); }
+}
 .terminal-nav:active { background: var(--border); }
+.terminal-nav:focus:not(:focus-visible) { outline: none; }
 
 .terminal-chip {
     flex: 1 1 auto;
