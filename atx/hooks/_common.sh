@@ -16,7 +16,15 @@ ATX_SERVER="${ATX_SERVER:-https://pie.tail1454ae.ts.net}"
 ATX_TIMEOUT="${ATX_TIMEOUT:-5}"
 ATX_EVENT="${ATX_EVENT:-unknown}"
 
-machine="$(hostname -s 2>/dev/null || uname -n)"
+# Prefer an explicit override written by `dev-vm/sync.sh` (it knows the
+# canonical name from machines.conf). Without it, macOS `hostname -s`
+# returns `Thomass-Mac-mini` etc., which won't match any atx.toml entry.
+if [[ -r "$HOME/.atx-machine" ]]; then
+    machine="$(cat "$HOME/.atx-machine")"
+else
+    machine="$(hostname -s 2>/dev/null || uname -n)"
+fi
+machine="${machine//[$'\t\r\n ']/}"
 session=""; window_index=""; window_name=""
 if [[ -n "${TMUX_PANE:-}" ]] && command -v tmux >/dev/null 2>&1; then
     read -r session window_index window_name < <(
