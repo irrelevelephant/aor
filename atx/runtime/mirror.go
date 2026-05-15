@@ -102,7 +102,7 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 	// never sees a `%session-window-changed`. Set AFTER the initial
 	// select-window so mirror creation itself doesn't yank the main
 	// session's current-window pointer.
-	hookBody := shellQuote(fmt.Sprintf("select-window -t %s:#{window_index}", shellQuote(m.tmuxSession)))
+	hookBody := shellQuote(fmt.Sprintf("select-window -t %s:#{window_index}", m.tmuxSession))
 	setup := fmt.Sprintf(
 		"tmux new-session -d -t %s -s %s \\; select-window -t %s:%d \\; set-hook -t %s session-window-changed %s",
 		shellQuote(m.tmuxSession), shellQuote(m.groupedName),
