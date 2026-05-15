@@ -221,7 +221,7 @@
     // attribute parsing.
     const KEY_MAP = {
         esc:   '\x1b',
-        enter: '\r',
+        tab:   '\t',
         'c-o': '\x0f',
         up:    '\x1b[A',
         down:  '\x1b[B',
