@@ -79,6 +79,34 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 
 /* --- unified machine list (root view) --- */
 
+.machines-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 1rem;
+}
+.machines-header h1 { margin-bottom: 0; }
+
+.expand-all-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1;
+    padding: 6px 10px;
+    min-width: 36px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.expand-all-toggle:hover {
+    background: var(--surface2);
+    color: var(--text);
+    border-color: var(--text-dim);
+}
+
 .machine-list {
     list-style: none;
     display: flex;

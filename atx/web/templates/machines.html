@@ -16,7 +16,12 @@
 {{end}}
 
 {{define "content"}}
-<h1>machines</h1>
+<div class="machines-header">
+    <h1>machines</h1>
+    {{if .Machines}}
+    <button id="expand-all" class="expand-all-toggle" type="button" aria-label="Expand all" title="Expand all">⇅</button>
+    {{end}}
+</div>
 {{if .Machines}}
 <ul class="machine-list">
     {{range $i, $m := .Machines}}

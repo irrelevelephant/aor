@@ -53,10 +53,20 @@ func TestTemplatesRender(t *testing.T) {
 		`class="offline-divider"`,
 		`machine-offline`,
 		`aria-expanded="false"`,
+		`id="expand-all"`,
 	} {
 		if !strings.Contains(machinesOut, want) {
 			t.Errorf("rendered machines.html missing %q", want)
 		}
+	}
+
+	// Empty-machines render should NOT include the expand-all button.
+	buf.Reset()
+	if err := machinesT.ExecuteTemplate(&buf, "layout", map[string]any{"Title": "machines", "Machines": []MachineView{}, "OfflineStart": 0}); err != nil {
+		t.Fatalf("execute empty machines.html: %v", err)
+	}
+	if strings.Contains(buf.String(), `id="expand-all"`) {
+		t.Errorf("empty machines view should not render the expand-all toggle")
 	}
 
 	// The "window-list" block is what the API endpoint serves, so render

@@ -169,30 +169,73 @@
         setTimeout(() => row.classList.remove('last-used'), 1800);
     }
 
+    function setMachineExpanded(li, expand) {
+        const machine = li.dataset.machine;
+        const container = document.getElementById('w-' + machine);
+        const header = li.querySelector('.machine-header');
+        if (expand) {
+            li.dataset.expanded = '1';
+            container.hidden = false;
+            header.setAttribute('aria-expanded', 'true');
+            if (!container.dataset.loaded) {
+                container.dataset.loaded = '1';
+                loadWindows(machine, container);
+            }
+        } else {
+            li.dataset.expanded = '';
+            container.hidden = true;
+            header.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    function allMachines() {
+        return document.querySelectorAll('.machine');
+    }
+
+    function allExpanded() {
+        const machines = allMachines();
+        if (machines.length === 0) return false;
+        for (const li of machines) {
+            if (li.dataset.expanded !== '1') return false;
+        }
+        return true;
+    }
+
+    function syncExpandAllButton() {
+        const btn = document.getElementById('expand-all');
+        if (!btn) return;
+        const open = allExpanded();
+        const label = open ? 'Collapse all' : 'Expand all';
+        btn.setAttribute('aria-label', label);
+        btn.title = label;
+    }
+
+    function setAllExpanded(expand) {
+        const set = readExpanded();
+        for (const li of allMachines()) {
+            setMachineExpanded(li, expand);
+            if (expand) set.add(li.dataset.machine);
+            else set.delete(li.dataset.machine);
+        }
+        writeExpanded(set);
+        syncExpandAllButton();
+    }
+
     document.addEventListener('click', (e) => {
         const header = e.target.closest('.machine-header');
         if (header) {
             const li = header.closest('.machine');
-            const machine = li.dataset.machine;
-            const container = document.getElementById('w-' + machine);
-            const expanded = li.dataset.expanded === '1';
+            const expand = li.dataset.expanded !== '1';
+            setMachineExpanded(li, expand);
             const set = readExpanded();
-            if (expanded) {
-                li.dataset.expanded = '';
-                container.hidden = true;
-                header.setAttribute('aria-expanded', 'false');
-                set.delete(machine);
-            } else {
-                li.dataset.expanded = '1';
-                container.hidden = false;
-                header.setAttribute('aria-expanded', 'true');
-                set.add(machine);
-                if (!container.dataset.loaded) {
-                    container.dataset.loaded = '1';
-                    loadWindows(machine, container);
-                }
-            }
+            if (expand) set.add(li.dataset.machine);
+            else set.delete(li.dataset.machine);
             writeExpanded(set);
+            syncExpandAllButton();
+            return;
+        }
+        if (e.target.closest('#expand-all')) {
+            setAllExpanded(!allExpanded());
             return;
         }
         const row = e.target.closest('.window-row');
@@ -209,7 +252,10 @@
     function onReady() {
         ensurePushSubscription();
         syncPushToggleButton();
-        if (document.querySelector('.machine-list')) highlightLastWindow();
+        if (document.querySelector('.machine-list')) {
+            highlightLastWindow();
+            syncExpandAllButton();
+        }
     }
     if (document.readyState !== 'loading') onReady();
     else document.addEventListener('DOMContentLoaded', onReady);
