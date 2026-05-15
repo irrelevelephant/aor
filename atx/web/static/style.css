@@ -89,23 +89,18 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 .machines-header h1 { margin-bottom: 0; }
 
 .expand-all-toggle {
-    background: transparent;
-    border: 1px solid var(--border);
+    background: none;
+    border: none;
     color: var(--text-dim);
-    font-family: inherit;
-    font-size: 0.95rem;
+    font: inherit;
+    font-size: 0.7rem;
     line-height: 1;
-    padding: 6px 10px;
-    min-width: 36px;
-    border-radius: var(--radius);
+    padding: 0.25rem 0.4rem;
     cursor: pointer;
+    transition: color 0.15s;
     -webkit-tap-highlight-color: transparent;
 }
-.expand-all-toggle:hover {
-    background: var(--surface2);
-    color: var(--text);
-    border-color: var(--text-dim);
-}
+.expand-all-toggle:hover { color: var(--text); }
 
 .machine-list {
     list-style: none;
