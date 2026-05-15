@@ -18,13 +18,14 @@ import (
 // stdin uses binary frames, not this struct. `Payload` carries per-type
 // fields (e.g. copy-mode coordinates) without bloating the top-level shape.
 type clientMsg struct {
-	Type    string          `json:"type"`
-	Machine string          `json:"machine,omitempty"`
-	Window  int             `json:"window,omitempty"`
-	Cols    uint32          `json:"cols,omitempty"`
-	Rows    uint32          `json:"rows,omitempty"`
-	ReqId   string          `json:"reqId,omitempty"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+	Type       string          `json:"type"`
+	Machine    string          `json:"machine,omitempty"`
+	Window     int             `json:"window,omitempty"`
+	Cols       uint32          `json:"cols,omitempty"`
+	Rows       uint32          `json:"rows,omitempty"`
+	ReqId      string          `json:"reqId,omitempty"`
+	Payload    json.RawMessage `json:"payload,omitempty"`
+	WantActive bool            `json:"wantActive,omitempty"`
 }
 
 // serverMsg is one outbound text-frame envelope. stdout uses binary frames.
@@ -134,7 +135,7 @@ func (c *wsClient) handleControl(data []byte) {
 			c.sendErrReq("", "view: machine required")
 			return
 		}
-		c.startViewing(msg.Machine, msg.Window, msg.Cols, msg.Rows)
+		c.startViewing(msg.Machine, msg.Window, msg.Cols, msg.Rows, msg.WantActive)
 	case "view_hidden":
 		c.stopViewing()
 	case "resize":
@@ -285,7 +286,7 @@ func (c *wsClient) handleStdin(data []byte) {
 	}
 }
 
-func (c *wsClient) startViewing(machine string, windowIdx int, cols, rows uint32) {
+func (c *wsClient) startViewing(machine string, windowIdx int, cols, rows uint32, wantActive bool) {
 	c.stopViewing()
 
 	mirror, ch, err := c.rt.AcquireMirror(c.ctx, machine, windowIdx, cols, rows)
@@ -320,8 +321,14 @@ func (c *wsClient) startViewing(machine string, windowIdx int, cols, rows uint32
 	c.unsub = unsub
 	c.mu.Unlock()
 
-	if snap, ok := c.rt.MachineState(machine); ok {
-		pushActive(snap)
+	// Snap to the session's current active window only when the client
+	// asks for it (tab returning from hidden, post-reconnect). Picker /
+	// arrow / swipe views must NOT snap or they'd bounce the user back
+	// to whatever main is on.
+	if wantActive {
+		if snap, ok := c.rt.MachineState(machine); ok {
+			pushActive(snap)
+		}
 	}
 
 	// Resync any stale copy mode from a previous tab off the hot path —

@@ -56,6 +56,11 @@
     let pending = [];
     let reconnectTimer = null;
     let reconnectDelay = 500;
+    // Set when the tab is returning from hidden (or its WS dropped while
+    // hidden) so the next outgoing `view` asks the server to snap to the
+    // session's current active window. User-driven views never set this,
+    // so picker / arrow / swipe navigation isn't bounced by the snap.
+    let wantActiveOnNextView = false;
 
     function sendJSON(obj) {
         const msg = JSON.stringify(obj);
@@ -112,7 +117,8 @@
             reconnectDelay = 500;
             sendJSON({ type: 'hello' });
             const { cols, rows } = currentSize();
-            sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
+            sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows, wantActive: wantActiveOnNextView });
+            wantActiveOnNextView = false;
             for (const msg of pending) ws.send(msg);
             pending = [];
         };
@@ -952,12 +958,13 @@
             // WS was dropped while backgrounded — re-attach. onopen sends
             // a fresh `view`, so the server re-acquires the mirror and
             // repaints automatically.
+            wantActiveOnNextView = true;
             connect();
             return;
         }
         fit.fit();
         const { cols, rows } = currentSize();
-        sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
+        sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows, wantActive: true });
     });
 
     // --- iOS install hint (one-time) ---

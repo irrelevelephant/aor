@@ -96,10 +96,18 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 	// same bad state. Failure here is fine: usually nothing to kill.
 	_ = m.runShortCommand("tmux kill-session -t " + shellQuote(m.groupedName))
 
+	// The hook propagates any in-mirror window switch (prefix+n / 0..9 /
+	// l typed in the browser terminal) back to the main session. Without
+	// it, those switches only move the grouped session's pointer and atx
+	// never sees a `%session-window-changed`. Set AFTER the initial
+	// select-window so mirror creation itself doesn't yank the main
+	// session's current-window pointer.
+	hookBody := shellQuote(fmt.Sprintf("select-window -t %s:#{window_index}", shellQuote(m.tmuxSession)))
 	setup := fmt.Sprintf(
-		"tmux new-session -d -t %s -s %s \\; select-window -t %s:%d",
+		"tmux new-session -d -t %s -s %s \\; select-window -t %s:%d \\; set-hook -t %s session-window-changed %s",
 		shellQuote(m.tmuxSession), shellQuote(m.groupedName),
 		shellQuote(m.groupedName), m.windowIndex,
+		shellQuote(m.groupedName), hookBody,
 	)
 	if err := m.runShortCommand(setup); err != nil {
 		return fmt.Errorf("create grouped session: %w", err)
