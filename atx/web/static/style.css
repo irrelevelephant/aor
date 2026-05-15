@@ -200,22 +200,38 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     color: var(--text-dim);
 }
 
-/* --- terminal page --- */
+/* --- terminal page ---
+ * The terminal page needs to fit the viewport exactly with no overflow.
+ * Lay out the whole document as a flex column: topnav takes its natural
+ * height, main fills the rest. No hardcoded topnav-height calc that
+ * drifts when font metrics or padding change. */
 
-main:has(.terminal-page) {
+body:has(.terminal-page) {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+}
+body:has(.terminal-page) > .topnav { flex: 0 0 auto; }
+body:has(.terminal-page) > main {
+    flex: 1 1 0;
+    min-height: 0;
     max-width: none;
+    width: 100%;
+    margin: 0;
     padding: 0;
-    height: calc(100vh - 49px);
     display: flex;
     flex-direction: column;
 }
 
 .terminal-page {
+    flex: 1 1 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    height: 100%;
     background: var(--bg);
 }
+.terminal-header { flex: 0 0 auto; }
 
 .terminal-header {
     display: flex;
