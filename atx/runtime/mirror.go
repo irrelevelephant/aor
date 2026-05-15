@@ -1,10 +1,12 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -86,11 +88,15 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 		rows = defaultRows
 	}
 
-	// Create the grouped session and aim it at the right window. -A so a
-	// stale grouped session from a crashed previous mirror is reused
-	// instead of erroring.
+	// Scrub any orphan grouped session from a crashed or misconfigured
+	// prior mirror — otherwise `new-session` below would either error
+	// or silently reuse a session grouped to a different target /
+	// pointed at a since-removed window, and every retry would hit the
+	// same bad state. Failure here is fine: usually nothing to kill.
+	_ = m.runShortCommand("tmux kill-session -t " + shellQuote(m.groupedName))
+
 	setup := fmt.Sprintf(
-		"tmux new-session -A -d -t %s -s %s \\; select-window -t %s:%d",
+		"tmux new-session -d -t %s -s %s \\; select-window -t %s:%d",
 		shellQuote(m.tmuxSession), shellQuote(m.groupedName),
 		shellQuote(m.groupedName), m.windowIndex,
 	)
@@ -304,6 +310,13 @@ func (m *Mirror) runShortCommand(cmd string) error {
 		return err
 	}
 	defer session.Close()
-	session.Stderr = io.Discard
-	return session.Run(cmd)
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
+	if err := session.Run(cmd); err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
 }
