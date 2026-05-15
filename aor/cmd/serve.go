@@ -20,6 +20,7 @@ import (
 
 	atxconfig "aor/atx/config"
 	atxdb "aor/atx/db"
+	atxpush "aor/atx/push"
 	atxruntime "aor/atx/runtime"
 	atxweb "aor/atx/web"
 )
@@ -147,10 +148,21 @@ func Serve(args []string) error {
 	atxRT.Start(context.Background())
 	defer atxRT.Stop()
 
+	// Load (or generate) atx's VAPID keypair for Web Push.
+	atxVAPIDPath, err := atxpush.DefaultVAPIDPath()
+	if err != nil {
+		return fmt.Errorf("atx vapid path: %w", err)
+	}
+	atxVAPID, err := atxpush.LoadOrCreate(atxVAPIDPath, "mailto:tsmithtree@gmail.com")
+	if err != nil {
+		return fmt.Errorf("load atx vapid: %w", err)
+	}
+
 	// Register atx routes at /atx/.
 	atxweb.RegisterRoutes(mux, atxDB, atxCfg,
 		atxweb.WithSSE(hub),
 		atxweb.WithRuntime(atxRT),
+		atxweb.WithVAPID(atxVAPID),
 	)
 
 	// Shared SSE endpoint.

@@ -13,6 +13,7 @@ import (
 
 	"aor/atx/config"
 	"aor/atx/db"
+	"aor/atx/push"
 	"aor/atx/runtime"
 )
 
@@ -33,10 +34,15 @@ func WithRuntime(r *runtime.Manager) Option {
 	return func(s *Server) { s.rt = r }
 }
 
+func WithVAPID(v *push.VAPID) Option {
+	return func(s *Server) { s.vapid = v }
+}
+
 type Server struct {
 	db    *db.DB
 	cfg   *config.Config
 	rt    *runtime.Manager
+	vapid *push.VAPID
 	sse   SSEBroadcaster
 	pages map[string]*template.Template
 }
@@ -84,6 +90,11 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Op
 	mux.HandleFunc("GET /atx/m/{machine}", srv.handleWindows)
 	mux.HandleFunc("GET /atx/m/{machine}/w/{window}", srv.handleTerminal)
 	mux.HandleFunc("GET /atx/ws", srv.handleWS)
+
+	mux.HandleFunc("GET /atx/api/push/vapid-public-key", srv.handleVAPIDPublicKey)
+	mux.HandleFunc("POST /atx/api/push/subscribe", srv.handlePushSubscribe)
+	mux.HandleFunc("POST /atx/api/push/unsubscribe", srv.handlePushUnsubscribe)
+	mux.HandleFunc("POST /atx/api/hooks/event", srv.handleHookEvent)
 
 	mux.HandleFunc("GET /atx/manifest.json", serveEmbedded("static/manifest.json", "application/manifest+json"))
 	mux.HandleFunc("GET /atx/sw.js", serveEmbedded("static/sw.js", "application/javascript"))
