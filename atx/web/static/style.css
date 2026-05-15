@@ -54,6 +54,20 @@ a:hover { text-decoration: underline; }
 .topnav-link:hover { color: var(--text); background: var(--surface2); text-decoration: none; }
 .topnav-link.active { color: var(--text); background: var(--surface2); }
 
+.topnav-push {
+    margin-left: auto;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-family: inherit;
+    padding: 4px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+.topnav-push:hover { border-color: var(--accent); }
+.topnav-push[hidden] { display: none; }
+
 main {
     max-width: 900px;
     margin: 0 auto;

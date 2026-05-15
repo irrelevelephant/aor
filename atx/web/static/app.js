@@ -86,10 +86,7 @@
         return out;
     }
 
-    // Expose so a future "Enable notifications" button can request
-    // permission then call this.
-    window.atxEnsurePush = ensurePushSubscription;
-    window.atxRequestPushPermission = async function () {
+    async function requestPushPermission() {
         if (!('Notification' in window)) return 'unsupported';
         if (Notification.permission === 'granted') {
             await ensurePushSubscription();
@@ -99,8 +96,40 @@
         const perm = await Notification.requestPermission();
         if (perm === 'granted') await ensurePushSubscription();
         return perm;
-    };
+    }
 
-    if (document.readyState !== 'loading') ensurePushSubscription();
-    else document.addEventListener('DOMContentLoaded', ensurePushSubscription);
+    function syncPushToggleButton() {
+        const btn = document.getElementById('atx-push-toggle');
+        if (!btn) return;
+        if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+            btn.hidden = true;
+            return;
+        }
+        // Only show when permission is in the can-still-prompt state.
+        btn.hidden = Notification.permission !== 'default';
+    }
+
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('#atx-push-toggle');
+        if (!btn) return;
+        btn.disabled = true;
+        const result = await requestPushPermission();
+        btn.disabled = false;
+        if (result === 'denied') {
+            btn.textContent = '🔕 Notifications blocked';
+            btn.title = 'Re-enable in your browser/system notification settings';
+        } else if (result === 'granted') {
+            btn.hidden = true;
+        }
+    });
+
+    // Backwards-compatible global for console / future affordances.
+    window.atxRequestPushPermission = requestPushPermission;
+
+    function onReady() {
+        ensurePushSubscription();
+        syncPushToggleButton();
+    }
+    if (document.readyState !== 'loading') onReady();
+    else document.addEventListener('DOMContentLoaded', onReady);
 })();
