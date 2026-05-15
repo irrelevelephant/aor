@@ -77,49 +77,65 @@ main {
 h1 { font-size: 1.5rem; margin-bottom: 1rem; }
 h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 
-/* --- machine list --- */
+/* --- unified machine list (root view) --- */
 
-.machine-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 12px;
+.machine-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.machine-card {
-    display: flex;
-    align-items: stretch;
+.machine {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
-    transition: border-color 0.15s;
-    color: var(--text);
 }
-.machine-card:hover { border-color: var(--text-dim); text-decoration: none; }
+.machine-offline { opacity: 0.55; }
 
-.machine-stripe {
-    width: 6px;
-    flex-shrink: 0;
-}
-
-.machine-body {
-    flex: 1;
-    padding: 12px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-}
-
-.machine-head {
+.machine-header {
+    width: 100%;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    padding: 10px 14px;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.machine-header:hover { background: var(--surface2); }
+
+.machine-chevron {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 6px solid var(--text-dim);
+    flex-shrink: 0;
+    transition: transform 0.12s ease;
+}
+.machine[data-expanded="1"] .machine-chevron { transform: rotate(90deg); }
+
+.machine-stripe {
+    width: 4px;
+    height: 1.4em;
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 .machine-name {
     font-weight: 600;
     font-size: 1rem;
     color: var(--text);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .machine-dot {
     width: 8px;
@@ -128,18 +144,51 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     flex-shrink: 0;
     display: inline-block;
 }
-.machine-dot-lg {
-    width: 10px;
-    height: 10px;
-    margin-right: 8px;
-    vertical-align: middle;
-}
 .dot-online  { background: var(--green); }
 .dot-offline { background: var(--text-dim); opacity: 0.6; }
 
 .machine-meta {
     font-size: 0.85rem;
     color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.machine-windows {
+    padding: 4px 12px 12px 12px;
+    border-top: 1px solid var(--border);
+}
+.machine-windows[hidden] { display: none; }
+.machine-windows .window-list { margin-top: 8px; }
+
+.empty-windows {
+    padding: 12px 4px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+}
+
+.offline-divider {
+    list-style: none;
+    margin: 12px 4px 0 4px;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.offline-divider::before,
+.offline-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+@media (max-width: 600px) {
+    main { padding: 1rem; }
+    .machine-header { padding: 10px 12px; gap: 8px; }
+    .machine-windows { padding: 4px 8px 8px 8px; }
 }
 
 /* --- window list (one machine) --- */
@@ -158,6 +207,10 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     color: var(--text);
 }
 .window-row:hover { border-color: var(--accent); text-decoration: none; }
+.window-row.last-used {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.18);
+}
 
 .window-index {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

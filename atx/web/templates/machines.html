@@ -1,20 +1,40 @@
-{{define "content"}}
-<h1>machines</h1>
-{{if .Machines}}
-<div class="machine-grid">
-    {{range .Machines}}
-    <a href="/atx/m/{{.Name}}" class="machine-card">
-        <div class="machine-stripe" style="background: {{.Color}}"></div>
-        <div class="machine-body">
-            <div class="machine-head">
-                <span class="machine-name">{{.Display}}</span>
-                <span class="machine-dot {{if .Online}}dot-online{{else}}dot-offline{{end}}"></span>
-            </div>
-            <div class="machine-meta">{{.WindowCount}} window{{if ne .WindowCount 1}}s{{end}} · {{.LastActivity}}</div>
-        </div>
+{{define "window-list"}}
+{{if .Windows}}
+{{$m := .Name}}
+<div class="window-list">
+    {{range .Windows}}
+    <a href="/atx/m/{{$m}}/w/{{.Index}}" class="window-row" data-machine="{{$m}}" data-window="{{.Index}}">
+        <span class="window-index">{{.Index}}</span>
+        <span class="window-name">{{.Name}}</span>
+        <span class="window-activity">{{.LastActivity}}</span>
     </a>
     {{end}}
 </div>
+{{else}}
+<div class="empty-windows">No windows.</div>
+{{end}}
+{{end}}
+
+{{define "content"}}
+<h1>machines</h1>
+{{if .Machines}}
+<ul class="machine-list">
+    {{range $i, $m := .Machines}}
+    {{if eq $i $.OfflineStart}}<li class="offline-divider">offline</li>{{end}}
+    <li class="machine{{if not $m.Online}} machine-offline{{end}}" id="m-{{$m.Name}}" data-machine="{{$m.Name}}"{{if $m.Expanded}} data-expanded="1"{{end}}>
+        <button class="machine-header" type="button" aria-expanded="{{if $m.Expanded}}true{{else}}false{{end}}" aria-controls="w-{{$m.Name}}">
+            <span class="machine-chevron" aria-hidden="true"></span>
+            <span class="machine-stripe" style="background: {{$m.Color}}"></span>
+            <span class="machine-name">{{$m.Display}}</span>
+            <span class="machine-dot {{if $m.Online}}dot-online{{else}}dot-offline{{end}}" aria-hidden="true"></span>
+            <span class="machine-meta">{{$m.WindowCount}} window{{if ne $m.WindowCount 1}}s{{end}} · {{$m.LastActivity}}</span>
+        </button>
+        <div class="machine-windows" id="w-{{$m.Name}}"{{if not $m.Expanded}} hidden{{end}}{{if $m.Expanded}} data-loaded="1"{{end}}>
+            {{if $m.Expanded}}{{template "window-list" $m}}{{end}}
+        </div>
+    </li>
+    {{end}}
+</ul>
 {{else}}
 <div class="empty-state">
     <p>No machines configured.</p>

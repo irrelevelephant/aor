@@ -29,13 +29,11 @@
         }, DEBOUNCE_MS);
     }
 
-    function shouldRefreshFor(machineName) {
-        // Machine list page: always refresh.
-        if (location.pathname === '/atx/' || location.pathname === '/atx') return true;
-        // Per-machine window list page (but NOT the terminal page, where
-        // wiping <main> would destroy the live xterm.js DOM).
-        const m = location.pathname.match(/^\/atx\/m\/([^/]+)\/?$/);
-        return !!m && m[1] === machineName;
+    function shouldRefreshFor(_machineName) {
+        // The unified view at /atx/ shows all machines; refresh on any
+        // event. The terminal page must NOT refresh — wiping <main>
+        // would destroy the live xterm.js DOM.
+        return location.pathname === '/atx/' || location.pathname === '/atx';
     }
 
     const es = new EventSource('/events');
@@ -126,9 +124,92 @@
     // Backwards-compatible global for console / future affordances.
     window.atxRequestPushPermission = requestPushPermission;
 
+    // --- unified machine nav (root view) ---
+    // Header click toggles a machine's window list. First-time expand
+    // lazy-fetches windows via the JSON API. Expanded set is persisted to
+    // both localStorage (for the JS to read after innerHTML refresh) and
+    // a cookie (so the server can eager-render those machines next load).
+
+    const EXPANDED_KEY = 'atx.expanded';
+    const LAST_WINDOW_KEY = 'atx.lastWindow';
+
+    function readExpanded() {
+        try {
+            const arr = JSON.parse(localStorage.getItem(EXPANDED_KEY) || '[]');
+            return new Set(Array.isArray(arr) ? arr : []);
+        } catch (_) { return new Set(); }
+    }
+
+    function writeExpanded(set) {
+        const arr = Array.from(set);
+        try { localStorage.setItem(EXPANDED_KEY, JSON.stringify(arr)); } catch (_) {}
+        document.cookie = 'atx_expanded=' + encodeURIComponent(arr.join(',')) +
+            '; path=/atx/; max-age=31536000; samesite=lax';
+    }
+
+    async function loadWindows(machine, container) {
+        try {
+            const resp = await fetch('/atx/api/m/' + encodeURIComponent(machine) + '/windows', { cache: 'no-store' });
+            if (!resp.ok) return;
+            container.innerHTML = await resp.text();
+        } catch (_) { /* leave empty; next toggle retries */ }
+    }
+
+    function highlightLastWindow() {
+        let last;
+        try { last = JSON.parse(localStorage.getItem(LAST_WINDOW_KEY) || 'null'); } catch (_) {}
+        if (!last || !last.machine) return;
+        const row = document.querySelector(
+            '.window-row[data-machine="' + CSS.escape(last.machine) + '"]' +
+            '[data-window="' + Number(last.window) + '"]'
+        );
+        if (!row) return;
+        row.classList.add('last-used');
+        row.scrollIntoView({ block: 'center', behavior: 'auto' });
+        setTimeout(() => row.classList.remove('last-used'), 1800);
+    }
+
+    document.addEventListener('click', (e) => {
+        const header = e.target.closest('.machine-header');
+        if (header) {
+            const li = header.closest('.machine');
+            const machine = li.dataset.machine;
+            const container = document.getElementById('w-' + machine);
+            const expanded = li.dataset.expanded === '1';
+            const set = readExpanded();
+            if (expanded) {
+                li.dataset.expanded = '';
+                container.hidden = true;
+                header.setAttribute('aria-expanded', 'false');
+                set.delete(machine);
+            } else {
+                li.dataset.expanded = '1';
+                container.hidden = false;
+                header.setAttribute('aria-expanded', 'true');
+                set.add(machine);
+                if (!container.dataset.loaded) {
+                    container.dataset.loaded = '1';
+                    loadWindows(machine, container);
+                }
+            }
+            writeExpanded(set);
+            return;
+        }
+        const row = e.target.closest('.window-row');
+        if (row) {
+            try {
+                localStorage.setItem(LAST_WINDOW_KEY, JSON.stringify({
+                    machine: row.dataset.machine,
+                    window: Number(row.dataset.window),
+                }));
+            } catch (_) {}
+        }
+    });
+
     function onReady() {
         ensurePushSubscription();
         syncPushToggleButton();
+        if (document.querySelector('.machine-list')) highlightLastWindow();
     }
     if (document.readyState !== 'loading') onReady();
     else document.addEventListener('DOMContentLoaded', onReady);

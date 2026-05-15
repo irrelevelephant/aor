@@ -1,0 +1,103 @@
+package web
+
+import (
+	"bytes"
+	"html/template"
+	"strings"
+	"testing"
+)
+
+// TestTemplatesRender exercises every page template — and the
+// "window-list" block shared between the unified view and the
+// /atx/api/m/{name}/windows endpoint — against representative data,
+// catching template syntax and missing-field errors the Go compiler
+// can't see.
+func TestTemplatesRender(t *testing.T) {
+	funcMap := template.FuncMap{
+		"json": func(v any) template.JS { return template.JS("null") },
+	}
+	parse := func(page string) *template.Template {
+		tmpl, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/layout.html", "templates/"+page)
+		if err != nil {
+			t.Fatalf("parse %s: %v", page, err)
+		}
+		return tmpl
+	}
+
+	machinesT := parse("machines.html")
+	terminalT := parse("terminal.html")
+
+	machinesData := map[string]any{
+		"Title": "machines",
+		"Machines": []MachineView{
+			{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true, WindowCount: 2, LastActivity: "live",
+				Expanded: true, Windows: []WindowView{
+					{Index: 1, Name: "editor", LastActivity: "2m"},
+					{Index: 2, Name: "server", LastActivity: "14s"},
+				}},
+			{Name: "laptop", Display: "laptop", Color: "#3fb950", Online: true, WindowCount: 0, LastActivity: "no windows"},
+			{Name: "oldserver", Display: "oldserver", Color: "#f85149", Online: false, WindowCount: 0, LastActivity: "offline"},
+		},
+		"OfflineStart": 2,
+	}
+	var buf bytes.Buffer
+	if err := machinesT.ExecuteTemplate(&buf, "layout", machinesData); err != nil {
+		t.Fatalf("execute machines.html: %v", err)
+	}
+	machinesOut := buf.String()
+	for _, want := range []string{
+		`id="m-desktop"`,
+		`data-expanded="1"`,
+		`aria-expanded="true"`,
+		`href="/atx/m/desktop/w/1"`,
+		`class="offline-divider"`,
+		`machine-offline`,
+		`aria-expanded="false"`,
+	} {
+		if !strings.Contains(machinesOut, want) {
+			t.Errorf("rendered machines.html missing %q", want)
+		}
+	}
+
+	// The "window-list" block is what the API endpoint serves, so render
+	// it standalone too — any drift between full-page render and API
+	// render would show up as a divergence here.
+	buf.Reset()
+	err := machinesT.ExecuteTemplate(&buf, "window-list", MachineView{
+		Name: "desktop",
+		Windows: []WindowView{
+			{Index: 1, Name: "editor", LastActivity: "2m"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute window-list: %v", err)
+	}
+	if !strings.Contains(buf.String(), `href="/atx/m/desktop/w/1"`) {
+		t.Errorf("window-list block missing window link, got: %s", buf.String())
+	}
+
+	// Empty windows path.
+	buf.Reset()
+	if err := machinesT.ExecuteTemplate(&buf, "window-list", MachineView{Name: "desktop"}); err != nil {
+		t.Fatalf("execute window-list empty: %v", err)
+	}
+	if !strings.Contains(buf.String(), "empty-windows") {
+		t.Errorf("empty window-list missing empty-windows marker")
+	}
+
+	buf.Reset()
+	terminalData := map[string]any{
+		"Title":      "desktop · 1 editor",
+		"Machine":    MachineView{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true},
+		"Window":     WindowView{Index: 1, Name: "editor"},
+		"PrevWindow": -1,
+		"NextWindow": 2,
+		"IsMobile":   false,
+	}
+	if err := terminalT.ExecuteTemplate(&buf, "layout", terminalData); err != nil {
+		t.Fatalf("execute terminal.html: %v", err)
+	}
+	if !strings.Contains(buf.String(), `href="/atx/#m-desktop"`) {
+		t.Errorf("terminal.html back link not pointing at unified view anchor")
+	}
+}

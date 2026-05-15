@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,8 @@ type MachineView struct {
 	Online       bool
 	WindowCount  int
 	LastActivity string
+	Expanded     bool
+	Windows      []WindowView
 }
 
 type WindowView struct {
@@ -72,7 +75,7 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Op
 		},
 	}
 
-	pageFiles := []string{"machines.html", "windows.html", "terminal.html"}
+	pageFiles := []string{"machines.html", "terminal.html"}
 	pages := make(map[string]*template.Template, len(pageFiles))
 	for _, p := range pageFiles {
 		t, err := template.New("").Funcs(funcMap).ParseFS(content, "templates/layout.html", "templates/"+p)
@@ -88,7 +91,7 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Op
 	}
 
 	mux.HandleFunc("GET /atx/{$}", srv.handleMachines)
-	mux.HandleFunc("GET /atx/m/{machine}", srv.handleWindows)
+	mux.HandleFunc("GET /atx/m/{machine}", srv.handleMachineRedirect)
 	mux.HandleFunc("GET /atx/m/{machine}/w/{window}", srv.handleTerminal)
 	mux.HandleFunc("GET /atx/ws", srv.handleWS)
 
@@ -140,11 +143,20 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 }
 
 func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
-	views := s.machineViews()
+	machines, offlineStart := s.machineListView(parseExpandedCookie(r))
 	s.render(w, "machines.html", map[string]any{
-		"Title":    "machines",
-		"Machines": views,
+		"Title":        "machines",
+		"Machines":     machines,
+		"OfflineStart": offlineStart,
 	})
+}
+
+// handleMachineRedirect keeps old /atx/m/{name} bookmarks (and the push
+// notification fallback URL when no window is supplied) working by
+// pointing them at the unified view's anchor for that machine.
+func (s *Server) handleMachineRedirect(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("machine")
+	http.Redirect(w, r, "/atx/#m-"+url.PathEscape(name), http.StatusFound)
 }
 
 func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
@@ -219,26 +231,9 @@ func isMobileUA(ua string) bool {
 	return false
 }
 
-func (s *Server) handleWindows(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("machine")
-	state, ok := s.machineState(name)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-
-	s.render(w, "windows.html", map[string]any{
-		"Title": state.Display,
-		"Machine": MachineView{
-			Name:    state.Name,
-			Display: state.Display,
-			Color:   state.Color,
-			Online:  state.Online,
-		},
-		"Windows": windowViews(state),
-	})
-}
-
+// handleMachineWindowsAPI renders the same window-list block the unified
+// view inlines for eager-expanded machines, so the JS lazy-load on first
+// expand can swap the response in via innerHTML — single source of truth.
 func (s *Server) handleMachineWindowsAPI(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("machine")
 	state, ok := s.machineState(name)
@@ -246,7 +241,13 @@ func (s *Server) handleMachineWindowsAPI(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, http.StatusOK, windowViews(state))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.pages["machines.html"].ExecuteTemplate(w, "window-list", MachineView{
+		Name:    state.Name,
+		Windows: windowViews(state),
+	}); err != nil {
+		log.Printf("atx window-list render %s: %v", state.Name, err)
+	}
 }
 
 func windowViews(state runtime.MachineState) []WindowView {
@@ -261,25 +262,53 @@ func windowViews(state runtime.MachineState) []WindowView {
 	return wins
 }
 
-func (s *Server) machineViews() []MachineView {
+// machineListView returns machines ordered online-first, offline-after
+// (config order preserved within each group), with Windows populated for
+// names in the expanded set. offlineStart is the index of the first
+// offline machine, or len(out) if none.
+func (s *Server) machineListView(expanded map[string]bool) ([]MachineView, int) {
 	if s.rt == nil {
 		out := make([]MachineView, 0, len(s.cfg.Machines))
 		for _, m := range s.cfg.Machines {
 			out = append(out, MachineView{Name: m.Name, Display: m.Display, Color: m.Color})
 		}
-		return out
+		return out, len(out)
 	}
 	states := s.rt.Snapshot()
-	out := make([]MachineView, 0, len(states))
+	online := make([]MachineView, 0, len(states))
+	offline := make([]MachineView, 0)
 	for _, st := range states {
-		out = append(out, MachineView{
+		mv := MachineView{
 			Name:         st.Name,
 			Display:      st.Display,
 			Color:        st.Color,
 			Online:       st.Online,
 			WindowCount:  len(st.Windows),
 			LastActivity: machineActivity(st),
-		})
+		}
+		if expanded[st.Name] {
+			mv.Expanded = true
+			mv.Windows = windowViews(st)
+		}
+		if st.Online {
+			online = append(online, mv)
+		} else {
+			offline = append(offline, mv)
+		}
+	}
+	return append(online, offline...), len(online)
+}
+
+func parseExpandedCookie(r *http.Request) map[string]bool {
+	c, err := r.Cookie("atx_expanded")
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]bool)
+	for _, n := range strings.Split(c.Value, ",") {
+		if n != "" {
+			out[n] = true
+		}
 	}
 	return out
 }
