@@ -32,8 +32,9 @@
     function shouldRefreshFor(machineName) {
         // Machine list page: always refresh.
         if (location.pathname === '/atx/' || location.pathname === '/atx') return true;
-        // Per-machine page: only if the event is for this machine.
-        const m = location.pathname.match(/^\/atx\/m\/([^/]+)/);
+        // Per-machine window list page (but NOT the terminal page, where
+        // wiping <main> would destroy the live xterm.js DOM).
+        const m = location.pathname.match(/^\/atx\/m\/([^/]+)\/?$/);
         return !!m && m[1] === machineName;
     }
 
