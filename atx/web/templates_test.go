@@ -34,7 +34,10 @@ func TestTemplatesRender(t *testing.T) {
 	machinesData := map[string]any{
 		"Title": "machines",
 		"Machines": []MachineView{
-			{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true, WindowCount: 3, LastActivity: "live"},
+			{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true, WindowCount: 2, LastActivity: "live", Windows: []WindowView{
+				{Index: 1, Name: "editor", Notified: "2m"},
+				{Index: 2, Name: "shell"},
+			}},
 			{Name: "laptop", Display: "laptop", Color: "#3fb950", Online: true, WindowCount: 0, LastActivity: "no windows"},
 			{Name: "oldserver", Display: "oldserver", Color: "#f85149", Online: false, WindowCount: 0, LastActivity: "offline"},
 		},
@@ -53,19 +56,24 @@ func TestTemplatesRender(t *testing.T) {
 		`aria-expanded="false"`,
 		`id="expand-all"`,
 		`localStorage.getItem('atx.expanded')`,
+		// Window list is now pre-rendered into every .machine-windows
+		// container so restored-expanded machines have content on first
+		// paint and the lazy-load fetch is unnecessary.
+		`data-loaded="1"`,
+		`class="window-list"`,
+		`class="window-activity"`,
+		`href="/atx/m/desktop/w/1"`,
+		`empty-windows`,
 	} {
 		if !strings.Contains(machinesOut, want) {
 			t.Errorf("rendered machines.html missing %q", want)
 		}
 	}
-	// Server render is always collapsed; expanded state and window content
-	// are applied client-side via the inline restore script and lazy-load.
+	// Server render still defaults to collapsed — expanded attributes are
+	// applied client-side by the inline restore script.
 	for _, unwant := range []string{
 		`data-expanded="1"`,
 		`aria-expanded="true"`,
-		`data-loaded="1"`,
-		`class="window-list"`,
-		`class="window-activity"`,
 	} {
 		if strings.Contains(machinesOut, unwant) {
 			t.Errorf("server render should not contain %q", unwant)

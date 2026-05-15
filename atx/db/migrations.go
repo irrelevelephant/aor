@@ -2,7 +2,7 @@ package db
 
 import "fmt"
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 func SchemaVersion() int { return schemaVersion }
 
@@ -23,6 +23,11 @@ func (d *DB) migrate() error {
 	if current < 1 {
 		if err := d.migrateV1(); err != nil {
 			return fmt.Errorf("v1: %w", err)
+		}
+	}
+	if current < 2 {
+		if err := d.migrateV2(); err != nil {
+			return fmt.Errorf("v2: %w", err)
 		}
 	}
 
@@ -68,5 +73,14 @@ CREATE TABLE notifications (
 CREATE INDEX notifications_created_at_idx ON notifications(created_at);
 `
 	_, err := d.Exec(ddl)
+	return err
+}
+
+// migrateV2 adds a covering index for the unified machines view's
+// per-window last-notified lookup, which scans+groups by
+// (machine, window_index). Without it, the index page does a full table
+// scan on every render and the cost grows with the notification log.
+func (d *DB) migrateV2() error {
+	_, err := d.Exec(`CREATE INDEX notifications_machine_window_idx ON notifications(machine, window_index, created_at)`)
 	return err
 }

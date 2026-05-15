@@ -34,17 +34,20 @@
             <span class="machine-dot {{if $m.Online}}dot-online{{else}}dot-offline{{end}}" aria-hidden="true"></span>
             <span class="machine-meta">{{$m.WindowCount}} window{{if ne $m.WindowCount 1}}s{{end}} · {{$m.LastActivity}}</span>
         </button>
-        <div class="machine-windows" id="w-{{$m.Name}}" hidden></div>
+        <div class="machine-windows" id="w-{{$m.Name}}" data-loaded="1" hidden>{{template "window-list" $m}}</div>
     </li>
     {{end}}
 </ul>
 <script>
 // Restore expand state from localStorage before first paint, mirroring
 // ata/web/templates/layout.html. Regex guards against XSS from a
-// crafted localStorage value.
+// crafted localStorage value. Also syncs the expand-all toggle so its
+// glyph/label match the restored state on first paint, not after
+// DOMContentLoaded.
 (function(){try{
     var arr = JSON.parse(localStorage.getItem('atx.expanded'));
-    if (!Array.isArray(arr)) return;
+    if (!Array.isArray(arr)) arr = [];
+    var restored = 0;
     arr.forEach(function(name){
         if (typeof name !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(name)) return;
         var li = document.getElementById('m-' + name);
@@ -54,7 +57,15 @@
         if (btn) btn.setAttribute('aria-expanded', 'true');
         var win = document.getElementById('w-' + name);
         if (win) win.removeAttribute('hidden');
+        restored++;
     });
+    var total = document.querySelectorAll('.machine').length;
+    var toggle = document.getElementById('expand-all');
+    if (toggle && total > 0 && restored === total) {
+        toggle.setAttribute('aria-label', 'Collapse all');
+        toggle.title = 'Collapse all';
+        toggle.textContent = '▼';
+    }
 }catch(e){}})();
 </script>
 {{else}}

@@ -145,7 +145,7 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 }
 
 func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
-	machines, offlineStart := s.machineListView(false)
+	machines, offlineStart := s.machineListView(true, true)
 	s.render(w, "machines.html", map[string]any{
 		"Title":        "machines",
 		"Machines":     machines,
@@ -189,7 +189,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		win = runtime.Window{Index: idx, Name: fmt.Sprintf("w%d", idx)}
 	}
 
-	machines, _ := s.machineListView(true)
+	machines, _ := s.machineListView(true, false)
 
 	s.render(w, "terminal.html", map[string]any{
 		"Title": fmt.Sprintf("%s · %d %s", state.Display, idx, win.Name),
@@ -226,41 +226,54 @@ func (s *Server) handleMachineWindowsAPI(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// buildWindowViews maps runtime windows into WindowViews, formatting any
+// matching entry in lastNotified (keyed by window_index as TEXT, since
+// that's how the notifications table stores it) into a relative-time
+// string. lastNotified may be nil — windows simply render without a
+// "Notified" timestamp in that case.
+func buildWindowViews(wins []runtime.Window, lastNotified map[string]int64) []WindowView {
+	out := make([]WindowView, 0, len(wins))
+	for _, w := range wins {
+		wv := WindowView{Index: w.Index, Name: w.Name}
+		if ts, ok := lastNotified[strconv.Itoa(w.Index)]; ok {
+			wv.Notified = relativeTime(time.Unix(ts, 0))
+		}
+		out = append(out, wv)
+	}
+	return out
+}
+
 func (s *Server) windowViews(state runtime.MachineState) []WindowView {
 	lastNotified, err := s.db.LastNotifiedByWindow(state.Name)
 	if err != nil {
 		log.Printf("atx last-notified %s: %v", state.Name, err)
 	}
-	wins := make([]WindowView, 0, len(state.Windows))
-	for _, win := range state.Windows {
-		var notified string
-		if ts, ok := lastNotified[strconv.Itoa(win.Index)]; ok {
-			notified = relativeTime(time.Unix(ts, 0))
-		}
-		wins = append(wins, WindowView{
-			Index:    win.Index,
-			Name:     win.Name,
-			Notified: notified,
-		})
-	}
-	return wins
+	return buildWindowViews(state.Windows, lastNotified)
 }
 
 // machineListView returns machines ordered online-first, offline-after
 // (config order preserved within each group). offlineStart is the index
 // of the first offline machine, or len(out) if none.
 //
-// withWindows controls whether each machine's Windows slice is populated
-// with lightweight {Index, Name} entries. Callers that need per-window
-// notification timestamps must use windowViews() directly — populating
-// Notified in this loop would issue an N+1 DB query per snapshot.
-func (s *Server) machineListView(withWindows bool) ([]MachineView, int) {
+// withNotified is ignored unless withWindows is also true. The unified
+// machines view passes both so restored-expanded cards render with
+// timestamps on first paint; the terminal-page picker only needs names
+// and passes (true, false) to skip the notifications query.
+func (s *Server) machineListView(withWindows, withNotified bool) ([]MachineView, int) {
 	if s.rt == nil {
 		out := make([]MachineView, 0, len(s.cfg.Machines))
 		for _, m := range s.cfg.Machines {
 			out = append(out, MachineView{Name: m.Name, Display: m.Display, Color: m.Color})
 		}
 		return out, len(out)
+	}
+	var notified map[string]map[string]int64
+	if withNotified && withWindows {
+		var err error
+		notified, err = s.db.LastNotifiedByMachineWindow()
+		if err != nil {
+			log.Printf("atx last-notified batch: %v", err)
+		}
 	}
 	states := s.rt.Snapshot()
 	online := make([]MachineView, 0, len(states))
@@ -275,11 +288,7 @@ func (s *Server) machineListView(withWindows bool) ([]MachineView, int) {
 			LastActivity: machineActivity(st),
 		}
 		if withWindows {
-			wins := make([]WindowView, 0, len(st.Windows))
-			for _, w := range st.Windows {
-				wins = append(wins, WindowView{Index: w.Index, Name: w.Name})
-			}
-			mv.Windows = wins
+			mv.Windows = buildWindowViews(st.Windows, notified[st.Name])
 		}
 		if st.Online {
 			online = append(online, mv)
@@ -291,7 +300,7 @@ func (s *Server) machineListView(withWindows bool) ([]MachineView, int) {
 }
 
 func (s *Server) handleMachinesAPI(w http.ResponseWriter, r *http.Request) {
-	machines, _ := s.machineListView(true)
+	machines, _ := s.machineListView(true, false)
 	writeJSON(w, http.StatusOK, map[string]any{"machines": machines})
 }
 
