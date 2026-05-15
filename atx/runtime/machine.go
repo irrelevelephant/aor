@@ -51,9 +51,10 @@ func newMachine(c config.Machine, notify func(string)) *Machine {
 		cfg:    c,
 		notify: notify,
 		state: MachineState{
-			Name:    c.Name,
-			Display: c.Display,
-			Color:   c.Color,
+			Name:         c.Name,
+			Display:      c.Display,
+			Color:        c.Color,
+			ActiveWindow: -1,
 		},
 	}
 }
@@ -310,7 +311,7 @@ func (m *Machine) refreshWindows(client *ssh.Client) error {
 	session.Stdout = &buf
 	session.Stderr = io.Discard
 
-	cmd := fmt.Sprintf("tmux list-windows -t %s -F '#{window_index} #{window_id} #{window_name}'", shellQuote(m.cfg.TmuxSession))
+	cmd := fmt.Sprintf("tmux list-windows -t %s -F '#{window_index} #{window_id} #{window_active} #{window_name}'", shellQuote(m.cfg.TmuxSession))
 
 	done := make(chan error, 1)
 	go func() { done <- session.Run(cmd) }()
@@ -325,10 +326,14 @@ func (m *Machine) refreshWindows(client *ssh.Client) error {
 	}
 
 	ws := make([]Window, 0, 16)
+	activeIdx := -1
 	for _, line := range strings.Split(buf.String(), "\n") {
-		w, ok := parseWindowListLine(line)
+		w, active, ok := parseWindowListLine(line)
 		if !ok {
 			continue
+		}
+		if active {
+			activeIdx = w.Index
 		}
 		ws = append(ws, w)
 	}
@@ -336,6 +341,7 @@ func (m *Machine) refreshWindows(client *ssh.Client) error {
 
 	m.updateState(func(s *MachineState) {
 		s.Windows = ws
+		s.ActiveWindow = activeIdx
 	})
 	return nil
 }

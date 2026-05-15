@@ -56,24 +56,29 @@ func splitFirst(s string) (string, []string) {
 }
 
 // parseWindowListLine parses one row of:
-//   list-windows -F '#{window_index} #{window_id} #{window_name}'
-// e.g. "2 @137 build". Window names can contain spaces, so split on the first
-// two whitespace runs only.
-func parseWindowListLine(line string) (Window, bool) {
+//   list-windows -F '#{window_index} #{window_id} #{window_active} #{window_name}'
+// e.g. "2 @137 1 build". Window names can contain spaces, so split on the
+// first three whitespace runs only. The bool return is the window_active
+// flag — true for the session's currently focused window.
+func parseWindowListLine(line string) (Window, bool, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return Window{}, false
+		return Window{}, false, false
 	}
 	idx, rest, ok := splitFirstField(line)
 	if !ok {
-		return Window{}, false
+		return Window{}, false, false
 	}
-	id, name, _ := splitFirstField(rest)
+	id, rest, ok := splitFirstField(rest)
+	if !ok {
+		return Window{}, false, false
+	}
+	activeStr, name, _ := splitFirstField(rest)
 	i, err := strconv.Atoi(idx)
 	if err != nil {
-		return Window{}, false
+		return Window{}, false, false
 	}
-	return Window{Index: i, ID: id, Name: name}, true
+	return Window{Index: i, ID: id, Name: name}, activeStr == "1", true
 }
 
 // splitFirstField returns (first-whitespace-token, rest, ok).

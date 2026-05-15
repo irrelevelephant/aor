@@ -100,6 +100,7 @@ type wsClient struct {
 	windowIx int
 	mirror   *runtime.Mirror // nil if not viewing
 	output   chan []byte
+	unsub    func() // unsubscribe from runtime state callbacks; nil when not viewing
 	writeMu  sync.Mutex
 }
 
@@ -293,12 +294,35 @@ func (c *wsClient) startViewing(machine string, windowIdx int, cols, rows uint32
 		return
 	}
 
+	// Push an `active_window` frame whenever the session's focused window
+	// drifts from what this tab is showing. Used both for the live
+	// subscription (native tmux switches) and the one-shot snap below
+	// (covers tab-was-hidden-while-user-switched).
+	pushActive := func(snap runtime.MachineState) {
+		c.mu.Lock()
+		curMachine := c.machine
+		curIdx := c.windowIx
+		c.mu.Unlock()
+		if curMachine != snap.Name || snap.ActiveWindow < 0 || snap.ActiveWindow == curIdx {
+			return
+		}
+		c.writeJSON(serverMsg{Type: "active_window", Machine: snap.Name, Window: snap.ActiveWindow})
+	}
+	// Subscribe before storing fields so a callback firing immediately
+	// still finds the right machine/window once the lock is taken.
+	unsub := c.rt.Subscribe(machine, pushActive)
+
 	c.mu.Lock()
 	c.machine = machine
 	c.windowIx = windowIdx
 	c.mirror = mirror
 	c.output = ch
+	c.unsub = unsub
 	c.mu.Unlock()
+
+	if snap, ok := c.rt.MachineState(machine); ok {
+		pushActive(snap)
+	}
 
 	// Resync any stale copy mode from a previous tab off the hot path —
 	// it's one SSH round-trip (sometimes two) and the user's first
@@ -317,9 +341,14 @@ func (c *wsClient) stopViewing() {
 	machine := c.machine
 	idx := c.windowIx
 	ch := c.output
+	unsub := c.unsub
 	c.mirror = nil
 	c.output = nil
+	c.unsub = nil
 	c.mu.Unlock()
+	if unsub != nil {
+		unsub()
+	}
 	if ch != nil {
 		c.rt.ReleaseMirror(machine, idx, ch)
 	}

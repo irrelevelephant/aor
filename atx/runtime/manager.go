@@ -24,7 +24,16 @@ type Manager struct {
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
+
+	// In-process per-machine subscribers. Used by wsClients that want a
+	// direct callback (with the fresh snapshot) instead of going through
+	// the SSE broadcast — needed so a per-tab WebSocket can react to the
+	// machine's active window changing.
+	subMu sync.Mutex
+	subs  map[string]map[*stateSub]struct{}
 }
+
+type stateSub struct{ fn func(MachineState) }
 
 func NewManager(cfg *config.Config, hub Broadcaster) *Manager {
 	m := &Manager{
@@ -43,6 +52,54 @@ func NewManager(cfg *config.Config, hub Broadcaster) *Manager {
 func (m *Manager) broadcastChange(name string) {
 	if m.hub != nil {
 		m.hub.Broadcast("atx_machine_changed", name)
+	}
+
+	m.subMu.Lock()
+	set := m.subs[name]
+	subs := make([]*stateSub, 0, len(set))
+	for s := range set {
+		subs = append(subs, s)
+	}
+	m.subMu.Unlock()
+	if len(subs) == 0 {
+		return
+	}
+
+	snap, ok := m.MachineState(name)
+	if !ok {
+		return
+	}
+	// Fan out outside the lock so a slow subscriber can't wedge updates
+	// for other machines. Subscribers are expected to be cheap (the wsClient
+	// version writes one JSON frame under its own writeMu).
+	for _, s := range subs {
+		s.fn(snap)
+	}
+}
+
+// Subscribe registers fn for in-process state-change notifications for the
+// named machine. Returns an unsubscribe function. Safe to call concurrently;
+// callbacks fire on the runtime goroutine and must not block.
+func (m *Manager) Subscribe(machine string, fn func(MachineState)) func() {
+	sub := &stateSub{fn: fn}
+	m.subMu.Lock()
+	if m.subs == nil {
+		m.subs = make(map[string]map[*stateSub]struct{})
+	}
+	if m.subs[machine] == nil {
+		m.subs[machine] = make(map[*stateSub]struct{})
+	}
+	m.subs[machine][sub] = struct{}{}
+	m.subMu.Unlock()
+	return func() {
+		m.subMu.Lock()
+		if set, ok := m.subs[machine]; ok {
+			delete(set, sub)
+			if len(set) == 0 {
+				delete(m.subs, machine)
+			}
+		}
+		m.subMu.Unlock()
 	}
 }
 

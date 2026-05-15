@@ -137,6 +137,15 @@
             } else if (msg.type === 'copy_state' && msg.payload) {
                 // Server-initiated push (e.g. on view start after CopyResync).
                 applyCopyState(msg.payload);
+            } else if (msg.type === 'active_window' && typeof msg.window === 'number') {
+                // Native tmux window switch (prefix+n / prefix+l / prefix+0..9
+                // in the user's own tmux client). Ignore while hidden — the
+                // server pushes a fresh active_window after the next `view`,
+                // so we'll snap to the latest on the way back.
+                if (document.hidden) return;
+                if (msg.machine !== view.machine) return;
+                if (msg.window === view.window) return;
+                navigateTo(msg.machine, msg.window);
             }
         };
 
