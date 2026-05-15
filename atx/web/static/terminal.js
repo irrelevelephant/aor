@@ -250,9 +250,10 @@
         dockBar();
     }
 
-    // --- window-nav arrows + machine picker ---
+    // --- header navigation: arrows, machine picker, window picker ---
 
     const MACHINE_LAST_KEY = 'atx.machineLastWindow';
+    const GLOBAL_LAST_KEY = 'atx.lastWindow';
 
     function readMachineLast() {
         try {
@@ -260,52 +261,123 @@
             return obj && typeof obj === 'object' ? obj : {};
         } catch (_) { return {}; }
     }
-    function writeMachineLast(obj) {
-        try { localStorage.setItem(MACHINE_LAST_KEY, JSON.stringify(obj)); } catch (_) {}
-    }
-    // app.js writes to atx.lastWindow only when a .window-row in the
-    // unified view is clicked; arriving here via the picker, the header
-    // arrows, swipe, a deep link, or a push notification all skip that
-    // path, so record arrival here.
-    (function () {
+    // recordLast updates both the per-machine map (for picker fallback
+    // when switching machines) and atx.lastWindow (for the unified
+    // view's last-used highlight on app.js side) — app.js's click
+    // handler only writes atx.lastWindow on .window-row clicks, so
+    // arrival via picker/arrow/swipe/deep-link/push needs to mirror it.
+    function recordLast(machine, idx) {
         const obj = readMachineLast();
-        obj[view.machine] = view.window;
-        writeMachineLast(obj);
-    })();
+        obj[machine] = idx;
+        try { localStorage.setItem(MACHINE_LAST_KEY, JSON.stringify(obj)); } catch (_) {}
+        try { localStorage.setItem(GLOBAL_LAST_KEY, JSON.stringify({ machine, window: idx })); } catch (_) {}
+    }
+    recordLast(view.machine, view.window);
 
     if (!Array.isArray(view.machines)) view.machines = [];
 
-    function currentMachineEntry() {
-        return view.machines.find((m) => m.name === view.machine);
+    function escapeHTML(s) {
+        return String(s).replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[c]));
+    }
+    function machineByName(name) {
+        return view.machines.find((m) => m.name === name);
+    }
+    function windowOf(machineName, idx) {
+        const m = machineByName(machineName);
+        return m && m.windows ? m.windows.find((w) => w.index === idx) : null;
     }
 
+    const stripeEl = document.querySelector('.terminal-stripe');
+    const machineLabelEl = document.querySelector('.terminal-machine');
+    const windowLabelEl = document.querySelector('.terminal-window-name');
+
+    function updateHeader() {
+        const m = machineByName(view.machine);
+        const w = windowOf(view.machine, view.window);
+        const display = m?.display ?? view.machine;
+        const name = w?.name ?? `w${view.window}`;
+        if (m?.color) stripeEl.style.background = m.color;
+        machineLabelEl.textContent = display;
+        windowLabelEl.textContent = name;
+        document.title = `atx — ${display} · ${view.window}${w?.name ? ' ' + w.name : ''}`;
+    }
+
+    // navigateTo is the public entry point; popstate calls applyView
+    // directly so the popped URL isn't re-pushed.
+    function applyView(machine, idx) {
+        if (machine === view.machine && idx === view.window) return;
+        view.machine = machine;
+        view.window = idx;
+        recordLast(machine, idx);
+        updateHeader();
+        for (const p of pickers) p.rerenderIfOpen();
+        // reset() rather than clear() so prior window's scrollback and
+        // parser state don't leak into the new mirror's repaint.
+        term.reset();
+        const { cols, rows } = currentSize();
+        sendJSON({ type: 'view', machine, window: idx, cols, rows });
+    }
+    function navigateTo(machine, idx) {
+        if (machine === view.machine && idx === view.window) return;
+        const url = `/atx/m/${encodeURIComponent(machine)}/w/${idx}`;
+        if (location.pathname !== url) history.pushState({}, '', url);
+        applyView(machine, idx);
+    }
+    window.addEventListener('popstate', () => {
+        const m = location.pathname.match(/^\/atx\/m\/([^\/]+)\/w\/(\d+)/);
+        if (!m) return;
+        applyView(decodeURIComponent(m[1]), Number(m[2]));
+    });
+
     function navigateDelta(delta) {
-        const m = currentMachineEntry();
+        const m = machineByName(view.machine);
         if (!m || !m.windows || m.windows.length === 0) return;
         const i = m.windows.findIndex((w) => w.index === view.window);
         if (i < 0) return;
         const n = m.windows.length;
         const next = m.windows[((i + delta) % n + n) % n];
         if (!next || next.index === view.window) return;
-        location.href = `/atx/m/${encodeURIComponent(view.machine)}/w/${next.index}`;
+        navigateTo(view.machine, next.index);
     }
-
     document.getElementById('terminal-nav-prev').addEventListener('click', () => navigateDelta(-1));
     document.getElementById('terminal-nav-next').addEventListener('click', () => navigateDelta(1));
 
-    const picker = document.getElementById('terminal-picker');
-    const popover = document.getElementById('terminal-picker-popover');
+    // --- pickers ---
 
-    function machineDestination(m) {
-        if (!m.windows || m.windows.length === 0) {
-            return `/atx/m/${encodeURIComponent(m.name)}`;
-        }
-        const last = readMachineLast()[m.name];
-        const target = m.windows.find((w) => w.index === last) || m.windows[0];
-        return `/atx/m/${encodeURIComponent(m.name)}/w/${target.index}`;
+    const pickers = [];
+    function makePicker(triggerId, popoverId, render, onSelect) {
+        const trigger = document.getElementById(triggerId);
+        const popover = document.getElementById(popoverId);
+        const p = {
+            trigger, popover,
+            get open() { return !popover.hidden; },
+            set(state) {
+                popover.hidden = !state;
+                trigger.setAttribute('aria-expanded', state ? 'true' : 'false');
+            },
+            rerenderIfOpen() { if (!popover.hidden) render(popover); },
+        };
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (p.open) { p.set(false); return; }
+            for (const o of pickers) if (o !== p) o.set(false);
+            render(popover);
+            p.set(true);
+            refreshMachines();
+        });
+        popover.addEventListener('click', (e) => {
+            const row = e.target.closest('.picker-row');
+            if (!row || row.classList.contains('is-disabled')) return;
+            p.set(false);
+            onSelect(row);
+        });
+        pickers.push(p);
+        return p;
     }
 
-    function renderPopover() {
+    function renderMachinePopover(popover) {
         if (view.machines.length === 0) {
             popover.innerHTML = '<div class="picker-empty">No machines.</div>';
             return;
@@ -321,72 +393,84 @@
                 isCurrent ? 'is-current' : '',
                 disabled ? 'is-disabled' : '',
             ].filter(Boolean).join(' ');
-            const tag = disabled ? 'div' : 'a';
-            const href = disabled ? '' : ` href="${machineDestination(m)}"`;
             parts.push(
-                `<${tag} class="${cls}"${href} role="menuitem"${disabled ? ' aria-disabled="true"' : ''}>` +
+                `<div class="${cls}" data-machine="${escapeHTML(m.name)}" role="menuitem"${disabled ? ' aria-disabled="true"' : ''}>` +
                     `<span class="picker-dot ${isCurrent ? 'picker-dot-current' : ''}" aria-hidden="true"></span>` +
                     `<span class="picker-stripe" style="background:${m.color}" aria-hidden="true"></span>` +
                     `<span class="picker-name">${escapeHTML(m.display || m.name)}</span>` +
                     `<span class="picker-count">${countLabel}</span>` +
-                `</${tag}>`
+                `</div>`
             );
         }
         popover.innerHTML = parts.join('');
     }
 
-    function escapeHTML(s) {
-        return String(s).replace(/[&<>"']/g, (c) => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-        }[c]));
+    function renderWindowPopover(popover) {
+        const m = machineByName(view.machine);
+        if (!m || !m.windows || m.windows.length === 0) {
+            popover.innerHTML = '<div class="picker-empty">No windows.</div>';
+            return;
+        }
+        const parts = [];
+        for (const w of m.windows) {
+            const isCurrent = w.index === view.window;
+            const cls = ['picker-row', isCurrent ? 'is-current' : ''].filter(Boolean).join(' ');
+            parts.push(
+                `<div class="${cls}" data-window="${w.index}" role="menuitem">` +
+                    `<span class="picker-dot ${isCurrent ? 'picker-dot-current' : ''}" aria-hidden="true"></span>` +
+                    `<span class="picker-index">${w.index}</span>` +
+                    `<span class="picker-name">${escapeHTML(w.name || '')}</span>` +
+                `</div>`
+            );
+        }
+        popover.innerHTML = parts.join('');
     }
 
-    let popoverOpen = false;
-    function setPopoverOpen(open) {
-        popoverOpen = open;
-        popover.hidden = !open;
-        picker.setAttribute('aria-expanded', open ? 'true' : 'false');
-    }
+    makePicker('terminal-picker-machine', 'terminal-picker-machine-popover',
+        renderMachinePopover, (row) => {
+            const name = row.dataset.machine;
+            const m = machineByName(name);
+            if (!m) return;
+            if (!m.windows || m.windows.length === 0) {
+                // Machine is online but has no tmux windows yet — there's
+                // nothing to attach to, so fall back to the unified view.
+                location.href = `/atx/m/${encodeURIComponent(name)}`;
+                return;
+            }
+            const last = readMachineLast()[name];
+            const target = m.windows.find((w) => w.index === last) || m.windows[0];
+            navigateTo(name, target.index);
+        });
 
+    makePicker('terminal-picker-window', 'terminal-picker-window-popover',
+        renderWindowPopover, (row) => {
+            navigateTo(view.machine, Number(row.dataset.window));
+        });
+
+    let refreshInFlight = null;
     async function refreshMachines() {
-        try {
-            const r = await fetch('/atx/api/machines', { cache: 'no-store' });
-            if (!r.ok) return;
-            const data = await r.json();
-            if (!data || !Array.isArray(data.machines)) return;
-            view.machines = data.machines;
-            if (popoverOpen) renderPopover();
-        } catch (_) { /* keep stale data */ }
+        if (refreshInFlight) return refreshInFlight;
+        refreshInFlight = (async () => {
+            try {
+                const r = await fetch('/atx/api/machines', { cache: 'no-store' });
+                if (!r.ok) return;
+                const data = await r.json();
+                if (!data || !Array.isArray(data.machines)) return;
+                view.machines = data.machines;
+                updateHeader();
+                for (const p of pickers) p.rerenderIfOpen();
+            } catch (_) { /* keep stale data */ }
+        })();
+        try { await refreshInFlight; } finally { refreshInFlight = null; }
     }
-
-    picker.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (popoverOpen) {
-            setPopoverOpen(false);
-            return;
-        }
-        renderPopover();
-        setPopoverOpen(true);
-        refreshMachines();
-    });
-
-    // Enabled rows are <a>; the default href navigates. Disabled rows
-    // are <div>s with no href.
-    popover.addEventListener('click', (e) => {
-        const row = e.target.closest('.picker-row');
-        if (!row) return;
-        if (row.classList.contains('is-disabled')) {
-            e.preventDefault();
-            return;
-        }
-        setPopoverOpen(false);
-    });
 
     document.addEventListener('click', (e) => {
-        if (!popoverOpen) return;
-        if (e.target.closest('#terminal-picker-popover')) return;
-        if (e.target.closest('#terminal-picker')) return;
-        setPopoverOpen(false);
+        if (!pickers.some((p) => p.open)) return;
+        for (const p of pickers) {
+            if (!p.open) continue;
+            if (p.popover.contains(e.target) || p.trigger.contains(e.target)) continue;
+            p.set(false);
+        }
     });
 
     // --- touch on the terminal area: vertical drag scrolls scrollback,

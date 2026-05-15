@@ -2,17 +2,25 @@
 <div class="terminal-page">
     <div class="terminal-header">
         <button class="terminal-nav" id="terminal-nav-prev" type="button" aria-label="Previous window">◀</button>
-        <div class="terminal-id">
-            <button class="terminal-picker" id="terminal-picker" type="button" aria-haspopup="true" aria-expanded="false">
-                <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
-                <span class="terminal-machine">{{.Machine.Display}}</span>
-                <span class="terminal-picker-caret" aria-hidden="true">▾</span>
-            </button>
-            <span class="terminal-sep">·</span>
-            <span class="terminal-window-name">{{.Window.Name}}</span>
+        <div class="terminal-chip">
+            <div class="terminal-chip-segment terminal-chip-machine">
+                <button class="terminal-chip-btn" id="terminal-picker-machine" type="button" aria-haspopup="true" aria-expanded="false">
+                    <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
+                    <span class="terminal-machine">{{.Machine.Display}}</span>
+                    <span class="terminal-chip-caret" aria-hidden="true">▾</span>
+                </button>
+                <div class="terminal-popover terminal-popover-machine" id="terminal-picker-machine-popover" hidden role="menu" aria-labelledby="terminal-picker-machine"></div>
+            </div>
+            <span class="terminal-chip-divider" aria-hidden="true"></span>
+            <div class="terminal-chip-segment terminal-chip-window">
+                <button class="terminal-chip-btn" id="terminal-picker-window" type="button" aria-haspopup="true" aria-expanded="false">
+                    <span class="terminal-window-name">{{.Window.Name}}</span>
+                    <span class="terminal-chip-caret" aria-hidden="true">▾</span>
+                </button>
+                <div class="terminal-popover terminal-popover-window" id="terminal-picker-window-popover" hidden role="menu" aria-labelledby="terminal-picker-window"></div>
+            </div>
         </div>
         <button class="terminal-nav" id="terminal-nav-next" type="button" aria-label="Next window">▶</button>
-        <div class="terminal-picker-popover" id="terminal-picker-popover" hidden role="menu" aria-labelledby="terminal-picker"></div>
     </div>
     <div id="terminal" class="terminal-host"></div>
     <div class="helperbar" id="helperbar">

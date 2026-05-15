@@ -123,8 +123,10 @@ func TestTemplatesRender(t *testing.T) {
 	for _, want := range []string{
 		`id="terminal-nav-prev"`,
 		`id="terminal-nav-next"`,
-		`id="terminal-picker"`,
-		`id="terminal-picker-popover"`,
+		`id="terminal-picker-machine"`,
+		`id="terminal-picker-machine-popover"`,
+		`id="terminal-picker-window"`,
+		`id="terminal-picker-window-popover"`,
 		`"name":"desktop"`,
 		`"index":1`,
 	} {
