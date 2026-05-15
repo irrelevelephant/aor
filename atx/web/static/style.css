@@ -249,7 +249,10 @@ main:has(.terminal-page) {
 .terminal-host .xterm { height: 100%; }
 
 body.has-helperbar .terminal-host {
-    padding-bottom: 56px;
+    /* Match the helper bar's own height: 4px top padding + 40px button +
+     * max(4px, safe-area). Without env() the bar's bottom inset clips the
+     * terminal on phones with a home indicator. */
+    padding-bottom: calc(44px + max(4px, env(safe-area-inset-bottom)));
 }
 
 /* --- helper bar --- */
