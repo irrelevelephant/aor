@@ -230,6 +230,9 @@
 
     if (window.visualViewport) {
         const dockBar = () => {
+            // While the compose modal covers the page, the helperbar is
+            // hidden and fit.fit() would just churn the offscreen terminal.
+            if (!promptModal.hidden) return;
             const vv = window.visualViewport;
             // Distance from layout-viewport bottom to visual-viewport bottom =
             // height of the keyboard (when shown). Move the bar up by that much.

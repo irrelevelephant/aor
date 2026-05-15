@@ -474,7 +474,7 @@ body:has(.terminal-page) > main {
     border-radius: 50%;
     background: var(--accent);
     border: none;
-    color: #0d1117;
+    color: var(--bg);
     font-size: 1.6rem;
     line-height: 1;
     cursor: pointer;
