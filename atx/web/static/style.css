@@ -492,8 +492,24 @@ body:has(.terminal-page) > main {
     min-height: 0;
     padding: 6px;
     overflow: hidden;
+    position: relative;
 }
 .terminal-host .xterm { height: 100%; }
+
+/* Optimistic copy-mode cursor overlay. Tmux also renders its own
+ * copy-mode cursor through the mirrored output, but that arrives a
+ * round-trip later than the tap — the overlay gives instant feedback at
+ * the tapped cell while we wait for the SSH-driven repaint. Outlined (not
+ * filled) so the tmux-rendered selection underneath stays visible. */
+.copy-cursor {
+    position: absolute;
+    pointer-events: none;
+    z-index: 4;
+    border: 2px solid var(--accent);
+    border-radius: 2px;
+    box-sizing: border-box;
+}
+.copy-cursor[hidden] { display: none; }
 
 /* --- helper bar ---
  * Hidden by default; shown only on coarse-pointer devices (phones,
@@ -525,11 +541,26 @@ body:has(.terminal-page) > main {
     box-shadow: 0 0 0 1px var(--accent) inset;
     color: var(--accent);
 }
-.hb-mod.locked {
+.hb-mod.locked,
+.hb-copy.is-active,
+.hb-copy-yank,
+.hb-copy-mark.is-active {
     background: var(--accent);
     border-color: var(--accent);
     color: #0d1117;
     font-weight: 600;
+}
+
+/* Default mode shows .hb-default buttons; copy mode swaps to .hb-copymode.
+ * Buttons are hidden via display:none so they leave the grid entirely (and
+ * the copy-mode 14-slot layout reuses the same grid as the 12-slot default
+ * + compose spanning). */
+.helperbar:not([data-mode="copy"]) .hb-copymode { display: none; }
+.helperbar[data-mode="copy"] .hb-default { display: none; }
+
+.hb-copy-done {
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
 @media (pointer: coarse), (max-width: 600px) {
@@ -662,3 +693,76 @@ body:has(.terminal-page) > main {
     width: 28px;
     height: 28px;
 }
+
+/* --- paste catcher (iOS Safari fallback for clipboard.readText) ---
+ * iOS Safari gates navigator.clipboard.readText behind the system Paste
+ * callout, so we open this modal, focus its contenteditable, and let the
+ * user long-press → tap Paste; the resulting `paste` event hands us the
+ * text. */
+
+.paste-catcher {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+.paste-catcher[hidden] { display: none; }
+.paste-catcher-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.paste-catcher-hint {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+}
+.paste-catcher-target {
+    min-height: 80px;
+    padding: 12px;
+    background: var(--surface);
+    border: 1px dashed var(--accent);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    outline: none;
+    white-space: pre-wrap;
+    word-break: break-all;
+    -webkit-user-select: text;
+    user-select: text;
+}
+.paste-catcher-cancel {
+    align-self: flex-end;
+    width: auto;
+    padding: 0 16px;
+}
+
+/* --- copy toast (fallback for Promise-valued ClipboardItem rejection) --- */
+
+.copy-toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(100px + max(4px, env(safe-area-inset-bottom)) + var(--helperbar-lift, 0px));
+    transform: translateX(-50%);
+    z-index: 150;
+    padding: 10px 16px;
+    background: var(--accent);
+    color: #0d1117;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.copy-toast[hidden] { display: none; }

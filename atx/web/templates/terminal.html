@@ -22,22 +22,49 @@
         </div>
         <button class="terminal-nav" id="terminal-nav-next" type="button" aria-label="Next window">▶</button>
     </div>
-    <div id="terminal" class="terminal-host"></div>
-    <div class="helperbar" id="helperbar">
-        <button class="hb-btn" data-action="key:esc">Esc</button>
-        <button class="hb-btn" data-action="key:c-o">C-o</button>
-        <button class="hb-btn hb-bigicon" data-action="key:enter">⏎</button>
-        <button class="hb-btn" data-action="key:pgup">PgUp</button>
-        <button class="hb-btn" data-action="key:up">↑</button>
-        <button class="hb-btn" data-action="key:pgdn">PgDn</button>
-        <button class="hb-btn hb-compose" data-action="compose" aria-label="Compose prompt">📝</button>
-        <button class="hb-btn" data-action="key:tab">Tab</button>
-        <button class="hb-btn hb-mod" data-action="mod:ctrl">Ctrl</button>
-        <button class="hb-btn hb-mod" data-action="mod:alt">Alt</button>
-        <button class="hb-btn" data-action="key:left">←</button>
-        <button class="hb-btn" data-action="key:down">↓</button>
-        <button class="hb-btn" data-action="key:right">→</button>
+    <div id="terminal" class="terminal-host">
+        <div class="copy-cursor" id="copy-cursor" hidden></div>
     </div>
+    <div class="helperbar" id="helperbar">
+        <!-- Default-mode buttons (hidden when [data-mode="copy"]) -->
+        <button class="hb-btn hb-default" data-action="key:esc">Esc</button>
+        <button class="hb-btn hb-default hb-copy" data-action="copy" aria-label="Copy mode">📋</button>
+        <button class="hb-btn hb-default hb-bigicon" data-action="key:enter">⏎</button>
+        <button class="hb-btn hb-default" data-action="key:pgup">PgUp</button>
+        <button class="hb-btn hb-default" data-action="key:up">↑</button>
+        <button class="hb-btn hb-default" data-action="key:pgdn">PgDn</button>
+        <button class="hb-btn hb-default hb-compose" data-action="compose" aria-label="Compose prompt">📝</button>
+        <button class="hb-btn hb-default" data-action="paste" aria-label="Paste">📥</button>
+        <button class="hb-btn hb-default hb-mod" data-action="mod:ctrl">Ctrl</button>
+        <button class="hb-btn hb-default hb-mod" data-action="mod:alt">Alt</button>
+        <button class="hb-btn hb-default" data-action="key:left">←</button>
+        <button class="hb-btn hb-default" data-action="key:down">↓</button>
+        <button class="hb-btn hb-default" data-action="key:right">→</button>
+        <!-- Copy-mode buttons (hidden unless [data-mode="copy"]) -->
+        <button class="hb-btn hb-copymode hb-copy-done" data-action="copyfn:done" aria-label="Done">Done</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:word-left" aria-label="Previous word">⇇</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:cursor-up">↑</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:word-right" aria-label="Next word">⇉</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:history-top" aria-label="Top of history">⤒</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:page-up">PgUp</button>
+        <button class="hb-btn hb-copymode hb-copy-mark" data-action="copyfn:mark" aria-label="Mark/Unmark">Mark</button>
+        <button class="hb-btn hb-copymode hb-copy-cancel" data-action="copyfn:cancel" aria-label="Cancel">✕</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:cursor-left">←</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:cursor-down">↓</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:cursor-right">→</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:history-bottom" aria-label="Bottom of history">⤓</button>
+        <button class="hb-btn hb-copymode" data-action="copyfn:page-down">PgDn</button>
+        <button class="hb-btn hb-copymode hb-copy-yank" data-action="copyfn:yank" aria-label="Yank">Yank</button>
+    </div>
+    <div class="paste-catcher" id="paste-catcher" hidden>
+        <div class="paste-catcher-box">
+            <div class="paste-catcher-hint">Long-press below, then tap <strong>Paste</strong>.</div>
+            <div class="paste-catcher-target" id="paste-catcher-target"
+                 contenteditable="true" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+            <button class="hb-btn paste-catcher-cancel" id="paste-catcher-cancel">Cancel</button>
+        </div>
+    </div>
+    <div class="copy-toast" id="copy-toast" hidden>Copied — tap to copy to clipboard</div>
     <div class="prompt-modal" id="prompt-modal" hidden>
         <div class="prompt-modal-header">
             <button class="hb-btn prompt-modal-close" id="prompt-modal-close" aria-label="Close">×</button>
