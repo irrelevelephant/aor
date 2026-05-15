@@ -146,9 +146,27 @@
         if (e.target.closest('.hb-btn')) e.preventDefault();
     }, { passive: false });
 
-    for (const btn of document.querySelectorAll('.hb-btn[data-key]')) {
+    // Resolved in JS so raw control bytes never round-trip through HTML
+    // attribute parsing.
+    const KEY_MAP = {
+        esc:   '\x1b',
+        tab:   '\t',
+        enter: '\r',
+        'c-o': '\x0f',
+        up:    '\x1b[A',
+        down:  '\x1b[B',
+        left:  '\x1b[D',
+        right: '\x1b[C',
+        home:  '\x1bOH',
+        end:   '\x1bOF',
+        pgup:  '\x1b[5~',
+        pgdn:  '\x1b[6~',
+    };
+
+    for (const btn of document.querySelectorAll('.hb-btn[data-keyname]')) {
+        const seq = KEY_MAP[btn.dataset.keyname];
         btn.addEventListener('click', () => {
-            sendBytes(applyModifiers(btn.dataset.key));
+            sendBytes(applyModifiers(seq));
             term.focus();
         });
     }
@@ -162,21 +180,6 @@
             term.focus();
         });
     }
-
-    const switchBtn = document.getElementById('hb-tab-switch');
-    const TAB_PREF_KEY = 'atx.helperbar.tab';
-    function showTab(name) {
-        for (const row of document.querySelectorAll('.helperbar-row')) {
-            row.hidden = row.dataset.tab !== name;
-        }
-        localStorage.setItem(TAB_PREF_KEY, name);
-    }
-    showTab(localStorage.getItem(TAB_PREF_KEY) || 'keys');
-    switchBtn.addEventListener('click', () => {
-        const visible = document.querySelector('.helperbar-row:not([hidden])');
-        showTab(visible && visible.dataset.tab === 'keys' ? 'actions' : 'keys');
-        term.focus();
-    });
 
     // --- visualViewport docking: keep the helper bar above the soft keyboard ---
 

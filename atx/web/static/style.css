@@ -359,7 +359,7 @@ body:has(.terminal-page) > main {
 /* When the server-rendered helper bar is present (mobile UA), reserve
  * space for it so it doesn't clip the bottom of the xterm content. */
 body:has(.helperbar) .terminal-host {
-    padding-bottom: calc(44px + max(4px, env(safe-area-inset-bottom)));
+    padding-bottom: calc(87px + max(4px, env(safe-area-inset-bottom)));
 }
 
 /* --- helper bar --- */
@@ -370,8 +370,8 @@ body:has(.helperbar) .terminal-host {
     right: 0;
     bottom: 0;
     display: flex;
-    align-items: stretch;
-    gap: 4px;
+    flex-direction: column;
+    gap: 3px;
     padding: 4px;
     padding-bottom: max(4px, env(safe-area-inset-bottom));
     background: var(--surface);
@@ -383,11 +383,9 @@ body:has(.helperbar) .terminal-host {
 
 .helperbar-row {
     display: flex;
-    flex: 1;
     gap: 3px;
     min-width: 0;
 }
-.helperbar-row[hidden] { display: none; }
 
 .hb-btn {
     flex: 1;
@@ -418,12 +416,6 @@ body:has(.helperbar) .terminal-host {
     border-color: var(--accent);
     color: #0d1117;
     font-weight: 600;
-}
-
-.hb-tab-switch {
-    flex: 0 0 36px;
-    width: 36px;
-    font-size: 1rem;
 }
 
 /* --- iOS install hint --- */

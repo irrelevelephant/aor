@@ -11,27 +11,24 @@
     <div id="terminal" class="terminal-host"></div>
     {{if .IsMobile}}
     <div class="helperbar" id="helperbar">
-        <div class="helperbar-row" data-tab="keys">
-            <button class="hb-btn" data-key="">Esc</button>
-            <button class="hb-btn" data-key="\t">Tab</button>
+        <div class="helperbar-row">
+            <button class="hb-btn" data-keyname="esc">Esc</button>
+            <button class="hb-btn" data-keyname="c-o">C-o</button>
+            <button class="hb-btn" data-keyname="enter">↵</button>
+            <button class="hb-btn" data-keyname="home">Home</button>
+            <button class="hb-btn" data-keyname="up">↑</button>
+            <button class="hb-btn" data-keyname="end">End</button>
+            <button class="hb-btn" data-keyname="pgup">PgUp</button>
+        </div>
+        <div class="helperbar-row">
+            <button class="hb-btn" data-keyname="tab">Tab</button>
             <button class="hb-btn hb-mod" data-mod="ctrl">Ctrl</button>
             <button class="hb-btn hb-mod" data-mod="alt">Alt</button>
-            <button class="hb-btn" data-key="">C-b</button>
-            <button class="hb-btn" data-key="[A">↑</button>
-            <button class="hb-btn" data-key="[B">↓</button>
-            <button class="hb-btn" data-key="[D">←</button>
-            <button class="hb-btn" data-key="[C">→</button>
+            <button class="hb-btn" data-keyname="left">←</button>
+            <button class="hb-btn" data-keyname="down">↓</button>
+            <button class="hb-btn" data-keyname="right">→</button>
+            <button class="hb-btn" data-keyname="pgdn">PgDn</button>
         </div>
-        <div class="helperbar-row" data-tab="actions" hidden>
-            <button class="hb-btn" data-key="y\r">Y↵</button>
-            <button class="hb-btn" data-key="n\r">N↵</button>
-            <button class="hb-btn" data-key="1\r">1↵</button>
-            <button class="hb-btn" data-key="2\r">2↵</button>
-            <button class="hb-btn" data-key="">⌃C</button>
-            <button class="hb-btn" data-key="">⌃D</button>
-            <button class="hb-btn" data-key="\r">↵</button>
-        </div>
-        <button class="hb-btn hb-tab-switch" id="hb-tab-switch" aria-label="Switch helper-bar tab">⇄</button>
     </div>
     {{end}}
     <div class="ios-install-banner" id="ios-install-banner" hidden>
