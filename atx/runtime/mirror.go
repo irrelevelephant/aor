@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -43,6 +44,13 @@ type Mirror struct {
 	subscribers map[chan []byte]struct{}
 	recent      []byte
 	dead        bool
+
+	// Suppress dispatch during teardown. `tmux attach` emits
+	// `\x1b[?1049l` (leave alt-screen) when its tty closes; without this
+	// flag those bytes race through to xterm.js after Stop() is called,
+	// putting the browser back on the (empty) normal screen and looking
+	// like the terminal blanked.
+	stopped atomic.Bool
 }
 
 func newMirror(machineName string, windowIdx int, tmuxSession string, client *ssh.Client) *Mirror {
@@ -187,6 +195,9 @@ func (m *Mirror) readLoop(ctx context.Context, session *ssh.Session, stdout io.R
 }
 
 func (m *Mirror) dispatch(data []byte) {
+	if m.stopped.Load() {
+		return
+	}
 	cp := append([]byte(nil), data...)
 	m.mu.Lock()
 	m.recent = append(m.recent, cp...)
@@ -247,6 +258,7 @@ func (m *Mirror) Unsubscribe(ch chan []byte, onLast func()) {
 
 // Stop tears down the mirror immediately, regardless of viewer count.
 func (m *Mirror) Stop() {
+	m.stopped.Store(true)
 	if m.cancel != nil {
 		m.cancel()
 	}

@@ -22,11 +22,21 @@
     const fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(document.getElementById('terminal'));
-    fit.fit();
     term.focus();
 
+    // fit-addon needs the container measured. Run on the next frame to be
+    // sure flex layout has settled, then once more after a beat in case
+    // visualViewport or the helper bar adjusts things.
+    function safeFit() {
+        try { fit.fit(); } catch (_) {}
+    }
+    requestAnimationFrame(safeFit);
+    setTimeout(safeFit, 50);
+
     function currentSize() {
-        return { cols: term.cols || 80, rows: term.rows || 24 };
+        const cols = Math.max(40, term.cols || 80);
+        const rows = Math.max(10, term.rows || 24);
+        return { cols, rows };
     }
     let resizeTimer = null;
     window.addEventListener('resize', () => {
