@@ -99,7 +99,7 @@
 
     function setMod(name, next) {
         modState[name] = next;
-        for (const btn of document.querySelectorAll(`.hb-mod[data-mod="${name}"]`)) {
+        for (const btn of document.querySelectorAll(`[data-action="mod:${name}"]`)) {
             btn.classList.toggle('armed', next === 'armed');
             btn.classList.toggle('locked', next === 'locked');
         }
@@ -155,18 +155,21 @@
     };
 
     function activateHbBtn(btn) {
-        if (btn.dataset.action === 'compose') {
+        const action = btn.dataset.action;
+        if (action === 'compose') {
             openPromptModal();
             return;
         }
-        if (btn.classList.contains('hb-mod')) {
-            const name = btn.dataset.mod;
+        const sep = action.indexOf(':');
+        const kind = action.slice(0, sep);
+        const name = action.slice(sep + 1);
+        if (kind === 'mod') {
             const cur = modState[name];
             // Tap cycle: idle → armed → locked → idle.
             const next = cur === 'idle' ? 'armed' : cur === 'armed' ? 'locked' : 'idle';
             setMod(name, next);
         } else {
-            sendBytes(applyModifiers(KEY_MAP[btn.dataset.keyname]));
+            sendBytes(applyModifiers(KEY_MAP[name]));
         }
         term.focus();
     }

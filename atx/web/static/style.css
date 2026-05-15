@@ -431,20 +431,15 @@ body:has(.terminal-page) > main {
     padding: 8px;
     padding-top: max(8px, env(safe-area-inset-top));
 }
+/* The close button reuses .hb-btn for chrome (40px height, surface bg,
+ * border, :active swap); these rules only override its width and the
+ * glyph sizing. */
 .prompt-modal-close {
     width: 40px;
-    height: 40px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
     font-size: 1.5rem;
     line-height: 1;
     padding: 0;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
 }
-.prompt-modal-close:active { background: var(--border); }
 
 .prompt-modal-textarea {
     flex: 1;

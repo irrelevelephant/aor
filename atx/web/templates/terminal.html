@@ -10,23 +10,23 @@
     </div>
     <div id="terminal" class="terminal-host"></div>
     <div class="helperbar" id="helperbar">
-        <button class="hb-btn" data-keyname="esc">Esc</button>
-        <button class="hb-btn" data-keyname="c-o">C-o</button>
-        <button class="hb-btn hb-bigicon" data-keyname="enter">⏎</button>
-        <button class="hb-btn" data-keyname="pgup">PgUp</button>
-        <button class="hb-btn" data-keyname="up">↑</button>
-        <button class="hb-btn" data-keyname="pgdn">PgDn</button>
+        <button class="hb-btn" data-action="key:esc">Esc</button>
+        <button class="hb-btn" data-action="key:c-o">C-o</button>
+        <button class="hb-btn hb-bigicon" data-action="key:enter">⏎</button>
+        <button class="hb-btn" data-action="key:pgup">PgUp</button>
+        <button class="hb-btn" data-action="key:up">↑</button>
+        <button class="hb-btn" data-action="key:pgdn">PgDn</button>
         <button class="hb-btn hb-compose" data-action="compose" aria-label="Compose prompt">📝</button>
-        <button class="hb-btn" data-keyname="tab">Tab</button>
-        <button class="hb-btn hb-mod" data-mod="ctrl">Ctrl</button>
-        <button class="hb-btn hb-mod" data-mod="alt">Alt</button>
-        <button class="hb-btn" data-keyname="left">←</button>
-        <button class="hb-btn" data-keyname="down">↓</button>
-        <button class="hb-btn" data-keyname="right">→</button>
+        <button class="hb-btn" data-action="key:tab">Tab</button>
+        <button class="hb-btn hb-mod" data-action="mod:ctrl">Ctrl</button>
+        <button class="hb-btn hb-mod" data-action="mod:alt">Alt</button>
+        <button class="hb-btn" data-action="key:left">←</button>
+        <button class="hb-btn" data-action="key:down">↓</button>
+        <button class="hb-btn" data-action="key:right">→</button>
     </div>
     <div class="prompt-modal" id="prompt-modal" hidden>
         <div class="prompt-modal-header">
-            <button class="prompt-modal-close" id="prompt-modal-close" aria-label="Close">×</button>
+            <button class="hb-btn prompt-modal-close" id="prompt-modal-close" aria-label="Close">×</button>
         </div>
         <textarea class="prompt-modal-textarea" id="prompt-modal-textarea"
                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
