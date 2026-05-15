@@ -172,7 +172,7 @@ func notificationBody(ev hookEvent) string {
 
 func notificationURL(ev hookEvent) string {
 	if ev.WindowIndex == "" {
-		return fmt.Sprintf("/atx/m/%s", ev.Machine)
+		return fmt.Sprintf("/atx/#m-%s", ev.Machine)
 	}
 	return fmt.Sprintf("/atx/m/%s/w/%s", ev.Machine, ev.WindowIndex)
 }

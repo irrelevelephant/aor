@@ -63,7 +63,6 @@ type MachineView struct {
 type WindowView struct {
 	Index        int
 	Name         string
-	Active       bool
 	LastActivity string
 }
 

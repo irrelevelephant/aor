@@ -240,13 +240,6 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
     vertical-align: middle;
 }
 
-.breadcrumb {
-    font-size: 0.9rem;
-    color: var(--text-dim);
-    margin-bottom: 1rem;
-}
-.breadcrumb a { color: var(--text-dim); }
-
 .empty-state {
     text-align: center;
     padding: 3rem 1rem;
