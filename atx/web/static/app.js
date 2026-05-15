@@ -22,7 +22,16 @@
                 const doc = new DOMParser().parseFromString(html, 'text/html');
                 const fresh = doc.getElementById(MAIN_ID);
                 const current = document.getElementById(MAIN_ID);
-                if (fresh && current) current.innerHTML = fresh.innerHTML;
+                if (!fresh || !current) return;
+                current.innerHTML = fresh.innerHTML;
+                // The server always renders collapsed; restore the
+                // per-user expand state on top of the fresh DOM (the
+                // inline pre-paint script in machines.html doesn't
+                // re-run for innerHTML-injected content).
+                if (document.querySelector('.machine-list')) {
+                    applyExpandedFromStorage();
+                    syncExpandAllButton();
+                }
             } catch (_) {
                 // Ignore — the next event will retry.
             }
@@ -126,9 +135,10 @@
 
     // --- unified machine nav (root view) ---
     // Header click toggles a machine's window list. First-time expand
-    // lazy-fetches windows via the JSON API. Expanded set is persisted to
-    // both localStorage (for the JS to read after innerHTML refresh) and
-    // a cookie (so the server can eager-render those machines next load).
+    // lazy-fetches windows via the API. Expanded set is persisted to
+    // localStorage; the inline script in machines.html restores
+    // attributes before first paint, and onReady fires the lazy-load
+    // for those restored machines.
 
     const EXPANDED_KEY = 'atx.expanded';
     const LAST_WINDOW_KEY = 'atx.lastWindow';
@@ -141,13 +151,7 @@
     }
 
     function writeExpanded(set) {
-        const arr = Array.from(set);
-        try { localStorage.setItem(EXPANDED_KEY, JSON.stringify(arr)); } catch (_) {}
-        // Encode each name individually so the comma stays a real delimiter
-        // — encodeURIComponent on the whole joined string would turn the
-        // separators into %2C and collapse the list into one opaque key.
-        document.cookie = 'atx_expanded=' + arr.map(encodeURIComponent).join(',') +
-            '; path=/atx/; max-age=31536000; samesite=lax';
+        try { localStorage.setItem(EXPANDED_KEY, JSON.stringify(Array.from(set))); } catch (_) {}
     }
 
     async function loadWindows(machine, container) {
@@ -211,6 +215,15 @@
         const label = open ? 'Collapse all' : 'Expand all';
         btn.setAttribute('aria-label', label);
         btn.title = label;
+        btn.textContent = open ? '▼' : '▶';
+    }
+
+    function applyExpandedFromStorage() {
+        const set = readExpanded();
+        for (const li of allMachines()) {
+            if (!set.has(li.dataset.machine)) continue;
+            setMachineExpanded(li, true);
+        }
     }
 
     function setAllExpanded(expand) {
@@ -256,6 +269,10 @@
         ensurePushSubscription();
         syncPushToggleButton();
         if (document.querySelector('.machine-list')) {
+            // The inline script in machines.html marks pre-paint
+            // attributes; this call is mostly a no-op for those but
+            // fires the lazy-load for each previously-expanded machine.
+            applyExpandedFromStorage();
             highlightLastWindow();
             syncExpandAllButton();
         }

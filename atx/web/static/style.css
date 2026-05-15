@@ -139,15 +139,14 @@ h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--text-dim); }
 
 .machine-chevron {
     display: inline-block;
-    width: 0;
-    height: 0;
-    border-top: 5px solid transparent;
-    border-bottom: 5px solid transparent;
-    border-left: 6px solid var(--text-dim);
+    width: 1em;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    line-height: 1;
     flex-shrink: 0;
-    transition: transform 0.12s ease;
 }
-.machine[data-expanded="1"] .machine-chevron { transform: rotate(90deg); }
+.machine-chevron::before { content: '▶'; }
+.machine[data-expanded="1"] .machine-chevron::before { content: '▼'; }
 
 .machine-stripe {
     width: 4px;

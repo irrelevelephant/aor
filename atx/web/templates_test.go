@@ -30,12 +30,7 @@ func TestTemplatesRender(t *testing.T) {
 	machinesData := map[string]any{
 		"Title": "machines",
 		"Machines": []MachineView{
-			{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true, WindowCount: 3, LastActivity: "live",
-				Expanded: true, Windows: []WindowView{
-					{Index: 1, Name: "editor", Notified: "2m"},
-					{Index: 2, Name: "server", Notified: "14s"},
-					{Index: 3, Name: "idle"},
-				}},
+			{Name: "desktop", Display: "desktop", Color: "#58a6ff", Online: true, WindowCount: 3, LastActivity: "live"},
 			{Name: "laptop", Display: "laptop", Color: "#3fb950", Online: true, WindowCount: 0, LastActivity: "no windows"},
 			{Name: "oldserver", Display: "oldserver", Color: "#f85149", Online: false, WindowCount: 0, LastActivity: "offline"},
 		},
@@ -48,22 +43,29 @@ func TestTemplatesRender(t *testing.T) {
 	machinesOut := buf.String()
 	for _, want := range []string{
 		`id="m-desktop"`,
-		`data-expanded="1"`,
-		`aria-expanded="true"`,
-		`href="/atx/m/desktop/w/1"`,
+		`id="w-desktop"`,
 		`class="offline-divider"`,
 		`machine-offline`,
 		`aria-expanded="false"`,
 		`id="expand-all"`,
+		`localStorage.getItem('atx.expanded')`,
 	} {
 		if !strings.Contains(machinesOut, want) {
 			t.Errorf("rendered machines.html missing %q", want)
 		}
 	}
-	// Windows with a recorded notification get a window-activity chip;
-	// the third window has no Notified field and must render no chip.
-	if got := strings.Count(machinesOut, `class="window-activity"`); got != 2 {
-		t.Errorf("expected 2 window-activity chips (one per notified window), got %d", got)
+	// Server render is always collapsed; expanded state and window content
+	// are applied client-side via the inline restore script and lazy-load.
+	for _, unwant := range []string{
+		`data-expanded="1"`,
+		`aria-expanded="true"`,
+		`data-loaded="1"`,
+		`class="window-list"`,
+		`class="window-activity"`,
+	} {
+		if strings.Contains(machinesOut, unwant) {
+			t.Errorf("server render should not contain %q", unwant)
+		}
 	}
 
 	// Empty-machines render should NOT include the expand-all button.

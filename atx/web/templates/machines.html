@@ -19,27 +19,44 @@
 <div class="machines-header">
     <h1>machines</h1>
     {{if .Machines}}
-    <button id="expand-all" class="expand-all-toggle" type="button" aria-label="Expand all" title="Expand all">⇅</button>
+    <button id="expand-all" class="expand-all-toggle" type="button" aria-label="Expand all" title="Expand all">▶</button>
     {{end}}
 </div>
 {{if .Machines}}
 <ul class="machine-list">
     {{range $i, $m := .Machines}}
     {{if eq $i $.OfflineStart}}<li class="offline-divider">offline</li>{{end}}
-    <li class="machine{{if not $m.Online}} machine-offline{{end}}" id="m-{{$m.Name}}" data-machine="{{$m.Name}}"{{if $m.Expanded}} data-expanded="1"{{end}}>
-        <button class="machine-header" type="button" aria-expanded="{{if $m.Expanded}}true{{else}}false{{end}}" aria-controls="w-{{$m.Name}}">
+    <li class="machine{{if not $m.Online}} machine-offline{{end}}" id="m-{{$m.Name}}" data-machine="{{$m.Name}}">
+        <button class="machine-header" type="button" aria-expanded="false" aria-controls="w-{{$m.Name}}">
             <span class="machine-chevron" aria-hidden="true"></span>
             <span class="machine-stripe" style="background: {{$m.Color}}"></span>
             <span class="machine-name">{{$m.Display}}</span>
             <span class="machine-dot {{if $m.Online}}dot-online{{else}}dot-offline{{end}}" aria-hidden="true"></span>
             <span class="machine-meta">{{$m.WindowCount}} window{{if ne $m.WindowCount 1}}s{{end}} · {{$m.LastActivity}}</span>
         </button>
-        <div class="machine-windows" id="w-{{$m.Name}}"{{if not $m.Expanded}} hidden{{end}}{{if $m.Expanded}} data-loaded="1"{{end}}>
-            {{if $m.Expanded}}{{template "window-list" $m}}{{end}}
-        </div>
+        <div class="machine-windows" id="w-{{$m.Name}}" hidden></div>
     </li>
     {{end}}
 </ul>
+<script>
+// Restore expand state from localStorage before first paint, mirroring
+// ata/web/templates/layout.html. Regex guards against XSS from a
+// crafted localStorage value.
+(function(){try{
+    var arr = JSON.parse(localStorage.getItem('atx.expanded'));
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(name){
+        if (typeof name !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(name)) return;
+        var li = document.getElementById('m-' + name);
+        if (!li) return;
+        li.dataset.expanded = '1';
+        var btn = li.querySelector('.machine-header');
+        if (btn) btn.setAttribute('aria-expanded', 'true');
+        var win = document.getElementById('w-' + name);
+        if (win) win.removeAttribute('hidden');
+    });
+}catch(e){}})();
+</script>
 {{else}}
 <div class="empty-state">
     <p>No machines configured.</p>

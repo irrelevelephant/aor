@@ -56,8 +56,11 @@ type MachineView struct {
 	Online       bool
 	WindowCount  int
 	LastActivity string
-	Expanded     bool
-	Windows      []WindowView
+	// Windows is only populated when this view is passed to the
+	// "window-list" template block (e.g. by handleMachineWindowsAPI);
+	// the unified-view list render leaves it nil and lets the client
+	// lazy-fetch via the API on expand.
+	Windows []WindowView
 }
 
 type WindowView struct {
@@ -142,7 +145,7 @@ func (s *Server) render(w http.ResponseWriter, page string, data any) {
 }
 
 func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
-	machines, offlineStart := s.machineListView(parseExpandedCookie(r))
+	machines, offlineStart := s.machineListView()
 	s.render(w, "machines.html", map[string]any{
 		"Title":        "machines",
 		"Machines":     machines,
@@ -270,10 +273,10 @@ func (s *Server) windowViews(state runtime.MachineState) []WindowView {
 }
 
 // machineListView returns machines ordered online-first, offline-after
-// (config order preserved within each group), with Windows populated for
-// names in the expanded set. offlineStart is the index of the first
-// offline machine, or len(out) if none.
-func (s *Server) machineListView(expanded map[string]bool) ([]MachineView, int) {
+// (config order preserved within each group). offlineStart is the index
+// of the first offline machine, or len(out) if none. Windows are not
+// populated — the client lazy-fetches per machine via the API on expand.
+func (s *Server) machineListView() ([]MachineView, int) {
 	if s.rt == nil {
 		out := make([]MachineView, 0, len(s.cfg.Machines))
 		for _, m := range s.cfg.Machines {
@@ -293,10 +296,6 @@ func (s *Server) machineListView(expanded map[string]bool) ([]MachineView, int) 
 			WindowCount:  len(st.Windows),
 			LastActivity: machineActivity(st),
 		}
-		if expanded[st.Name] {
-			mv.Expanded = true
-			mv.Windows = s.windowViews(st)
-		}
 		if st.Online {
 			online = append(online, mv)
 		} else {
@@ -304,22 +303,6 @@ func (s *Server) machineListView(expanded map[string]bool) ([]MachineView, int) 
 		}
 	}
 	return append(online, offline...), len(online)
-}
-
-func parseExpandedCookie(r *http.Request) map[string]bool {
-	c, err := r.Cookie("atx_expanded")
-	if err != nil {
-		return nil
-	}
-	out := make(map[string]bool)
-	for _, n := range strings.Split(c.Value, ",") {
-		name, err := url.QueryUnescape(n)
-		if err != nil || name == "" {
-			continue
-		}
-		out[name] = true
-	}
-	return out
 }
 
 func (s *Server) machineState(name string) (runtime.MachineState, bool) {
