@@ -41,6 +41,7 @@
     let resizeTimer = null;
     window.addEventListener('resize', () => {
         fit.fit();
+        positionCopyCursor();
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
             const { cols, rows } = currentSize();
@@ -75,21 +76,57 @@
         pending = [];
     };
 
+    // Pending WS request → resolver, keyed by reqId. The copy/paste protocol
+    // is request/reply: each `copy_*` or `paste_clipboard` message has a
+    // generated reqId; the server's reply (copy_state / copied / pasted /
+    // error) carries the same reqId and resolves the pending promise.
+    const pendingReqs = new Map();
+    let reqCounter = 0;
+    function wsRequest(type, payload) {
+        const reqId = 'r' + (++reqCounter);
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                if (pendingReqs.has(reqId)) {
+                    pendingReqs.delete(reqId);
+                    reject(new Error('timeout'));
+                }
+            }, 10000);
+            pendingReqs.set(reqId, {
+                resolve: (v) => { clearTimeout(timer); resolve(v); },
+                reject: (e) => { clearTimeout(timer); reject(e); },
+            });
+            sendJSON({ type, reqId, payload });
+        });
+    }
+
     ws.onmessage = (e) => {
         if (e.data instanceof ArrayBuffer) {
             term.write(new Uint8Array(e.data));
-        } else if (typeof e.data === 'string') {
-            try {
-                const msg = JSON.parse(e.data);
-                if (msg.type === 'error' && msg.error) {
-                    term.write('\r\n\x1b[31matx: ' + msg.error + '\x1b[0m\r\n');
-                }
-            } catch (_) { /* ignore */ }
+            return;
+        }
+        if (typeof e.data !== 'string') return;
+        let msg;
+        try { msg = JSON.parse(e.data); } catch (_) { return; }
+        // Reply correlation first; broadcasts (no reqId) fall through.
+        if (msg.reqId && pendingReqs.has(msg.reqId)) {
+            const p = pendingReqs.get(msg.reqId);
+            pendingReqs.delete(msg.reqId);
+            if (msg.type === 'error') p.reject(new Error(msg.error || 'error'));
+            else p.resolve(msg.payload);
+            return;
+        }
+        if (msg.type === 'error' && msg.error) {
+            term.write('\r\n\x1b[31matx: ' + msg.error + '\x1b[0m\r\n');
+        } else if (msg.type === 'copy_state' && msg.payload) {
+            // Server-initiated push (e.g. on view start after CopyResync).
+            applyCopyState(msg.payload);
         }
     };
 
     ws.onclose = () => {
         connected = false;
+        for (const p of pendingReqs.values()) p.reject(new Error('disconnected'));
+        pendingReqs.clear();
         term.write('\r\n\x1b[33matx: connection closed\x1b[0m\r\n');
     };
 
@@ -141,7 +178,6 @@
     // attribute parsing.
     const KEY_MAP = {
         esc:   '\x1b',
-        tab:   '\t',
         enter: '\r',
         'c-o': '\x0f',
         up:    '\x1b[A',
@@ -156,8 +192,11 @@
 
     function activateHbBtn(btn) {
         const action = btn.dataset.action;
-        if (action === 'compose') {
-            openPromptModal();
+        if (action === 'compose') { openPromptModal(); return; }
+        if (action === 'copy')    { enterCopyMode(); return; }
+        if (action === 'paste')   { pasteAction(); return; }
+        if (action.startsWith('copyfn:')) {
+            handleCopyFn(action.slice('copyfn:'.length));
             return;
         }
         const sep = action.indexOf(':');
@@ -194,6 +233,285 @@
     helperbar.addEventListener('pointerup', (e) => maybeFire(e.target.closest('.hb-btn')));
     helperbar.addEventListener('touchend', (e) => maybeFire(e.target.closest('.hb-btn')));
     helperbar.addEventListener('click', (e) => maybeFire(e.target.closest('.hb-btn')));
+
+    // --- copy mode ---
+    //
+    // Driven by tmux server-side: tap 📋, the server runs `tmux copy-mode`
+    // and reports the cursor (`copy_cursor_x/y` via display-message). The
+    // helper bar morphs (data-mode="copy") to motion/mark/yank controls.
+    // Touch on .terminal-host becomes tap-to-position / drag-to-extend.
+    //
+    // Cursor is tracked by the server: every gesture's response includes
+    // the post-action cursor, which we cache here and pass back as the
+    // next gesture's `from` (server computes deltas). We never dead-reckon.
+
+    let copyState = null;        // { inMode, row, col, width, height }
+    let marking = false;         // whether `begin-selection` is active
+    let dragPhase = 'none';      // 'none' | 'initializing' | 'extending'
+    let touchStartCell = null;   // {row, col} at touchstart, in copy mode
+    let pendingMoveTarget = null;
+    let moveInFlight = false;
+    // Cached cell geometry for the lifetime of one drag gesture. Without
+    // this, every touchmove + every reply re-runs getBoundingClientRect,
+    // forcing layout 3× per round-trip at 60Hz.
+    let dragGeom = null;         // { xtRect, hostRect, cellW, cellH }
+    const DRAG_SLOP_PX = 8;
+
+    function emptyCopyState() {
+        return { inMode: false, row: 0, col: 0, width: 0, height: 0 };
+    }
+
+    function cellGeom() {
+        const xtRect = term.element.getBoundingClientRect();
+        const hostRect = swipeTarget.getBoundingClientRect();
+        return {
+            xtRect, hostRect,
+            cellW: xtRect.width / Math.max(1, term.cols),
+            cellH: xtRect.height / Math.max(1, term.rows),
+        };
+    }
+
+    const copyButton = document.querySelector('.hb-copy');
+    const markButton = document.querySelector('.hb-copy-mark');
+    const copyCursorEl = document.getElementById('copy-cursor');
+    const copyToastEl = document.getElementById('copy-toast');
+    const pasteCatcherEl = document.getElementById('paste-catcher');
+    const pasteCatcherTarget = document.getElementById('paste-catcher-target');
+    const pasteCatcherCancel = document.getElementById('paste-catcher-cancel');
+
+    function applyCopyState(state) {
+        const next = state || emptyCopyState();
+        // No-op early-return: during a drag the server replies at ~10Hz
+        // and most replies land in the same cell. Setting attributes /
+        // re-styling the cursor div every time forces a layout per reply.
+        if (copyState &&
+            copyState.inMode === next.inMode &&
+            copyState.row === next.row &&
+            copyState.col === next.col &&
+            copyState.width === next.width &&
+            copyState.height === next.height) {
+            return;
+        }
+        const wasInMode = copyState && copyState.inMode;
+        copyState = next;
+        if (copyState.inMode) {
+            if (!wasInMode) helperbar.setAttribute('data-mode', 'copy');
+            if (copyButton) copyButton.classList.add('is-active');
+        } else {
+            helperbar.removeAttribute('data-mode');
+            if (copyButton) copyButton.classList.remove('is-active');
+            if (markButton) markButton.classList.remove('is-active');
+            marking = false;
+            dragPhase = 'none';
+        }
+        positionCopyCursor();
+    }
+
+    function positionCopyCursor() {
+        if (!copyState || !copyState.inMode) {
+            copyCursorEl.hidden = true;
+            return;
+        }
+        const g = dragGeom || cellGeom();
+        copyCursorEl.style.left = (g.xtRect.left - g.hostRect.left + copyState.col * g.cellW) + 'px';
+        copyCursorEl.style.top = (g.xtRect.top - g.hostRect.top + copyState.row * g.cellH) + 'px';
+        copyCursorEl.style.width = g.cellW + 'px';
+        copyCursorEl.style.height = g.cellH + 'px';
+        copyCursorEl.hidden = false;
+    }
+
+    function touchToCell(t) {
+        const g = dragGeom || cellGeom();
+        const col = Math.max(0, Math.min(term.cols - 1, Math.floor((t.clientX - g.xtRect.left) / g.cellW)));
+        const row = Math.max(0, Math.min(term.rows - 1, Math.floor((t.clientY - g.xtRect.top) / g.cellH)));
+        return { row, col };
+    }
+
+    function enterCopyMode() {
+        wsRequest('copy_enter', {}).then((st) => {
+            marking = false;
+            if (markButton) markButton.classList.remove('is-active');
+            applyCopyState(st);
+        }).catch((e) => console.warn('atx: enter copy:', e));
+    }
+
+    // Single-flight copy_move: one in-flight at a time, with the most recent
+    // target queued. After each reply the next move uses the freshly-updated
+    // server cursor as `from`, so deltas stay correct even if the user is
+    // dragging faster than the SSH round-trip.
+    function scheduleMove(target) {
+        pendingMoveTarget = target;
+        if (moveInFlight) return;
+        pumpMove();
+    }
+    function pumpMove() {
+        if (!pendingMoveTarget || !copyState || !copyState.inMode) return;
+        const target = pendingMoveTarget;
+        pendingMoveTarget = null;
+        moveInFlight = true;
+        wsRequest('copy_move', {
+            fromRow: copyState.row, fromCol: copyState.col,
+            toRow: target.row, toCol: target.col,
+        }).then(applyCopyState).catch((e) => {
+            console.warn('atx: copy_move:', e);
+        }).finally(() => {
+            moveInFlight = false;
+            pumpMove();
+        });
+    }
+
+    async function initDrag(start) {
+        dragPhase = 'initializing';
+        try {
+            let st = await wsRequest('copy_move', {
+                fromRow: copyState.row, fromCol: copyState.col,
+                toRow: start.row, toCol: start.col,
+            });
+            applyCopyState(st);
+            st = await wsRequest('copy_action', { name: 'begin-selection', count: 1 });
+            applyCopyState(st);
+            marking = true;
+            if (markButton) markButton.classList.add('is-active');
+            dragPhase = 'extending';
+            // touchmove may have stored a later target; flush it.
+            if (pendingMoveTarget) pumpMove();
+        } catch (e) {
+            console.warn('atx: drag init:', e);
+            dragPhase = 'none';
+        }
+    }
+
+    function handleCopyFn(name) {
+        if (!copyState || !copyState.inMode) return;
+        if (name === 'yank') { yankAction(); return; }
+        if (name === 'done' || name === 'cancel') {
+            wsRequest('copy_cancel', {}).then((st) => {
+                marking = false;
+                if (markButton) markButton.classList.remove('is-active');
+                applyCopyState(st);
+            }).catch((e) => console.warn('atx: cancel:', e));
+            return;
+        }
+        if (name === 'mark') {
+            const act = marking ? 'clear-selection' : 'begin-selection';
+            marking = !marking;
+            if (markButton) markButton.classList.toggle('is-active', marking);
+            wsRequest('copy_action', { name: act, count: 1 })
+                .then(applyCopyState).catch((e) => console.warn('atx: mark:', e));
+            return;
+        }
+        const motion = name === 'word-left' ? 'previous-word'
+                     : name === 'word-right' ? 'next-word'
+                     : name;
+        wsRequest('copy_action', { name: motion, count: 1 })
+            .then(applyCopyState).catch((e) => console.warn('atx:', name, e));
+    }
+
+    // Yank — synchronously initiate the OS-clipboard write inside the user
+    // gesture (here, the tap that triggered activateHbBtn). Use a
+    // Promise-valued ClipboardItem so Safari extends transient activation
+    // until the WS round-trip completes. On rejection, fall back to a toast
+    // the user can tap to copy inside a fresh gesture.
+    function yankAction() {
+        let resolveText;
+        const textPromise = new Promise((r) => { resolveText = r; });
+        wsRequest('copy_yank', {}).then((p) => {
+            const text = (p && p.text) || '';
+            resolveText(text);
+            // Yank-and-cancel exited copy mode server-side.
+            applyCopyState(emptyCopyState());
+        }).catch((e) => {
+            console.warn('atx: yank:', e);
+            resolveText('');
+        });
+
+        if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+            const blobPromise = textPromise.then((t) => new Blob([t], { type: 'text/plain' }));
+            navigator.clipboard.write([new ClipboardItem({ 'text/plain': blobPromise })])
+                .catch(() => textPromise.then(showCopyToast).catch(() => {}));
+            return;
+        }
+        // Older browsers: writeText after the round-trip; may fail without a
+        // gesture, in which case the toast offers a retry.
+        textPromise.then((text) => {
+            if (!text || !navigator.clipboard) return;
+            navigator.clipboard.writeText(text).catch(() => showCopyToast(text));
+        });
+    }
+
+    let toastTimer = null;
+    let toastOnTap = null;
+    function showCopyToast(text) {
+        if (!text) return;
+        if (toastTimer) clearTimeout(toastTimer);
+        if (toastOnTap) copyToastEl.removeEventListener('click', toastOnTap);
+        copyToastEl.hidden = false;
+        toastOnTap = () => {
+            copyToastEl.hidden = true;
+            copyToastEl.removeEventListener('click', toastOnTap);
+            toastOnTap = null;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).catch(() => {});
+            }
+        };
+        copyToastEl.addEventListener('click', toastOnTap);
+        toastTimer = setTimeout(() => {
+            copyToastEl.hidden = true;
+            if (toastOnTap) copyToastEl.removeEventListener('click', toastOnTap);
+            toastOnTap = null;
+            toastTimer = null;
+        }, 8000);
+    }
+
+    // Paste — try clipboard.readText (works on desktop / Android). iOS
+    // Safari gates it behind a system Paste callout, so on rejection we
+    // open a contenteditable modal and capture the `paste` ClipboardEvent.
+    async function pasteAction() {
+        let text = null;
+        try {
+            if (navigator.clipboard && navigator.clipboard.readText) {
+                text = await navigator.clipboard.readText();
+            } else {
+                throw new Error('no readText');
+            }
+        } catch (_) {
+            text = await openPasteCatcher().catch(() => null);
+        }
+        if (text == null || text === '') return;
+        wsRequest('paste_clipboard', { text }).catch((e) => console.warn('atx: paste:', e));
+    }
+
+    function openPasteCatcher() {
+        return new Promise((resolve, reject) => {
+            pasteCatcherEl.hidden = false;
+            pasteCatcherTarget.textContent = '';
+            requestAnimationFrame(() => pasteCatcherTarget.focus());
+            let done = false;
+            const cleanup = () => {
+                pasteCatcherEl.hidden = true;
+                pasteCatcherTarget.textContent = '';
+                pasteCatcherTarget.removeEventListener('paste', onPaste);
+                pasteCatcherCancel.removeEventListener('click', onCancel);
+                term.focus();
+            };
+            const onPaste = (e) => {
+                if (done) return;
+                done = true;
+                e.preventDefault();
+                const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+                cleanup();
+                resolve(text);
+            };
+            const onCancel = () => {
+                if (done) return;
+                done = true;
+                cleanup();
+                reject(new Error('cancelled'));
+            };
+            pasteCatcherTarget.addEventListener('paste', onPaste);
+            pasteCatcherCancel.addEventListener('click', onCancel);
+        });
+    }
 
     // --- compose-prompt modal ---
 
@@ -247,6 +565,7 @@
             document.body.style.setProperty('--helperbar-lift', `${liftedPx}px`);
             promptSubmit.style.transform = '';
             fit.fit();
+            positionCopyCursor();
         } else {
             // Modal covers the terminal, so don't refit; just lift the send
             // button above the keyboard so the user can tap it without
@@ -496,13 +815,43 @@
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
         touchStartT = Date.now();
+        didScroll = false;
+        if (copyState && copyState.inMode) {
+            dragGeom = cellGeom();
+            touchStartCell = touchToCell(e.touches[0]);
+            dragPhase = 'none';
+            pendingMoveTarget = null;
+            return;
+        }
         scrollLastY = touchStartY;
         scrollCellH = term.element.getBoundingClientRect().height / Math.max(1, term.rows);
-        didScroll = false;
     }, { passive: true });
     swipeTarget.addEventListener('touchmove', (e) => {
-        if (e.touches.length !== 1 || scrollCellH <= 0) return;
-        const y = e.touches[0].clientY;
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0];
+        if (copyState && copyState.inMode) {
+            const dist = Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY);
+            if (dist < DRAG_SLOP_PX) return;
+            didScroll = true;
+            const cell = touchToCell(t);
+            if (dragPhase === 'none') {
+                // First crossing of slop → auto-Mark: move cursor to start
+                // cell, begin selection, then start extending to the current
+                // touch location. initDrag sequences these awaits so the
+                // selection always anchors at touchStartCell, never wherever
+                // the cursor happened to be pre-drag.
+                pendingMoveTarget = cell;
+                initDrag(touchStartCell);
+            } else if (dragPhase === 'extending') {
+                scheduleMove(cell);
+            } else {
+                // 'initializing' — store latest target; flush after init.
+                pendingMoveTarget = cell;
+            }
+            return;
+        }
+        if (scrollCellH <= 0) return;
+        const y = t.clientY;
         const rows = Math.trunc((y - scrollLastY) / scrollCellH);
         if (rows === 0) return;
         term.scrollLines(-rows);
@@ -510,7 +859,28 @@
         didScroll = true;
     }, { passive: true });
     swipeTarget.addEventListener('touchend', (e) => {
-        if (e.changedTouches.length !== 1 || didScroll) return;
+        if (e.changedTouches.length !== 1) return;
+        if (copyState && copyState.inMode) {
+            if (didScroll) {
+                // Drag finished — schedule one final move (initDrag will
+                // pick it up if still initializing; otherwise scheduleMove
+                // delivers it directly).
+                const t = e.changedTouches[0];
+                const cell = touchToCell(t);
+                if (dragPhase === 'extending') {
+                    scheduleMove(cell);
+                } else {
+                    pendingMoveTarget = cell;
+                }
+            } else if (touchStartCell) {
+                // Single tap — move cursor only (no selection).
+                scheduleMove(touchStartCell);
+            }
+            touchStartCell = null;
+            dragGeom = null;
+            return;
+        }
+        if (didScroll) return;
         const t = e.changedTouches[0];
         const dx = t.clientX - touchStartX;
         const dy = Math.abs(t.clientY - touchStartY);
