@@ -262,11 +262,18 @@ main:has(.terminal-page) {
 }
 .terminal-host .xterm { height: 100%; }
 
-body.has-helperbar .terminal-host {
-    /* Match the helper bar's own height: 4px top padding + 40px button +
-     * max(4px, safe-area). Without env() the bar's bottom inset clips the
-     * terminal on phones with a home indicator. */
+.terminal-host {
+    /* Reserve space for the helper bar by default. Wide viewports / fine
+     * pointers below override this back to a small bottom padding. */
     padding-bottom: calc(44px + max(4px, env(safe-area-inset-bottom)));
+}
+
+/* Hide the helper bar — and reclaim its reserved padding — whenever the
+ * device has a mouse/trackpad, OR has a tablet-or-wider viewport. Touch
+ * phones in portrait or landscape keep it. */
+@media (any-pointer: fine), (min-width: 1024px) {
+    .helperbar { display: none; }
+    .terminal-host { padding-bottom: 6px; }
 }
 
 /* --- helper bar --- */

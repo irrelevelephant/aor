@@ -135,14 +135,8 @@
 
 
     const helperbar = document.getElementById('helperbar');
-    // Only show the bar on devices without a fine pointer (mouse / trackpad).
-    // `(pointer: coarse)` alone fires on hybrid desktops (touchscreen
-    // laptops, Surface, etc.) where the user has a real keyboard already.
-    const isMobile = !matchMedia('(any-pointer: fine)').matches;
-    if (isMobile) {
-        helperbar.hidden = false;
-        document.body.classList.add('has-helperbar');
-    }
+    // Visibility of the helper bar is entirely CSS-driven now (media
+    // queries on (any-pointer: fine) and viewport width); see style.css.
 
     helperbar.addEventListener('mousedown', (e) => {
         // Don't let the bar steal focus from the terminal.
