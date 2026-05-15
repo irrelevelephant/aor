@@ -110,7 +110,6 @@ func TestTemplatesRender(t *testing.T) {
 		"Window":     WindowView{Index: 1, Name: "editor"},
 		"PrevWindow": -1,
 		"NextWindow": 2,
-		"IsMobile":   false,
 	}
 	if err := terminalT.ExecuteTemplate(&buf, "layout", terminalData); err != nil {
 		t.Fatalf("execute terminal.html: %v", err)

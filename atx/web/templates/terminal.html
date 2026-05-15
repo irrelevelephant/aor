@@ -9,28 +9,30 @@
         <span class="terminal-window-name">{{.Window.Name}}</span>
     </div>
     <div id="terminal" class="terminal-host"></div>
-    {{if .IsMobile}}
     <div class="helperbar" id="helperbar">
-        <div class="helperbar-row">
-            <button class="hb-btn" data-keyname="esc">Esc</button>
-            <button class="hb-btn" data-keyname="c-o">C-o</button>
-            <button class="hb-btn" data-keyname="enter">↵</button>
-            <button class="hb-btn" data-keyname="home">Home</button>
-            <button class="hb-btn" data-keyname="up">↑</button>
-            <button class="hb-btn" data-keyname="end">End</button>
-            <button class="hb-btn" data-keyname="pgup">PgUp</button>
-        </div>
-        <div class="helperbar-row">
-            <button class="hb-btn" data-keyname="tab">Tab</button>
-            <button class="hb-btn hb-mod" data-mod="ctrl">Ctrl</button>
-            <button class="hb-btn hb-mod" data-mod="alt">Alt</button>
-            <button class="hb-btn" data-keyname="left">←</button>
-            <button class="hb-btn" data-keyname="down">↓</button>
-            <button class="hb-btn" data-keyname="right">→</button>
-            <button class="hb-btn" data-keyname="pgdn">PgDn</button>
-        </div>
+        <button class="hb-btn" data-keyname="esc">Esc</button>
+        <button class="hb-btn" data-keyname="c-o">C-o</button>
+        <button class="hb-btn hb-bigicon" data-keyname="enter">⏎</button>
+        <button class="hb-btn" data-keyname="pgup">PgUp</button>
+        <button class="hb-btn" data-keyname="up">↑</button>
+        <button class="hb-btn" data-keyname="pgdn">PgDn</button>
+        <button class="hb-btn hb-compose" data-action="compose" aria-label="Compose prompt">📝</button>
+        <button class="hb-btn" data-keyname="tab">Tab</button>
+        <button class="hb-btn hb-mod" data-mod="ctrl">Ctrl</button>
+        <button class="hb-btn hb-mod" data-mod="alt">Alt</button>
+        <button class="hb-btn" data-keyname="left">←</button>
+        <button class="hb-btn" data-keyname="down">↓</button>
+        <button class="hb-btn" data-keyname="right">→</button>
     </div>
-    {{end}}
+    <div class="prompt-modal" id="prompt-modal" hidden>
+        <div class="prompt-modal-header">
+            <button class="prompt-modal-close" id="prompt-modal-close" aria-label="Close">×</button>
+        </div>
+        <textarea class="prompt-modal-textarea" id="prompt-modal-textarea"
+                  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                  placeholder="Compose…"></textarea>
+        <button class="prompt-modal-submit" id="prompt-modal-submit" aria-label="Send" disabled>⏎</button>
+    </div>
     <div class="ios-install-banner" id="ios-install-banner" hidden>
         <span>For full functionality, tap <strong>Share</strong> → <strong>Add to Home Screen</strong>.</span>
         <button class="hb-btn" id="ios-install-dismiss" aria-label="Dismiss">×</button>

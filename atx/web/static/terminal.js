@@ -133,18 +133,9 @@
 
     // --- helper bar ---
 
-
     const helperbar = document.getElementById('helperbar');
-    // Visibility of the helper bar is entirely CSS-driven now (media
-    // queries on (any-pointer: fine) and viewport width); see style.css.
-
-    helperbar.addEventListener('mousedown', (e) => {
-        // Don't let the bar steal focus from the terminal.
-        if (e.target.closest('.hb-btn')) e.preventDefault();
-    });
-    helperbar.addEventListener('touchstart', (e) => {
-        if (e.target.closest('.hb-btn')) e.preventDefault();
-    }, { passive: false });
+    // Visibility is CSS-driven: hidden by default, shown in
+    // @media (pointer: coarse), (max-width: 600px). See style.css.
 
     // Resolved in JS so raw control bytes never round-trip through HTML
     // attribute parsing.
@@ -163,23 +154,77 @@
         pgdn:  '\x1b[6~',
     };
 
-    for (const btn of document.querySelectorAll('.hb-btn[data-keyname]')) {
-        const seq = KEY_MAP[btn.dataset.keyname];
-        btn.addEventListener('click', () => {
-            sendBytes(applyModifiers(seq));
-            term.focus();
-        });
-    }
-    for (const btn of document.querySelectorAll('.hb-mod')) {
-        btn.addEventListener('click', () => {
+    function activateHbBtn(btn) {
+        if (btn.dataset.action === 'compose') {
+            openPromptModal();
+            return;
+        }
+        if (btn.classList.contains('hb-mod')) {
             const name = btn.dataset.mod;
             const cur = modState[name];
             // Tap cycle: idle → armed → locked → idle.
             const next = cur === 'idle' ? 'armed' : cur === 'armed' ? 'locked' : 'idle';
             setMod(name, next);
-            term.focus();
-        });
+        } else {
+            sendBytes(applyModifiers(KEY_MAP[btn.dataset.keyname]));
+        }
+        term.focus();
     }
+
+    // pointerdown preventDefault keeps the terminal focused (suppresses
+    // focus shift to the button + the synthetic mousedown). pointerup,
+    // touchend, and click are all bound with a short dedupe window —
+    // whichever fires first activates, and the others fall through to
+    // the no-op debounce. We bind all three because iOS Safari has been
+    // observed suppressing one or another depending on the gesture path.
+    let lastFireT = 0;
+    function maybeFire(btn) {
+        if (!btn) return;
+        const now = Date.now();
+        if (now - lastFireT < 250) return;
+        lastFireT = now;
+        activateHbBtn(btn);
+    }
+    helperbar.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('.hb-btn')) e.preventDefault();
+    });
+    helperbar.addEventListener('pointerup', (e) => maybeFire(e.target.closest('.hb-btn')));
+    helperbar.addEventListener('touchend', (e) => maybeFire(e.target.closest('.hb-btn')));
+    helperbar.addEventListener('click', (e) => maybeFire(e.target.closest('.hb-btn')));
+
+    // --- compose-prompt modal ---
+
+    const promptModal = document.getElementById('prompt-modal');
+    const promptTextarea = document.getElementById('prompt-modal-textarea');
+    const promptClose = document.getElementById('prompt-modal-close');
+    const promptSubmit = document.getElementById('prompt-modal-submit');
+
+    function openPromptModal() {
+        promptModal.hidden = false;
+        // Defer focus to next frame so the keyboard pops up reliably on iOS.
+        requestAnimationFrame(() => promptTextarea.focus());
+    }
+    function closePromptModal() {
+        promptModal.hidden = true;
+        promptTextarea.value = '';
+        promptSubmit.disabled = true;
+        term.focus();
+    }
+    function tryCloseWithConfirm() {
+        if (promptTextarea.value.length > 0 && !confirm('Discard this prompt?')) return;
+        closePromptModal();
+    }
+
+    promptTextarea.addEventListener('input', () => {
+        promptSubmit.disabled = promptTextarea.value.length === 0;
+    });
+    promptClose.addEventListener('click', tryCloseWithConfirm);
+    promptSubmit.addEventListener('click', () => {
+        const text = promptTextarea.value;
+        if (text.length === 0) return;
+        sendBytes(text);
+        closePromptModal();
+    });
 
     // --- visualViewport docking: keep the helper bar above the soft keyboard ---
 
