@@ -556,8 +556,13 @@ body:has(.terminal-page) > main {
         height: auto;
         font-size: 1.4rem;
     }
+    /* margin-bottom (not padding) so xterm's FitAddon — which reads
+     * getComputedStyle(parent).height and only subtracts the xterm
+     * element's own padding — sizes rows to the visible area above
+     * the fixed helper bar. With padding, FitAddon over-allocates
+     * rows and the bottom lines render behind the buttons. */
     .terminal-host {
-        padding-bottom: calc(87px + max(4px, env(safe-area-inset-bottom)));
+        margin-bottom: calc(87px + max(4px, env(safe-area-inset-bottom)));
     }
 }
 
