@@ -205,13 +205,17 @@
     function openPromptModal() {
         promptModal.hidden = false;
         // Defer focus to next frame so the keyboard pops up reliably on iOS.
-        requestAnimationFrame(() => promptTextarea.focus());
+        requestAnimationFrame(() => {
+            promptTextarea.focus();
+            dockBar();
+        });
     }
     function closePromptModal() {
         promptModal.hidden = true;
         promptTextarea.value = '';
         promptSubmit.disabled = true;
         term.focus();
+        dockBar();
     }
     function tryCloseWithConfirm() {
         if (promptTextarea.value.length > 0 && !confirm('Discard this prompt?')) return;
@@ -229,22 +233,28 @@
         closePromptModal();
     });
 
-    // --- visualViewport docking: keep the helper bar above the soft keyboard ---
+    // --- visualViewport docking: keep the helper bar (or the compose
+    // modal's send button, when that modal is open) above the soft keyboard ---
 
-    if (window.visualViewport) {
-        const dockBar = () => {
-            // While the compose modal covers the page, the helperbar is
-            // hidden and fit.fit() would just churn the offscreen terminal.
-            if (!promptModal.hidden) return;
-            const vv = window.visualViewport;
-            // Distance from layout-viewport bottom to visual-viewport bottom =
-            // height of the keyboard (when shown). Move the bar up by that much.
-            const liftedPx = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    function dockBar() {
+        if (!window.visualViewport) return;
+        const vv = window.visualViewport;
+        // Distance from layout-viewport bottom to visual-viewport bottom =
+        // height of the keyboard (when shown).
+        const liftedPx = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        if (promptModal.hidden) {
             helperbar.style.transform = `translateY(${-liftedPx}px)`;
-            // Reserve space below the terminal so output isn't hidden behind it.
             document.body.style.setProperty('--helperbar-lift', `${liftedPx}px`);
+            promptSubmit.style.transform = '';
             fit.fit();
-        };
+        } else {
+            // Modal covers the terminal, so don't refit; just lift the send
+            // button above the keyboard so the user can tap it without
+            // dismissing the keyboard first.
+            promptSubmit.style.transform = `translateY(${-liftedPx}px)`;
+        }
+    }
+    if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', dockBar);
         window.visualViewport.addEventListener('scroll', dockBar);
         dockBar();
