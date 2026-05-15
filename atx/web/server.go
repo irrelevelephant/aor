@@ -139,10 +139,17 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 
 	var win runtime.Window
 	found := false
-	for _, ww := range state.Windows {
+	var prevIdx, nextIdx = -1, -1
+	for i, ww := range state.Windows {
 		if ww.Index == idx {
 			win = ww
 			found = true
+			if i > 0 {
+				prevIdx = state.Windows[i-1].Index
+			}
+			if i+1 < len(state.Windows) {
+				nextIdx = state.Windows[i+1].Index
+			}
 			break
 		}
 	}
@@ -162,6 +169,8 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 			Index: win.Index,
 			Name:  win.Name,
 		},
+		"PrevWindow": prevIdx,
+		"NextWindow": nextIdx,
 	})
 }
 

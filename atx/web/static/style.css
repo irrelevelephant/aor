@@ -247,3 +247,97 @@ main:has(.terminal-page) {
     overflow: hidden;
 }
 .terminal-host .xterm { height: 100%; }
+
+body.has-helperbar .terminal-host {
+    padding-bottom: 56px;
+}
+
+/* --- helper bar --- */
+
+.helperbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    padding: 4px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 100;
+    transform: translateY(0);
+    transition: transform 0.15s ease-out;
+}
+
+.helperbar-row {
+    display: flex;
+    flex: 1;
+    gap: 3px;
+    min-width: 0;
+}
+.helperbar-row[hidden] { display: none; }
+
+.hb-btn {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.85rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    padding: 0 4px;
+    white-space: nowrap;
+}
+.hb-btn:active { background: var(--border); }
+
+.hb-mod.armed {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent) inset;
+    color: var(--accent);
+}
+.hb-mod.locked {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0d1117;
+    font-weight: 600;
+}
+
+.hb-tab-switch {
+    flex: 0 0 36px;
+    width: 36px;
+    font-size: 1rem;
+}
+
+/* --- iOS install hint --- */
+
+.ios-install-banner {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 60px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.85rem;
+    z-index: 101;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.ios-install-banner[hidden] { display: none; }
+.ios-install-banner .hb-btn {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+}

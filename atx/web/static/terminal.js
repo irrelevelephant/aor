@@ -1,6 +1,6 @@
-// Wires xterm.js to the per-window WebSocket at /atx/ws.
-// Text frames carry JSON control messages; binary frames carry raw vt100
-// bytes (stdout server→client, stdin client→server).
+// Wires xterm.js to the per-window WebSocket at /atx/ws and provides the
+// mobile helper bar, modifier state machine, swipe-between-windows, and
+// iOS install hint.
 
 (function () {
     const view = window.atxView || {};
@@ -40,6 +40,11 @@
         else pending.push(msg);
     }
 
+    function sendBytes(data) {
+        if (!connected) return;
+        ws.send(data instanceof Uint8Array ? data : new TextEncoder().encode(data));
+    }
+
     ws.onopen = () => {
         connected = true;
         sendJSON({ type: 'hello' });
@@ -52,7 +57,6 @@
         if (e.data instanceof ArrayBuffer) {
             term.write(new Uint8Array(e.data));
         } else if (typeof e.data === 'string') {
-            // Control message; nothing actionable on this page yet beyond errors.
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'error' && msg.error) {
@@ -67,10 +71,159 @@
         term.write('\r\n\x1b[33matx: connection closed\x1b[0m\r\n');
     };
 
+    // --- modifier state machine + onData interception ---
+
+    const modState = { ctrl: 'idle', alt: 'idle' }; // 'idle' | 'armed' | 'locked'
+
+    function setMod(name, next) {
+        modState[name] = next;
+        for (const btn of document.querySelectorAll(`.hb-mod[data-mod="${name}"]`)) {
+            btn.classList.toggle('armed', next === 'armed');
+            btn.classList.toggle('locked', next === 'locked');
+        }
+    }
+
+    // Apply Ctrl/Alt to the first char of data; subsequent chars pass through
+    // unless the modifier is locked (in which case it applies to every char).
+    function applyModifiers(data) {
+        if (modState.ctrl === 'idle' && modState.alt === 'idle') return data;
+        let out = '';
+        for (let i = 0; i < data.length; i++) {
+            const ch = data[i];
+            const code = ch.charCodeAt(0);
+            const applyAlt = modState.alt !== 'idle' && (i === 0 || modState.alt === 'locked');
+            const applyCtrl = modState.ctrl !== 'idle' && (i === 0 || modState.ctrl === 'locked');
+            let outCh = ch;
+            if (applyCtrl && code >= 0x40 && code < 0x7f) {
+                outCh = String.fromCharCode(code & 0x1f);
+            }
+            if (applyAlt) outCh = '\x1b' + outCh;
+            out += outCh;
+        }
+        if (modState.ctrl === 'armed') setMod('ctrl', 'idle');
+        if (modState.alt === 'armed') setMod('alt', 'idle');
+        return out;
+    }
+
     term.onData((data) => {
-        if (!connected) return;
-        // xterm.js gives us strings of raw bytes (UTF-8 + control chars).
-        // Send as binary so non-UTF-8 control sequences round-trip cleanly.
-        ws.send(new TextEncoder().encode(data));
+        sendBytes(applyModifiers(data));
     });
+
+    // --- helper bar ---
+
+    function unescapeKey(s) {
+        // Templates encode special bytes as , \t, \r, \n.
+        return s
+            .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+            .replace(/\\t/g, '\t')
+            .replace(/\\r/g, '\r')
+            .replace(/\\n/g, '\n')
+            .replace(/\\\\/g, '\\');
+    }
+
+    const helperbar = document.getElementById('helperbar');
+    const isTouch = matchMedia('(pointer: coarse)').matches;
+    if (isTouch) {
+        helperbar.hidden = false;
+        document.body.classList.add('has-helperbar');
+    }
+
+    helperbar.addEventListener('mousedown', (e) => {
+        // Don't let the bar steal focus from the terminal.
+        if (e.target.closest('.hb-btn')) e.preventDefault();
+    });
+    helperbar.addEventListener('touchstart', (e) => {
+        if (e.target.closest('.hb-btn')) e.preventDefault();
+    }, { passive: false });
+
+    for (const btn of document.querySelectorAll('.hb-btn[data-key]')) {
+        btn.addEventListener('click', () => {
+            sendBytes(applyModifiers(btn.dataset.key));
+            term.focus();
+        });
+    }
+    for (const btn of document.querySelectorAll('.hb-mod')) {
+        btn.addEventListener('click', () => {
+            const name = btn.dataset.mod;
+            const cur = modState[name];
+            // Tap cycle: idle → armed → locked → idle.
+            const next = cur === 'idle' ? 'armed' : cur === 'armed' ? 'locked' : 'idle';
+            setMod(name, next);
+            term.focus();
+        });
+    }
+
+    const switchBtn = document.getElementById('hb-tab-switch');
+    const TAB_PREF_KEY = 'atx.helperbar.tab';
+    function showTab(name) {
+        for (const row of document.querySelectorAll('.helperbar-row')) {
+            row.hidden = row.dataset.tab !== name;
+        }
+        localStorage.setItem(TAB_PREF_KEY, name);
+    }
+    showTab(localStorage.getItem(TAB_PREF_KEY) || 'keys');
+    switchBtn.addEventListener('click', () => {
+        const visible = document.querySelector('.helperbar-row:not([hidden])');
+        showTab(visible && visible.dataset.tab === 'keys' ? 'actions' : 'keys');
+        term.focus();
+    });
+
+    // --- visualViewport docking: keep the helper bar above the soft keyboard ---
+
+    if (window.visualViewport) {
+        const dockBar = () => {
+            const vv = window.visualViewport;
+            // Distance from layout-viewport bottom to visual-viewport bottom =
+            // height of the keyboard (when shown). Move the bar up by that much.
+            const liftedPx = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+            helperbar.style.transform = `translateY(${-liftedPx}px)`;
+            // Reserve space below the terminal so output isn't hidden behind it.
+            document.body.style.setProperty('--helperbar-lift', `${liftedPx}px`);
+            fit.fit();
+        };
+        window.visualViewport.addEventListener('resize', dockBar);
+        window.visualViewport.addEventListener('scroll', dockBar);
+        dockBar();
+    }
+
+    // --- swipe-between-windows on the terminal area ---
+
+    let touchStartX = 0, touchStartY = 0, touchStartT = 0;
+    const SWIPE_MIN_X = 80, SWIPE_MAX_Y = 60, SWIPE_MAX_MS = 500;
+
+    const swipeTarget = document.querySelector('.terminal-host');
+    swipeTarget.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchStartT = Date.now();
+    }, { passive: true });
+    swipeTarget.addEventListener('touchend', (e) => {
+        if (e.changedTouches.length !== 1) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - touchStartX;
+        const dy = Math.abs(t.clientY - touchStartY);
+        const dt = Date.now() - touchStartT;
+        if (Math.abs(dx) < SWIPE_MIN_X || dy > SWIPE_MAX_Y || dt > SWIPE_MAX_MS) return;
+        if (dx > 0 && view.prevWindow >= 0) {
+            location.href = `/atx/m/${view.machine}/w/${view.prevWindow}`;
+        } else if (dx < 0 && view.nextWindow >= 0) {
+            location.href = `/atx/m/${view.machine}/w/${view.nextWindow}`;
+        }
+    }, { passive: true });
+
+    // --- iOS install hint (one-time) ---
+
+    const ua = navigator.userAgent;
+    const isIOSSafari = /iP(hone|ad|od)/.test(ua) && /Safari/.test(ua) && !/CriOS|FxiOS/.test(ua);
+    const isStandalone = window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+    const dismissed = localStorage.getItem('atx.iosInstallDismissed') === '1';
+    if (isIOSSafari && !isStandalone && !dismissed) {
+        const banner = document.getElementById('ios-install-banner');
+        banner.hidden = false;
+        document.getElementById('ios-install-dismiss').addEventListener('click', () => {
+            banner.hidden = true;
+            localStorage.setItem('atx.iosInstallDismissed', '1');
+        });
+    }
 })();

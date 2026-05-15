@@ -9,11 +9,40 @@
         <span class="terminal-window-name">{{.Window.Name}}</span>
     </div>
     <div id="terminal" class="terminal-host"></div>
+    <div class="helperbar" id="helperbar" hidden>
+        <div class="helperbar-row" data-tab="keys">
+            <button class="hb-btn" data-key="">Esc</button>
+            <button class="hb-btn" data-key="\t">Tab</button>
+            <button class="hb-btn hb-mod" data-mod="ctrl">Ctrl</button>
+            <button class="hb-btn hb-mod" data-mod="alt">Alt</button>
+            <button class="hb-btn" data-key="">C-b</button>
+            <button class="hb-btn" data-key="[A">↑</button>
+            <button class="hb-btn" data-key="[B">↓</button>
+            <button class="hb-btn" data-key="[D">←</button>
+            <button class="hb-btn" data-key="[C">→</button>
+        </div>
+        <div class="helperbar-row" data-tab="actions" hidden>
+            <button class="hb-btn" data-key="y\r">Y↵</button>
+            <button class="hb-btn" data-key="n\r">N↵</button>
+            <button class="hb-btn" data-key="1\r">1↵</button>
+            <button class="hb-btn" data-key="2\r">2↵</button>
+            <button class="hb-btn" data-key="">⌃C</button>
+            <button class="hb-btn" data-key="">⌃D</button>
+            <button class="hb-btn" data-key="\r">↵</button>
+        </div>
+        <button class="hb-btn hb-tab-switch" id="hb-tab-switch" aria-label="Switch helper-bar tab">⇄</button>
+    </div>
+    <div class="ios-install-banner" id="ios-install-banner" hidden>
+        <span>For full functionality, tap <strong>Share</strong> → <strong>Add to Home Screen</strong>.</span>
+        <button class="hb-btn" id="ios-install-dismiss" aria-label="Dismiss">×</button>
+    </div>
 </div>
 <script>
 window.atxView = {
     machine: {{.Machine.Name | json}},
-    window: {{.Window.Index}}
+    window: {{.Window.Index}},
+    prevWindow: {{.PrevWindow}},
+    nextWindow: {{.NextWindow}}
 };
 </script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
