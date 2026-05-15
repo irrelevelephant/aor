@@ -143,7 +143,10 @@
     function writeExpanded(set) {
         const arr = Array.from(set);
         try { localStorage.setItem(EXPANDED_KEY, JSON.stringify(arr)); } catch (_) {}
-        document.cookie = 'atx_expanded=' + encodeURIComponent(arr.join(',')) +
+        // Encode each name individually so the comma stays a real delimiter
+        // — encodeURIComponent on the whole joined string would turn the
+        // separators into %2C and collapse the list into one opaque key.
+        document.cookie = 'atx_expanded=' + arr.map(encodeURIComponent).join(',') +
             '; path=/atx/; max-age=31536000; samesite=lax';
     }
 

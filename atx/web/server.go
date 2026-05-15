@@ -313,9 +313,11 @@ func parseExpandedCookie(r *http.Request) map[string]bool {
 	}
 	out := make(map[string]bool)
 	for _, n := range strings.Split(c.Value, ",") {
-		if n != "" {
-			out[n] = true
+		name, err := url.QueryUnescape(n)
+		if err != nil || name == "" {
+			continue
 		}
+		out[name] = true
 	}
 	return out
 }
