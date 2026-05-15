@@ -111,15 +111,6 @@
 
     // --- helper bar ---
 
-    function unescapeKey(s) {
-        // Templates encode special bytes as , \t, \r, \n.
-        return s
-            .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-            .replace(/\\t/g, '\t')
-            .replace(/\\r/g, '\r')
-            .replace(/\\n/g, '\n')
-            .replace(/\\\\/g, '\\');
-    }
 
     const helperbar = document.getElementById('helperbar');
     const isTouch = matchMedia('(pointer: coarse)').matches;
