@@ -114,11 +114,3 @@ func (m *Manager) ResizeMirror(machine string, windowIdx int, cols, rows uint32)
 	return mch.ResizeMirror(windowIdx, cols, rows)
 }
 
-// SendKeys writes bytes verbatim into the given window's tmux pane.
-func (m *Manager) SendKeys(machine string, windowIdx int, data []byte) error {
-	mch, ok := m.machines[machine]
-	if !ok {
-		return fmt.Errorf("unknown machine: %s", machine)
-	}
-	return mch.SendKeys(windowIdx, data)
-}

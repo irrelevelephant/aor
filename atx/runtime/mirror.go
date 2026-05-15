@@ -39,6 +39,7 @@ type Mirror struct {
 
 	sshMu      sync.Mutex
 	sshSession *ssh.Session
+	sshStdin   io.WriteCloser
 
 	mu          sync.Mutex
 	subscribers map[chan []byte]struct{}
@@ -127,6 +128,13 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 		m.killGrouped()
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		session.Close()
+		cancel()
+		m.killGrouped()
+		return fmt.Errorf("stdin pipe: %w", err)
+	}
 	session.Stderr = io.Discard
 
 	if err := session.Start("tmux attach -t " + shellQuote(m.groupedName)); err != nil {
@@ -138,10 +146,29 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 
 	m.sshMu.Lock()
 	m.sshSession = session
+	m.sshStdin = stdin
 	m.sshMu.Unlock()
 
 	go m.readLoop(ctx, session, stdout)
 	return nil
+}
+
+// SendInput writes user input bytes directly to tmux as the attached
+// client. tmux interprets the byte stream at its protocol layer —
+// terminal-response sequences (DA, cursor position, etc.) emitted by
+// xterm.js back through `term.onData` are consumed by tmux as protocol,
+// not forwarded into the pane. That's the difference between this path
+// and `tmux send-keys`, which writes literally into the pane and turns
+// every DA response into visible garbage.
+func (m *Mirror) SendInput(data []byte) error {
+	m.sshMu.Lock()
+	stdin := m.sshStdin
+	m.sshMu.Unlock()
+	if stdin == nil {
+		return fmt.Errorf("mirror not started")
+	}
+	_, err := stdin.Write(data)
+	return err
 }
 
 // Resize updates the SSH PTY size, which propagates to tmux as a SIGWINCH

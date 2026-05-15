@@ -125,15 +125,15 @@ func (c *wsClient) handleControl(data []byte) {
 
 func (c *wsClient) handleStdin(data []byte) {
 	c.mu.Lock()
+	mirror := c.mirror
 	machine := c.machine
 	idx := c.windowIx
-	hasView := c.mirror != nil
 	c.mu.Unlock()
-	if !hasView {
+	if mirror == nil {
 		return
 	}
-	if err := c.rt.SendKeys(machine, idx, data); err != nil {
-		log.Printf("atx ws: send-keys %s/w%d: %v", machine, idx, err)
+	if err := mirror.SendInput(data); err != nil {
+		log.Printf("atx ws: stdin %s/w%d: %v", machine, idx, err)
 	}
 }
 

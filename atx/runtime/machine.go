@@ -43,7 +43,6 @@ type Machine struct {
 
 type machineConn struct {
 	client  *ssh.Client
-	input   *inputChannel
 	mirrors map[int]*Mirror // window index → mirror
 }
 
@@ -159,17 +158,6 @@ func (m *Machine) ReleaseMirror(windowIdx int, ch chan []byte) {
 	})
 }
 
-// SendKeys forwards bytes verbatim to the given window via tmux send-keys.
-func (m *Machine) SendKeys(windowIdx int, data []byte) error {
-	m.connMu.Lock()
-	conn := m.conn
-	m.connMu.Unlock()
-	if conn == nil {
-		return fmt.Errorf("machine %s offline", m.cfg.Name)
-	}
-	target := fmt.Sprintf("%s:%d", m.cfg.TmuxSession, windowIdx)
-	return conn.input.SendKeys(target, data)
-}
 
 // State returns the latest snapshot. Windows is a copy.
 func (m *Machine) State() MachineState {
@@ -246,15 +234,7 @@ func (m *Machine) runOnce(ctx context.Context) error {
 	}
 	defer control.Close()
 
-	// One persistent input channel per machine. Mirror state is per-window
-	// and lazily created on first viewer.
-	input, err := startInputChannel(client)
-	if err != nil {
-		return fmt.Errorf("input channel: %w", err)
-	}
-	defer input.Close()
-
-	m.setConn(&machineConn{client: client, input: input, mirrors: make(map[int]*Mirror)})
+	m.setConn(&machineConn{client: client, mirrors: make(map[int]*Mirror)})
 	defer m.tearDownConn()
 
 	events := make(chan tmuxEvent, 64)
