@@ -20,6 +20,8 @@ type clientMsg struct {
 	Type    string `json:"type"`
 	Machine string `json:"machine,omitempty"`
 	Window  int    `json:"window,omitempty"`
+	Cols    uint32 `json:"cols,omitempty"`
+	Rows    uint32 `json:"rows,omitempty"`
 }
 
 // serverMsg is one outbound text-frame envelope. stdout uses binary frames.
@@ -104,9 +106,20 @@ func (c *wsClient) handleControl(data []byte) {
 			c.sendErr("view: machine required")
 			return
 		}
-		c.startViewing(msg.Machine, msg.Window)
+		c.startViewing(msg.Machine, msg.Window, msg.Cols, msg.Rows)
 	case "view_hidden":
 		c.stopViewing()
+	case "resize":
+		c.mu.Lock()
+		machine := c.machine
+		idx := c.windowIx
+		hasView := c.mirror != nil
+		c.mu.Unlock()
+		if hasView && msg.Cols > 0 && msg.Rows > 0 {
+			if err := c.rt.ResizeMirror(machine, idx, msg.Cols, msg.Rows); err != nil {
+				log.Printf("atx ws: resize %s/w%d: %v", machine, idx, err)
+			}
+		}
 	}
 }
 
@@ -124,10 +137,10 @@ func (c *wsClient) handleStdin(data []byte) {
 	}
 }
 
-func (c *wsClient) startViewing(machine string, windowIdx int) {
+func (c *wsClient) startViewing(machine string, windowIdx int, cols, rows uint32) {
 	c.stopViewing()
 
-	mirror, ch, err := c.rt.AcquireMirror(c.ctx, machine, windowIdx)
+	mirror, ch, err := c.rt.AcquireMirror(c.ctx, machine, windowIdx, cols, rows)
 	if err != nil {
 		c.sendErr(err.Error())
 		return

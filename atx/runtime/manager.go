@@ -86,13 +86,14 @@ func (m *Manager) MachineState(name string) (MachineState, bool) {
 	return mch.State(), true
 }
 
-// AcquireMirror starts (or attaches to) a per-window output mirror.
-func (m *Manager) AcquireMirror(ctx context.Context, machine string, windowIdx int) (*Mirror, chan []byte, error) {
+// AcquireMirror starts (or attaches to) a per-window output mirror at the
+// given PTY size.
+func (m *Manager) AcquireMirror(ctx context.Context, machine string, windowIdx int, cols, rows uint32) (*Mirror, chan []byte, error) {
 	mch, ok := m.machines[machine]
 	if !ok {
 		return nil, nil, fmt.Errorf("unknown machine: %s", machine)
 	}
-	return mch.AcquireMirror(ctx, windowIdx)
+	return mch.AcquireMirror(ctx, windowIdx, cols, rows)
 }
 
 // ReleaseMirror unsubscribes ch from a previously acquired mirror.
@@ -102,6 +103,15 @@ func (m *Manager) ReleaseMirror(machine string, windowIdx int, ch chan []byte) {
 		return
 	}
 	mch.ReleaseMirror(windowIdx, ch)
+}
+
+// ResizeMirror updates the PTY size of an active mirror.
+func (m *Manager) ResizeMirror(machine string, windowIdx int, cols, rows uint32) error {
+	mch, ok := m.machines[machine]
+	if !ok {
+		return fmt.Errorf("unknown machine: %s", machine)
+	}
+	return mch.ResizeMirror(windowIdx, cols, rows)
 }
 
 // SendKeys writes bytes verbatim into the given window's tmux pane.

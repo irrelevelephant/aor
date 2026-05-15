@@ -25,7 +25,18 @@
     fit.fit();
     term.focus();
 
-    window.addEventListener('resize', () => fit.fit());
+    function currentSize() {
+        return { cols: term.cols || 80, rows: term.rows || 24 };
+    }
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+        fit.fit();
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            const { cols, rows } = currentSize();
+            sendJSON({ type: 'resize', cols, rows });
+        }, 150);
+    });
 
     const wsURL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/atx/ws';
     const ws = new WebSocket(wsURL);
@@ -48,7 +59,8 @@
     ws.onopen = () => {
         connected = true;
         sendJSON({ type: 'hello' });
-        sendJSON({ type: 'view', machine: view.machine, window: view.window });
+        const { cols, rows } = currentSize();
+        sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
         for (const msg of pending) ws.send(msg);
         pending = [];
     };
@@ -202,6 +214,20 @@
             location.href = `/atx/m/${view.machine}/w/${view.nextWindow}`;
         }
     }, { passive: true });
+
+    // --- detach on hidden, reattach on visible ---
+    // Tearing down the mirror when the tab is hidden releases atx's tmux
+    // client so the pane snaps back to the user's mosh-only geometry.
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            sendJSON({ type: 'view_hidden' });
+        } else {
+            fit.fit();
+            const { cols, rows } = currentSize();
+            sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
+        }
+    });
 
     // --- iOS install hint (one-time) ---
 

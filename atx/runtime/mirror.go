@@ -1,144 +1,157 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
-	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
 const (
-	mirrorIdleTimeout    = 5 * time.Minute
-	mirrorBackfillBytes  = 256 * 1024 // capture-pane history cap
-	mirrorRecentBufBytes = 64 * 1024  // bytes held in-memory for late subscribers
+	mirrorRecentBufBytes = 64 * 1024
+	defaultCols          = 80
+	defaultRows          = 24
 )
 
-// Mirror streams one tmux pane's live output to in-process subscribers via
-// a remote FIFO: tmux pipe-pane writes to it on the remote, a long-lived
-// `cat $FIFO` SSH session reads it and ships bytes back here.
+// Mirror streams one tmux pane's live output to in-process subscribers by
+// attaching as a real tmux client over SSH. The SSH session's PTY size
+// dictates this client's contribution to tmux's smallest-client window
+// resize negotiation, so the pane follows the browser's geometry.
+//
+// To avoid stealing the user's "current window" pointer in their main tmux
+// session, atx attaches to a per-mirror grouped session that shares windows
+// with the main session. Killing the grouped session on teardown removes
+// atx's resize contribution and lets the pane snap back to the user's
+// mosh-only size.
 type Mirror struct {
 	machineName string
 	windowIndex int
-	tmuxTarget  string // e.g. "0:2"
+	tmuxSession string
+	groupedName string
 
 	client *ssh.Client
 	cancel context.CancelFunc
 	done   chan struct{}
 
+	sshMu      sync.Mutex
+	sshSession *ssh.Session
+
 	mu          sync.Mutex
 	subscribers map[chan []byte]struct{}
-	backfill    []byte
-	recent      []byte // ring of recent bytes for late-arrivers (oldest dropped)
-	idleTimer   *time.Timer
-	fifoPath    string
-	dead        bool // set when readLoop exits; AcquireMirror creates a fresh one
+	recent      []byte
+	dead        bool
 }
 
-// Dead reports whether the mirror's read loop has exited (SSH disconnect,
-// pipe-pane gone, etc). Callers should discard a dead mirror and acquire a
-// fresh one.
+func newMirror(machineName string, windowIdx int, tmuxSession string, client *ssh.Client) *Mirror {
+	return &Mirror{
+		machineName: machineName,
+		windowIndex: windowIdx,
+		tmuxSession: tmuxSession,
+		groupedName: fmt.Sprintf("atx-mirror-%s-w%d", machineName, windowIdx),
+		client:      client,
+		subscribers: make(map[chan []byte]struct{}),
+	}
+}
+
+// Dead reports whether the mirror's read loop has exited; AcquireMirror
+// should discard a dead mirror and acquire a fresh one.
 func (m *Mirror) Dead() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.dead
 }
 
-func newMirror(machineName string, windowIdx int, target string, client *ssh.Client) *Mirror {
-	return &Mirror{
-		machineName: machineName,
-		windowIndex: windowIdx,
-		tmuxTarget:  target,
-		client:      client,
-		subscribers: make(map[chan []byte]struct{}),
+// Start creates the grouped tmux session, opens an SSH session with a PTY
+// of the requested size, runs `tmux attach`, and begins streaming output.
+// The grouped session shares windows with the user's main session but has
+// its own "current window" pointer so atx doesn't fight Thomas's mosh
+// clients for window selection.
+func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
+	if cols == 0 {
+		cols = defaultCols
 	}
-}
+	if rows == 0 {
+		rows = defaultRows
+	}
 
-// Start opens the FIFO + pipe-pane plumbing and begins streaming. Returns
-// once the initial capture-pane backfill is in memory; the live stream
-// continues in the background until Stop is called or ctx is cancelled.
-func (m *Mirror) Start(parent context.Context) error {
+	// Create the grouped session and aim it at the right window. -A so a
+	// stale grouped session from a crashed previous mirror is reused
+	// instead of erroring.
+	setup := fmt.Sprintf(
+		"tmux new-session -A -d -t %s -s %s \\; select-window -t %s:%d",
+		shellQuote(m.tmuxSession), shellQuote(m.groupedName),
+		shellQuote(m.groupedName), m.windowIndex,
+	)
+	if err := m.runShortCommand(setup); err != nil {
+		return fmt.Errorf("create grouped session: %w", err)
+	}
+
 	ctx, cancel := context.WithCancel(parent)
 	m.cancel = cancel
 	m.done = make(chan struct{})
 
-	// 1. Capture-pane backfill (rendered state, with SGR).
-	altScreen, err := m.captureAltScreen()
+	session, err := m.client.NewSession()
 	if err != nil {
 		cancel()
-		return fmt.Errorf("alt-screen probe: %w", err)
+		m.killGrouped()
+		return fmt.Errorf("ssh session: %w", err)
 	}
-	backfill, err := m.capturePaneBackfill()
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          0,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	if err := session.RequestPty("xterm-256color", int(rows), int(cols), modes); err != nil {
+		session.Close()
+		cancel()
+		m.killGrouped()
+		return fmt.Errorf("request pty: %w", err)
+	}
+
+	stdout, err := session.StdoutPipe()
 	if err != nil {
+		session.Close()
 		cancel()
-		return fmt.Errorf("capture-pane: %w", err)
+		m.killGrouped()
+		return fmt.Errorf("stdout pipe: %w", err)
 	}
-	if altScreen {
-		// Prepend the alt-screen enter code so xterm.js renders capture-pane
-		// (rendered alt-screen contents) on the right surface.
-		backfill = append([]byte("\x1b[?1049h"), backfill...)
-	}
-	m.backfill = backfill
+	session.Stderr = io.Discard
 
-	// 2. Open the FIFO reader and the pipe-pane registrar, then start the
-	// reader goroutine that forwards bytes to subscribers.
-	fifoPath := fmt.Sprintf("/tmp/atx-%s-w%d-%d.fifo", m.machineName, m.windowIndex, time.Now().UnixNano())
-
-	// Create the FIFO synchronously so we know it exists before either the
-	// reader cat or the tmux pipe-pane shell-command tries to open it.
-	if err := m.runShortCommand("mkfifo " + shellQuote(fifoPath)); err != nil {
+	if err := session.Start("tmux attach -t " + shellQuote(m.groupedName)); err != nil {
+		session.Close()
 		cancel()
-		return fmt.Errorf("mkfifo: %w", err)
+		m.killGrouped()
+		return fmt.Errorf("attach: %w", err)
 	}
 
-	readerSession, err := m.client.NewSession()
-	if err != nil {
-		m.runShortCommand("rm -f " + shellQuote(fifoPath))
-		cancel()
-		return fmt.Errorf("reader session: %w", err)
-	}
-	readerOut, err := readerSession.StdoutPipe()
-	if err != nil {
-		readerSession.Close()
-		m.runShortCommand("rm -f " + shellQuote(fifoPath))
-		cancel()
-		return fmt.Errorf("reader stdout: %w", err)
-	}
-	readerSession.Stderr = io.Discard
+	m.sshMu.Lock()
+	m.sshSession = session
+	m.sshMu.Unlock()
 
-	if err := readerSession.Start("exec cat " + shellQuote(fifoPath)); err != nil {
-		readerSession.Close()
-		m.runShortCommand("rm -f " + shellQuote(fifoPath))
-		cancel()
-		return fmt.Errorf("start reader: %w", err)
-	}
-
-	// pipe-pane WITHOUT -o: replace any existing pipe on the pane. The -o
-	// flag means "only open if no pipe exists" — it would silently no-op
-	// against a stale registration from a previous (cleanly-torn-down or
-	// not) mirror.
-	if err := m.runShortCommand(fmt.Sprintf(
-		"tmux pipe-pane -t %s 'cat > %s'",
-		shellQuote(m.tmuxTarget), shellQuote(fifoPath),
-	)); err != nil {
-		readerSession.Close()
-		m.runShortCommand("rm -f " + shellQuote(fifoPath))
-		cancel()
-		return fmt.Errorf("register pipe-pane: %w", err)
-	}
-
-	m.fifoPath = fifoPath
-
-	go m.readLoop(ctx, readerSession, readerOut, fifoPath)
+	go m.readLoop(ctx, session, stdout)
 	return nil
 }
 
-func (m *Mirror) readLoop(ctx context.Context, session *ssh.Session, stdout io.Reader, fifoPath string) {
+// Resize updates the SSH PTY size, which propagates to tmux as a SIGWINCH
+// and re-runs the smallest-client negotiation for this window.
+func (m *Mirror) Resize(cols, rows uint32) error {
+	if cols == 0 || rows == 0 {
+		return nil
+	}
+	m.sshMu.Lock()
+	session := m.sshSession
+	m.sshMu.Unlock()
+	if session == nil {
+		return nil
+	}
+	return session.WindowChange(int(rows), int(cols))
+}
+
+func (m *Mirror) readLoop(ctx context.Context, session *ssh.Session, stdout io.Reader) {
 	defer close(m.done)
 	defer session.Close()
 	defer func() {
@@ -150,14 +163,9 @@ func (m *Mirror) readLoop(ctx context.Context, session *ssh.Session, stdout io.R
 		for ch := range subs {
 			close(ch)
 		}
-		// Best-effort cleanup: stop tmux piping and remove the FIFO file.
-		// Both may fail if the SSH client is already torn down, which is
-		// fine — a stale FIFO in /tmp is harmless until reboot.
-		_ = m.runShortCommand(fmt.Sprintf("tmux pipe-pane -t %s", shellQuote(m.tmuxTarget)))
-		_ = m.runShortCommand("rm -f " + shellQuote(fifoPath))
+		m.killGrouped()
 	}()
 
-	// Tear the reader session down if the parent ctx is cancelled.
 	go func() {
 		<-ctx.Done()
 		session.Close()
@@ -181,7 +189,10 @@ func (m *Mirror) readLoop(ctx context.Context, session *ssh.Session, stdout io.R
 func (m *Mirror) dispatch(data []byte) {
 	cp := append([]byte(nil), data...)
 	m.mu.Lock()
-	m.appendRecent(cp)
+	m.recent = append(m.recent, cp...)
+	if over := len(m.recent) - mirrorRecentBufBytes; over > 0 {
+		m.recent = m.recent[over:]
+	}
 	subs := make([]chan []byte, 0, len(m.subscribers))
 	for ch := range m.subscribers {
 		subs = append(subs, ch)
@@ -191,52 +202,35 @@ func (m *Mirror) dispatch(data []byte) {
 		select {
 		case ch <- cp:
 		default:
-			// Subscriber is slow; drop. Their xterm.js will be missing data
-			// but the alternative is unbounded buffering server-side.
+			// Slow subscriber; drop. xterm.js will be missing data but
+			// we'd rather drop than buffer unbounded server-side.
 		}
 	}
 }
 
-func (m *Mirror) appendRecent(data []byte) {
-	m.recent = append(m.recent, data...)
-	if over := len(m.recent) - mirrorRecentBufBytes; over > 0 {
-		m.recent = m.recent[over:]
-	}
-}
-
-// Subscribe attaches a new viewer. The returned channel receives the
-// backfill + the recent in-memory buffer immediately, then live output.
-// Caller must Unsubscribe when done.
+// Subscribe attaches a viewer. The returned channel receives the recent
+// in-memory buffer immediately, then live output. The recent buffer doubles
+// as a backfill — `tmux attach` itself emits a full repaint on connect, so
+// the most recent attach repaint is replayed to late subscribers.
 func (m *Mirror) Subscribe() chan []byte {
 	ch := make(chan []byte, 64)
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.dead {
 		close(ch)
 		return ch
 	}
-	if m.idleTimer != nil {
-		m.idleTimer.Stop()
-		m.idleTimer = nil
-	}
 	m.subscribers[ch] = struct{}{}
-
-	// Replay state to the new subscriber: backfill (full alt-screen snapshot
-	// or capture of normal screen) + recent live bytes. Channel cap is 64
-	// so this single send never blocks while we still hold mu.
-	initial := append(append([]byte(nil), m.backfill...), m.recent...)
-	if len(initial) > 0 {
-		ch <- initial
+	if len(m.recent) > 0 {
+		ch <- append([]byte(nil), m.recent...)
 	}
-
 	return ch
 }
 
-// Unsubscribe removes ch. When the last subscriber leaves, the mirror
-// stays alive for mirrorIdleTimeout before tearing down — onIdle is
-// called when the timer fires so the owner can clean up.
-func (m *Mirror) Unsubscribe(ch chan []byte, onIdle func()) {
+// Unsubscribe removes ch. When the last subscriber leaves, onLast fires —
+// callers use it to immediately tear down the mirror so atx's tmux client
+// (and its size constraint) goes away.
+func (m *Mirror) Unsubscribe(ch chan []byte, onLast func()) {
 	m.mu.Lock()
 	if _, ok := m.subscribers[ch]; !ok {
 		m.mu.Unlock()
@@ -244,26 +238,15 @@ func (m *Mirror) Unsubscribe(ch chan []byte, onIdle func()) {
 	}
 	delete(m.subscribers, ch)
 	close(ch)
-	startTimer := len(m.subscribers) == 0 && m.idleTimer == nil && !m.dead
-	if startTimer {
-		m.idleTimer = time.AfterFunc(mirrorIdleTimeout, onIdle)
-	}
+	last := len(m.subscribers) == 0 && !m.dead
 	m.mu.Unlock()
+	if last && onLast != nil {
+		onLast()
+	}
 }
 
 // Stop tears down the mirror immediately, regardless of viewer count.
 func (m *Mirror) Stop() {
-	m.mu.Lock()
-	if m.idleTimer != nil {
-		m.idleTimer.Stop()
-		m.idleTimer = nil
-	}
-	subs := m.subscribers
-	m.subscribers = nil
-	m.mu.Unlock()
-	for ch := range subs {
-		close(ch)
-	}
 	if m.cancel != nil {
 		m.cancel()
 	}
@@ -272,8 +255,10 @@ func (m *Mirror) Stop() {
 	}
 }
 
-// runShortCommand runs a one-shot command on a fresh SSH session and
-// returns once it exits.
+func (m *Mirror) killGrouped() {
+	_ = m.runShortCommand("tmux kill-session -t " + shellQuote(m.groupedName))
+}
+
 func (m *Mirror) runShortCommand(cmd string) error {
 	session, err := m.client.NewSession()
 	if err != nil {
@@ -282,40 +267,4 @@ func (m *Mirror) runShortCommand(cmd string) error {
 	defer session.Close()
 	session.Stderr = io.Discard
 	return session.Run(cmd)
-}
-
-func (m *Mirror) captureAltScreen() (bool, error) {
-	session, err := m.client.NewSession()
-	if err != nil {
-		return false, err
-	}
-	defer session.Close()
-	var out bytes.Buffer
-	session.Stdout = &out
-	session.Stderr = io.Discard
-	if err := session.Run(fmt.Sprintf("tmux display-message -p -t %s '#{alternate_on}'", shellQuote(m.tmuxTarget))); err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out.String()) == "1", nil
-}
-
-func (m *Mirror) capturePaneBackfill() ([]byte, error) {
-	session, err := m.client.NewSession()
-	if err != nil {
-		return nil, err
-	}
-	defer session.Close()
-	var out bytes.Buffer
-	session.Stdout = &out
-	session.Stderr = io.Discard
-	// -p stdout, -e include escapes, -J preserve trailing spaces+joins wrapped lines.
-	// -S - means start from the oldest visible line (no scrollback dump, just current view).
-	if err := session.Run(fmt.Sprintf("tmux capture-pane -p -e -J -t %s", shellQuote(m.tmuxTarget))); err != nil {
-		return nil, err
-	}
-	data := out.Bytes()
-	if len(data) > mirrorBackfillBytes {
-		data = data[len(data)-mirrorBackfillBytes:]
-	}
-	return data, nil
 }

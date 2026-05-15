@@ -79,11 +79,10 @@ func (m *Machine) tearDownConn() {
 }
 
 // AcquireMirror returns (and lazily starts) a mirror for the given window
-// index. The caller subscribes to receive output and must call
-// ReleaseMirror with the same channel when done.
-func (m *Machine) AcquireMirror(ctx context.Context, windowIdx int) (*Mirror, chan []byte, error) {
-	target := fmt.Sprintf("%s:%d", m.cfg.TmuxSession, windowIdx)
-
+// index, with an initial PTY size of cols×rows. The caller subscribes to
+// receive output and must call ReleaseMirror with the same channel when
+// done.
+func (m *Machine) AcquireMirror(ctx context.Context, windowIdx int, cols, rows uint32) (*Mirror, chan []byte, error) {
 	m.connMu.Lock()
 	conn := m.conn
 	if conn == nil {
@@ -96,13 +95,13 @@ func (m *Machine) AcquireMirror(ctx context.Context, windowIdx int) (*Mirror, ch
 		ok = false
 	}
 	if !ok {
-		mir = newMirror(m.cfg.Name, windowIdx, target, conn.client)
+		mir = newMirror(m.cfg.Name, windowIdx, m.cfg.TmuxSession, conn.client)
 		conn.mirrors[windowIdx] = mir
 	}
 	m.connMu.Unlock()
 
 	if !ok {
-		if err := mir.Start(ctx); err != nil {
+		if err := mir.Start(ctx, cols, rows); err != nil {
 			m.connMu.Lock()
 			if m.conn == conn {
 				delete(conn.mirrors, windowIdx)
@@ -110,13 +109,32 @@ func (m *Machine) AcquireMirror(ctx context.Context, windowIdx int) (*Mirror, ch
 			m.connMu.Unlock()
 			return nil, nil, err
 		}
+	} else if cols > 0 && rows > 0 {
+		// Re-acquire by a viewer with different size — adopt their size.
+		_ = mir.Resize(cols, rows)
 	}
 	return mir, mir.Subscribe(), nil
 }
 
+// ResizeMirror updates the PTY size of an already-acquired mirror.
+func (m *Machine) ResizeMirror(windowIdx int, cols, rows uint32) error {
+	m.connMu.Lock()
+	conn := m.conn
+	m.connMu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("machine %s offline", m.cfg.Name)
+	}
+	mir, ok := conn.mirrors[windowIdx]
+	if !ok {
+		return nil
+	}
+	return mir.Resize(cols, rows)
+}
+
 // ReleaseMirror unsubscribes ch from the window's mirror. When the last
-// subscriber for a window leaves, the mirror sits idle for 5 minutes
-// before tearing down.
+// subscriber leaves, the mirror tears down immediately so atx's tmux
+// client (and its smallest-client size contribution) goes away — letting
+// the pane snap back to the user's existing mosh-only geometry.
 func (m *Machine) ReleaseMirror(windowIdx int, ch chan []byte) {
 	m.connMu.Lock()
 	conn := m.conn
@@ -132,7 +150,7 @@ func (m *Machine) ReleaseMirror(windowIdx int, ch chan []byte) {
 		m.connMu.Lock()
 		defer m.connMu.Unlock()
 		if m.conn != conn {
-			return // reconnected; the new conn owns its own mirrors
+			return
 		}
 		if cur, ok := conn.mirrors[windowIdx]; ok && cur == mir {
 			cur.Stop()
