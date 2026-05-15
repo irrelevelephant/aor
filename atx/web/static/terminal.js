@@ -39,15 +39,16 @@
         return { cols, rows };
     }
     let resizeTimer = null;
-    window.addEventListener('resize', () => {
-        fit.fit();
+    function refitAndNotify() {
+        safeFit();
         positionCopyCursor();
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
             const { cols, rows } = currentSize();
             sendJSON({ type: 'resize', cols, rows });
         }, 150);
-    });
+    }
+    window.addEventListener('resize', refitAndNotify);
 
     const wsURL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/atx/ws';
     let ws = null;
@@ -596,18 +597,25 @@
     // --- visualViewport docking: keep the helper bar (or the compose
     // modal's send button, when that modal is open) above the soft keyboard ---
 
+    let lastFittedLift = -1;
     function dockBar() {
         if (!window.visualViewport) return;
         const vv = window.visualViewport;
         // Distance from layout-viewport bottom to visual-viewport bottom =
         // height of the keyboard (when shown).
         const liftedPx = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        document.body.style.setProperty('--helperbar-lift', `${liftedPx}px`);
         if (promptModal.hidden) {
             helperbar.style.transform = `translateY(${-liftedPx}px)`;
-            document.body.style.setProperty('--helperbar-lift', `${liftedPx}px`);
             promptSubmit.style.transform = '';
-            fit.fit();
-            positionCopyCursor();
+            // visualViewport.scroll fires per-frame on iOS; skip the refit
+            // when nothing actually moved. --helperbar-lift shrinks
+            // .terminal-host's margin-bottom so the terminal sits above the
+            // lifted helper bar; refit propagates the new row count to tmux.
+            if (liftedPx !== lastFittedLift) {
+                lastFittedLift = liftedPx;
+                refitAndNotify();
+            }
         } else {
             // Modal covers the terminal, so don't refit; just lift the send
             // button above the keyboard so the user can tap it without

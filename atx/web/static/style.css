@@ -586,7 +586,7 @@ body:has(.terminal-page) > main {
      * the fixed helper bar. With padding, FitAddon over-allocates
      * rows and the bottom lines render behind the buttons. */
     .terminal-host {
-        margin-bottom: calc(87px + max(4px, env(safe-area-inset-bottom)));
+        margin-bottom: calc(87px + max(4px, env(safe-area-inset-bottom)) + var(--helperbar-lift, 0px));
     }
 }
 
