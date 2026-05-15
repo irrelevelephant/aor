@@ -98,7 +98,7 @@ func RegisterRoutes(mux *http.ServeMux, d *db.DB, cfg *config.Config, opts ...Op
 
 	mux.HandleFunc("GET /atx/manifest.json", serveEmbedded("static/manifest.json", "application/manifest+json"))
 	mux.HandleFunc("GET /atx/sw.js", serveEmbedded("static/sw.js", "application/javascript"))
-	mux.Handle("GET /atx/static/", http.StripPrefix("/atx", http.FileServerFS(content)))
+	mux.Handle("GET /atx/static/", noCache(http.StripPrefix("/atx", http.FileServerFS(content))))
 
 	return srv
 }
@@ -110,8 +110,19 @@ func serveEmbedded(embedPath, contentType string) http.HandlerFunc {
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		w.Write(data)
 	}
+}
+
+// noCache wraps a handler so static assets always revalidate. Without
+// this, browsers serve aggressively-cached CSS/JS and miss UI fixes
+// until the user manually hard-refreshes.
+func noCache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+		h.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) render(w http.ResponseWriter, page string, data any) {
