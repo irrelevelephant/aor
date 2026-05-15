@@ -99,8 +99,8 @@ func (s *Server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log unconditionally. Step 9 will set Suppressed when a subscribed
-	// viewer is currently looking at this window.
+	// Always log; `suppressed` stays 0 until per-viewer suppression
+	// is wired (the schema field is reserved for that).
 	if err := s.db.InsertNotification(db.Notification{
 		Machine:     ev.Machine,
 		Session:     ev.Session,

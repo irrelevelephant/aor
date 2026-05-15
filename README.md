@@ -8,9 +8,10 @@ A Go workspace of small, composable tools for coordinating work across agents an
 |--------|---------|------|
 | **[`ata`](#ata--agent-tasks)** | Task tracker — backlog, queue, epics, dependencies, tags | `~/.ata/ata.db` |
 | **[`afl`](#afl--agent-flows)** | Flow & screenshot tracker for cross-platform UI parity | `~/.afl/afl.db`, `~/.afl/screenshots/` |
-| **[`aor`](#aor--unified-server)** | Unified web server that hosts both `ata` and `afl` UIs | — |
+| **[`atx`](#atx--agent-terminals)** | Tailscale-only PWA that mirrors remote tmux windows and routes Claude Code prompts as push notifications | `~/.atx/atx.db`, `~/.config/atx/` |
+| **[`aor`](#aor--unified-server)** | Unified web server that hosts the `ata`, `afl`, and `atx` UIs | — |
 
-All three are Go modules in a single workspace (`go.work`). Each CLI runs locally against its own SQLite database, or transparently proxies commands to a remote `aor serve` instance when a remote is configured.
+All four are Go modules in a single workspace (`go.work`). `ata` and `afl` run locally against their own SQLite database or transparently proxy commands to a remote `aor serve` instance when a remote is configured; `atx` runs only as part of `aor serve` (it isn't a standalone CLI).
 
 ## Install
 
@@ -64,12 +65,24 @@ Sources: `playwright`, `xcodebuildmcp`, `droidmind`, `manual`.
 
 See [`afl-design.md`](afl-design.md) for the full design spec (schema, parser, web UI).
 
+## `atx` — Agent terminals
+
+A Tailscale-only PWA that mirrors every tmux window across every Tailnet host (configured in `~/.config/atx/atx.toml`) and surfaces them as one-tap-navigable web terminals on desktop and phone.
+
+Behind the scenes:
+
+- One persistent SSH connection per machine over Tailscale MagicDNS, with `tmux -CC` (control mode) feeding live window/session events into an SSE stream the UI subscribes to.
+- Opening a window in the browser dials a second SSH session to a grouped tmux session that shares windows with the user's main session; xterm.js attaches as a real tmux client, so the pane's size follows the browser geometry and detaches when the tab is hidden.
+- Claude Code hooks on each remote host (`atx/hooks/*.sh`, installed via `~/dev-vm/sync.sh` into `~/.claude/atx-hooks/`) POST every `Notification` / `Stop` event to `/atx/api/hooks/event`. atx fans them out as Web Push to subscribed PWA devices; clicks deep-link back to the originating window. Machine names come from Tailscale's MagicDNS so they match `atx.toml` regardless of what the local OS thinks the hostname is.
+
+Configuration: copy `atx/atx.toml.example` to `~/.config/atx/atx.toml` and list each Tailnet host with a display name, color, and SSH user. atx has no CLI — it runs as part of `aor serve` and is reachable at `/atx/`.
+
 ## `aor` — Unified server
 
-`aor serve` runs one HTTP server that mounts both UIs and exposes both CLI exec APIs. Use this on a shared host so any machine with `ata` / `afl` configured with a remote can proxy to it.
+`aor serve` runs one HTTP server that mounts the `ata`, `afl`, and `atx` UIs and exposes the CLI exec APIs. Use this on a shared host so any machine with `ata` / `afl` configured with a remote can proxy to it.
 
 ```bash
-aor serve                             # :4400, ata UI at /, afl UI at /afl/
+aor serve                             # :4400, ata UI at /, afl UI at /afl/, atx UI at /atx/
 aor serve --port 8080 --addr 127.0.0.1
 aor serve --tls-cert cert.pem --tls-key key.pem
 ```
@@ -78,6 +91,7 @@ Endpoints:
 
 - `ata` UI: `/`, exec API: `/api/v1/exec`
 - `afl` UI: `/afl/`, exec API: `/api/v1/afl/exec`, upload: `/api/v1/afl/upload`
+- `atx` UI: `/atx/`, terminal WS: `/atx/ws`, push: `/atx/api/push/{subscribe,unsubscribe,vapid-public-key}`, hook ingest: `/atx/api/hooks/event`
 - Shared SSE: `/events`
 
 ## Remote proxy
@@ -97,6 +111,7 @@ Config lives at `~/.ata/config.json` and `~/.afl/config.json`.
 .
 ├── ata/            # task tracker (CLI + web + SQLite)
 ├── afl/            # flow & screenshot tracker (CLI + web + SQLite + flows.md parser)
+├── atx/            # tmux web UI + Web Push + Claude Code hooks (web-only, no CLI)
 ├── aor/            # unified server
 ├── afl-design.md   # afl design spec
 ├── go.work         # Go workspace

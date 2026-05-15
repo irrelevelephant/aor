@@ -20,6 +20,9 @@ Hooks are fire-and-forget: they never block the prompt and always
 ## Dependencies on the remote
 
 - `bash`, `curl`, `python3` (for safe JSON construction)
+- `tailscale` (for the canonical machine name — falls back to
+  `hostname -s` if absent, which on macOS gives the device name like
+  `Thomass-Mac-mini` rather than the Tailnet alias)
 - `tmux` (only used to enrich the event; absent tmux just leaves the
   fields empty)
 
@@ -71,6 +74,8 @@ curl -X POST -H 'Content-Type: application/json' \
 
 ## Suppression
 
-Step 9 of the atx plan adds per-viewer suppression: when an atx PWA
-client is visible and currently viewing the exact window the event
-fires from, the push is logged but not delivered.
+Not currently implemented. Every Notification/Stop fires a push to
+every subscribed device, regardless of whether someone has the
+matching window open in the PWA. The `notifications` table has a
+`suppressed` column ready for per-viewer suppression to be added
+later without a migration.

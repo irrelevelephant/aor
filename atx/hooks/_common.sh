@@ -16,12 +16,24 @@ ATX_SERVER="${ATX_SERVER:-https://pie.tail1454ae.ts.net}"
 ATX_TIMEOUT="${ATX_TIMEOUT:-5}"
 ATX_EVENT="${ATX_EVENT:-unknown}"
 
-# Prefer an explicit override written by `dev-vm/sync.sh` (it knows the
-# canonical name from machines.conf). Without it, macOS `hostname -s`
-# returns `Thomass-Mac-mini` etc., which won't match any atx.toml entry.
-if [[ -r "$HOME/.atx-machine" ]]; then
-    machine="$(cat "$HOME/.atx-machine")"
-else
+# Pull the canonical machine name from Tailscale: the first label of the
+# MagicDNS name (e.g. "mac-mini" from "mac-mini.tail1454ae.ts.net.").
+# This matches the entries in atx.toml on the server. The system
+# `hostname -s` on macOS returns the device name ("Thomass-Mac-mini")
+# which doesn't.
+machine=""
+if command -v tailscale >/dev/null 2>&1; then
+    machine="$(tailscale status --self --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    dn = (d.get("Self") or {}).get("DNSName") or ""
+    print(dn.split(".", 1)[0])
+except Exception:
+    pass
+' 2>/dev/null)"
+fi
+if [[ -z "$machine" ]]; then
     machine="$(hostname -s 2>/dev/null || uname -n)"
 fi
 machine="${machine//[$'\t\r\n ']/}"
