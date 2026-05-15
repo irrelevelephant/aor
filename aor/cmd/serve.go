@@ -10,10 +10,6 @@ import (
 	"sync"
 	"time"
 
-	aflcmd "aor/afl/cmd"
-	afldb "aor/afl/db"
-	aflweb "aor/afl/web"
-
 	atacmd "aor/ata/cmd"
 	atadb "aor/ata/db"
 	ataweb "aor/ata/web"
@@ -25,7 +21,7 @@ import (
 	atxweb "aor/atx/web"
 )
 
-// Hub is a shared SSE event broadcaster for both ata and afl.
+// Hub is a shared SSE event broadcaster across the mounted UIs.
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[chan string]struct{}
@@ -89,17 +85,6 @@ func Serve(args []string) error {
 	}
 	defer ataDB.Close()
 
-	// Open afl database.
-	aflDBPath, err := afldb.DefaultDBPath()
-	if err != nil {
-		return fmt.Errorf("afl db path: %w", err)
-	}
-	aflDB, err := afldb.Open(aflDBPath)
-	if err != nil {
-		return fmt.Errorf("open afl db: %w", err)
-	}
-	defer aflDB.Close()
-
 	// Open atx database.
 	atxDBPath, err := atxdb.DefaultDBPath()
 	if err != nil {
@@ -134,12 +119,6 @@ func Serve(args []string) error {
 	ataweb.RegisterRoutes(mux, ataDB,
 		ataweb.WithDispatch(atacmd.Dispatch),
 		ataweb.WithSSE(hub),
-	)
-
-	// Register afl routes at /afl/.
-	aflweb.RegisterRoutes(mux, aflDB,
-		aflweb.WithDispatch(aflcmd.Dispatch),
-		aflweb.WithSSE(hub),
 	)
 
 	// Start the atx runtime (SSH + tmux control mode per machine) and
@@ -222,10 +201,8 @@ func Serve(args []string) error {
 	}
 	fmt.Printf("aor web server: %s://localhost:%d\n", scheme, *port)
 	fmt.Printf("  ata UI:  %s://localhost:%d/\n", scheme, *port)
-	fmt.Printf("  afl UI:  %s://localhost:%d/afl/\n", scheme, *port)
 	fmt.Printf("  atx UI:  %s://localhost:%d/atx/\n", scheme, *port)
 	fmt.Printf("  ata API: %s://localhost:%d/api/v1/exec\n", scheme, *port)
-	fmt.Printf("  afl API: %s://localhost:%d/api/v1/afl/exec\n", scheme, *port)
 
 	if *tlsCert != "" {
 		return http.ListenAndServeTLS(listen, *tlsCert, *tlsKey, handler)

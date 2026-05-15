@@ -39,7 +39,7 @@ Usage:
   aor <command> [args]
 
 Commands:
-  serve     Start unified web server (ata + afl)
+  serve     Start unified web server (ata + atx)
 
 Flags:
   --port <n>        HTTP port (default: 4400)
