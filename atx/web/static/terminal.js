@@ -40,6 +40,7 @@
     }
     let resizeTimer = null;
     function refitAndNotify() {
+        publishHelperbarHeight();
         safeFit();
         positionCopyCursor();
         clearTimeout(resizeTimer);
@@ -222,6 +223,19 @@
     const helperbar = document.getElementById('helperbar');
     // Visibility is CSS-driven: hidden by default, shown in
     // @media (pointer: coarse), (max-width: 600px). See style.css.
+
+    // Measured (not hardcoded as in earlier revisions) so .terminal-host's
+    // margin-bottom tracks helper-bar layout and safe-area-inset-bottom
+    // exactly — avoids off-by-one clipping of the bottom xterm row on Android.
+    let lastHelperbarHeight = -1;
+    function publishHelperbarHeight() {
+        const h = helperbar.getBoundingClientRect().height;
+        if (h > 0 && h !== lastHelperbarHeight) {
+            lastHelperbarHeight = h;
+            document.body.style.setProperty('--helperbar-height', `${h}px`);
+        }
+    }
+    publishHelperbarHeight();
 
     // Resolved in JS so raw control bytes never round-trip through HTML
     // attribute parsing.
