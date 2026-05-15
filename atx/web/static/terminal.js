@@ -199,9 +199,11 @@
         dockBar();
     }
 
-    // --- swipe-between-windows on the terminal area ---
+    // --- touch on the terminal area: vertical drag scrolls scrollback,
+    //     horizontal flick navigates prev/next window ---
 
     let touchStartX = 0, touchStartY = 0, touchStartT = 0;
+    let scrollLastY = 0, scrollCellH = 0, didScroll = false;
     const SWIPE_MIN_X = 80, SWIPE_MAX_Y = 60, SWIPE_MAX_MS = 500;
 
     const swipeTarget = document.querySelector('.terminal-host');
@@ -210,9 +212,21 @@
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
         touchStartT = Date.now();
+        scrollLastY = touchStartY;
+        scrollCellH = term.element.getBoundingClientRect().height / Math.max(1, term.rows);
+        didScroll = false;
+    }, { passive: true });
+    swipeTarget.addEventListener('touchmove', (e) => {
+        if (e.touches.length !== 1 || scrollCellH <= 0) return;
+        const y = e.touches[0].clientY;
+        const rows = Math.trunc((y - scrollLastY) / scrollCellH);
+        if (rows === 0) return;
+        term.scrollLines(-rows);
+        scrollLastY += rows * scrollCellH;
+        didScroll = true;
     }, { passive: true });
     swipeTarget.addEventListener('touchend', (e) => {
-        if (e.changedTouches.length !== 1) return;
+        if (e.changedTouches.length !== 1 || didScroll) return;
         const t = e.changedTouches[0];
         const dx = t.clientX - touchStartX;
         const dy = Math.abs(t.clientY - touchStartY);
