@@ -552,9 +552,8 @@ body:has(.terminal-page) > main {
 }
 
 /* Default mode shows .hb-default buttons; copy mode swaps to .hb-copymode.
- * Buttons are hidden via display:none so they leave the grid entirely (and
- * the copy-mode 14-slot layout reuses the same grid as the 12-slot default
- * + compose spanning). */
+ * Buttons are hidden via display:none so they leave the grid entirely; both
+ * modes fill the same 14-slot (7x2) grid. */
 .helperbar:not([data-mode="copy"]) .hb-copymode { display: none; }
 .helperbar[data-mode="copy"] .hb-default { display: none; }
 
@@ -580,12 +579,6 @@ body:has(.terminal-page) > main {
         z-index: 100;
         transform: translateY(0);
         transition: transform 0.15s ease-out;
-    }
-    .hb-compose {
-        grid-column: 7;
-        grid-row: 1 / span 2;
-        height: auto;
-        font-size: 1.4rem;
     }
     /* margin-bottom (not padding) so xterm's FitAddon — which reads
      * getComputedStyle(parent).height and only subtracts the xterm
