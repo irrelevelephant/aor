@@ -50,11 +50,11 @@
     });
 
     const wsURL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/atx/ws';
-    const ws = new WebSocket(wsURL);
-    ws.binaryType = 'arraybuffer';
-
+    let ws = null;
     let connected = false;
     let pending = [];
+    let reconnectTimer = null;
+    let reconnectDelay = 500;
 
     function sendJSON(obj) {
         const msg = JSON.stringify(obj);
@@ -66,15 +66,6 @@
         if (!connected) return;
         ws.send(data instanceof Uint8Array ? data : new TextEncoder().encode(data));
     }
-
-    ws.onopen = () => {
-        connected = true;
-        sendJSON({ type: 'hello' });
-        const { cols, rows } = currentSize();
-        sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
-        for (const msg of pending) ws.send(msg);
-        pending = [];
-    };
 
     // Pending WS request → resolver, keyed by reqId. The copy/paste protocol
     // is request/reply: each `copy_*` or `paste_clipboard` message has a
@@ -99,36 +90,78 @@
         });
     }
 
-    ws.onmessage = (e) => {
-        if (e.data instanceof ArrayBuffer) {
-            term.write(new Uint8Array(e.data));
-            return;
-        }
-        if (typeof e.data !== 'string') return;
-        let msg;
-        try { msg = JSON.parse(e.data); } catch (_) { return; }
-        // Reply correlation first; broadcasts (no reqId) fall through.
-        if (msg.reqId && pendingReqs.has(msg.reqId)) {
-            const p = pendingReqs.get(msg.reqId);
-            pendingReqs.delete(msg.reqId);
-            if (msg.type === 'error') p.reject(new Error(msg.error || 'error'));
-            else p.resolve(msg.payload);
-            return;
-        }
-        if (msg.type === 'error' && msg.error) {
-            term.write('\r\n\x1b[31matx: ' + msg.error + '\x1b[0m\r\n');
-        } else if (msg.type === 'copy_state' && msg.payload) {
-            // Server-initiated push (e.g. on view start after CopyResync).
-            applyCopyState(msg.payload);
-        }
-    };
+    // Mobile Safari and PWAs routinely drop the WebSocket when backgrounded.
+    // connect() is idempotent and re-attaches the server-side mirror on
+    // resume by re-sending `view` in onopen; we never surface the drop to
+    // the terminal since the user would just see a misleading error before
+    // the reconnect repaint.
+    function connect() {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-    ws.onclose = () => {
-        connected = false;
-        for (const p of pendingReqs.values()) p.reject(new Error('disconnected'));
-        pendingReqs.clear();
-        term.write('\r\n\x1b[33matx: connection closed\x1b[0m\r\n');
-    };
+        // Any queued sends were aimed at the previous session; the fresh
+        // hello+view below supersede them.
+        pending = [];
+
+        ws = new WebSocket(wsURL);
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = () => {
+            connected = true;
+            reconnectDelay = 500;
+            sendJSON({ type: 'hello' });
+            const { cols, rows } = currentSize();
+            sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
+            for (const msg of pending) ws.send(msg);
+            pending = [];
+        };
+
+        ws.onmessage = (e) => {
+            if (e.data instanceof ArrayBuffer) {
+                term.write(new Uint8Array(e.data));
+                return;
+            }
+            if (typeof e.data !== 'string') return;
+            let msg;
+            try { msg = JSON.parse(e.data); } catch (_) { return; }
+            // Reply correlation first; broadcasts (no reqId) fall through.
+            if (msg.reqId && pendingReqs.has(msg.reqId)) {
+                const p = pendingReqs.get(msg.reqId);
+                pendingReqs.delete(msg.reqId);
+                if (msg.type === 'error') p.reject(new Error(msg.error || 'error'));
+                else p.resolve(msg.payload);
+                return;
+            }
+            if (msg.type === 'error' && msg.error) {
+                term.write('\r\n\x1b[31matx: ' + msg.error + '\x1b[0m\r\n');
+            } else if (msg.type === 'copy_state' && msg.payload) {
+                // Server-initiated push (e.g. on view start after CopyResync).
+                applyCopyState(msg.payload);
+            }
+        };
+
+        ws.onclose = () => {
+            connected = false;
+            for (const p of pendingReqs.values()) p.reject(new Error('disconnected'));
+            pendingReqs.clear();
+            // While hidden, defer reconnection — no point streaming a mirror
+            // the user can't see, and the visibilitychange handler will
+            // trigger connect() on resume.
+            if (document.hidden) return;
+            scheduleReconnect();
+        };
+    }
+
+    function scheduleReconnect() {
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connect();
+        }, reconnectDelay);
+        reconnectDelay = Math.min(5000, reconnectDelay * 2);
+    }
+
+    connect();
 
     // --- modifier state machine + onData interception ---
 
@@ -895,12 +928,19 @@
 
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-            sendJSON({ type: 'view_hidden' });
-        } else {
-            fit.fit();
-            const { cols, rows } = currentSize();
-            sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
+            if (connected) sendJSON({ type: 'view_hidden' });
+            return;
         }
+        if (!connected) {
+            // WS was dropped while backgrounded — re-attach. onopen sends
+            // a fresh `view`, so the server re-acquires the mirror and
+            // repaints automatically.
+            connect();
+            return;
+        }
+        fit.fit();
+        const { cols, rows } = currentSize();
+        sendJSON({ type: 'view', machine: view.machine, window: view.window, cols, rows });
     });
 
     // --- iOS install hint (one-time) ---
