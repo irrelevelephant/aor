@@ -102,7 +102,13 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 	// never sees a `%session-window-changed`. Set AFTER the initial
 	// select-window so mirror creation itself doesn't yank the main
 	// session's current-window pointer.
-	hookBody := shellQuote(fmt.Sprintf("select-window -t %s:#{window_index}", m.tmuxSession))
+	//
+	// run-shell wraps a `tmux select-window` invocation because a bare
+	// `select-window -t main:#{window_index}` hook body parses fine into
+	// set-hook but never actually moves main's pointer when the hook
+	// fires (tmux 3.6a). The run-shell variant expands #{window_index}
+	// in the source-session context and re-enters tmux from a shell.
+	hookBody := shellQuote(fmt.Sprintf(`run-shell "tmux select-window -t %s:#{window_index}"`, m.tmuxSession))
 	setup := fmt.Sprintf(
 		"tmux new-session -d -t %s -s %s \\; select-window -t %s:%d \\; set-hook -t %s session-window-changed %s",
 		shellQuote(m.tmuxSession), shellQuote(m.groupedName),
