@@ -160,7 +160,7 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 	}
 	session.Stderr = io.Discard
 
-	if err := session.Start("tmux attach -t " + shellQuote(m.groupedName)); err != nil {
+	if err := session.Start("tmux -u attach -t " + shellQuote(m.groupedName)); err != nil {
 		session.Close()
 		cancel()
 		m.killGrouped()

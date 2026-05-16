@@ -414,10 +414,15 @@ func startControlSession(client *ssh.Client, cfg config.Machine) (*controlSessio
 }
 
 func tmuxLaunchCommand(c config.Machine) string {
+	// -u forces UTF-8 regardless of the SSH login's LC_CTYPE. Without it,
+	// remotes that land in a POSIX locale (e.g. Tailscale SSH without
+	// AcceptEnv LANG) produce a non-UTF-8 client flag, which co-attached
+	// to the mirror's UTF-8 client drifts redraws on ambiguous-width
+	// glyphs (Claude Code box-drawing, arrows, ellipses, etc.).
 	if c.AutoCreate {
-		return fmt.Sprintf("tmux -CC new-session -A -s %s", shellQuote(c.TmuxSession))
+		return fmt.Sprintf("tmux -u -CC new-session -A -s %s", shellQuote(c.TmuxSession))
 	}
-	return fmt.Sprintf("tmux -CC attach -t %s", shellQuote(c.TmuxSession))
+	return fmt.Sprintf("tmux -u -CC attach -t %s", shellQuote(c.TmuxSession))
 }
 
 // shellQuote wraps s in single quotes, escaping any embedded single quotes
