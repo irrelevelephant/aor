@@ -306,12 +306,66 @@
         lastFireT = now;
         activateHbBtn(btn);
     }
+
+    // Arrow-key auto-repeat: holding ←/↑/↓/→ behaves like a physical
+    // keyboard — fire once on pointerdown, then after a 400ms initial
+    // delay repeat at ~40ms (matches OS keyboard repeat rates).
+    const REPEAT_ARROW_KEYS = new Set(['up', 'down', 'left', 'right']);
+    const REPEAT_INITIAL_DELAY_MS = 400;
+    const REPEAT_INTERVAL_MS = 40;
+    let holdInitialT = 0;
+    let holdIntervalT = 0;
+    let inHoldGesture = false;
+    function isRepeatArrowBtn(btn) {
+        if (!btn) return false;
+        const a = btn.dataset.action || '';
+        return a.startsWith('key:') && REPEAT_ARROW_KEYS.has(a.slice(4));
+    }
+    function stopHoldRepeat() {
+        if (holdInitialT) { clearTimeout(holdInitialT); holdInitialT = 0; }
+        if (holdIntervalT) { clearInterval(holdIntervalT); holdIntervalT = 0; }
+    }
+    function endHoldGesture() {
+        inHoldGesture = false;
+        stopHoldRepeat();
+    }
+
     helperbar.addEventListener('pointerdown', (e) => {
-        if (e.target.closest('.hb-btn')) e.preventDefault();
+        const btn = e.target.closest('.hb-btn');
+        if (!btn) return;
+        e.preventDefault();
+        if (isRepeatArrowBtn(btn)) {
+            // Fire the first arrow immediately, then arm the repeat. The
+            // synthetic pointerup/touchend/click that follow this gesture
+            // are swallowed by inHoldGesture so they don't double-fire.
+            stopHoldRepeat();
+            inHoldGesture = true;
+            lastFireT = Date.now();
+            activateHbBtn(btn);
+            holdInitialT = setTimeout(() => {
+                holdInitialT = 0;
+                holdIntervalT = setInterval(() => {
+                    lastFireT = Date.now();
+                    activateHbBtn(btn);
+                }, REPEAT_INTERVAL_MS);
+            }, REPEAT_INITIAL_DELAY_MS);
+        }
     });
-    helperbar.addEventListener('pointerup', (e) => maybeFire(e.target.closest('.hb-btn')));
-    helperbar.addEventListener('touchend', (e) => maybeFire(e.target.closest('.hb-btn')));
-    helperbar.addEventListener('click', (e) => maybeFire(e.target.closest('.hb-btn')));
+    helperbar.addEventListener('pointerup', (e) => {
+        if (inHoldGesture) { endHoldGesture(); return; }
+        maybeFire(e.target.closest('.hb-btn'));
+    });
+    helperbar.addEventListener('pointercancel', () => {
+        if (inHoldGesture) endHoldGesture();
+    });
+    helperbar.addEventListener('touchend', (e) => {
+        if (inHoldGesture) { endHoldGesture(); return; }
+        maybeFire(e.target.closest('.hb-btn'));
+    });
+    helperbar.addEventListener('click', (e) => {
+        if (inHoldGesture) return;
+        maybeFire(e.target.closest('.hb-btn'));
+    });
 
     // --- copy mode ---
     //
