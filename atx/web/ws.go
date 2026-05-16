@@ -60,6 +60,11 @@ type copiedPayload struct {
 	Text string `json:"text"`
 }
 
+type tmuxCmdPayload struct {
+	Action string `json:"action"`
+	Name   string `json:"name,omitempty"` // rename: new window name
+}
+
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if s.rt == nil {
 		http.Error(w, "runtime not configured", http.StatusServiceUnavailable)
@@ -161,7 +166,42 @@ func (c *wsClient) handleControl(data []byte) {
 		c.handleCopyCancel(msg.ReqId)
 	case "paste_clipboard":
 		c.handlePasteClipboard(msg.ReqId, msg.Payload)
+	case "tmux_cmd":
+		c.handleTmuxCmd(msg.ReqId, msg.Payload)
 	}
+}
+
+func (c *wsClient) handleTmuxCmd(reqId string, raw json.RawMessage) {
+	c.mu.Lock()
+	mirror := c.mirror
+	machine := c.machine
+	c.mu.Unlock()
+	if mirror == nil {
+		c.sendErrReq(reqId, "not viewing")
+		return
+	}
+	var p tmuxCmdPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		c.sendErrReq(reqId, "bad tmux_cmd payload")
+		return
+	}
+	var windows []runtime.Window
+	if snap, ok := c.rt.MachineState(machine); ok {
+		windows = snap.Windows
+	}
+	res, err := mirror.WindowCommand(runtime.WindowAction(p.Action), p.Name, windows)
+	if err != nil {
+		c.sendErrReq(reqId, err.Error())
+		return
+	}
+	// Sync-refresh the window list so the browser's follow-up
+	// /atx/api/machines fetch sees the post-command state — otherwise
+	// the picker/header race the 200ms tmux-event debounce and render
+	// the old names/indexes.
+	if err := c.rt.RefreshWindows(machine); err != nil {
+		log.Printf("atx ws: refresh windows after %s: %v", p.Action, err)
+	}
+	c.writeJSON(serverMsg{Type: "tmux_cmd", ReqId: reqId, Payload: res})
 }
 
 func (c *wsClient) currentMirror() *runtime.Mirror {

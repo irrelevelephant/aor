@@ -33,7 +33,7 @@
         <button class="hb-btn hb-default" data-action="key:pgup">PgUp</button>
         <button class="hb-btn hb-default" data-action="key:up">↑</button>
         <button class="hb-btn hb-default" data-action="key:pgdn">PgDn</button>
-        <button class="hb-btn hb-default hb-mod" data-action="mod:prefix">C-o</button>
+        <button class="hb-btn hb-default" data-action="cmdmenu" aria-label="Quick commands">⚡</button>
         <button class="hb-btn hb-default" data-action="paste" aria-label="Paste">📥</button>
         <button class="hb-btn hb-default hb-mod" data-action="mod:ctrl">Ctrl</button>
         <button class="hb-btn hb-default hb-mod" data-action="mod:alt">Alt</button>
@@ -56,6 +56,15 @@
         <button class="hb-btn hb-copymode" data-action="copyfn:history-bottom" aria-label="Bottom of history">⤓</button>
         <button class="hb-btn hb-copymode" data-action="copyfn:page-down">PgDn</button>
         <button class="hb-btn hb-copymode hb-copy-yank" data-action="copyfn:yank" aria-label="Yank">Yank</button>
+        <!-- Command-menu buttons (shown when [data-mode="cmd"]); rendered in two rows via the flex line-break span -->
+        <button class="hb-btn hb-cmdmode hb-cmd-back" data-action="cmd:dismiss" aria-label="Close commands">✕</button>
+        <button class="hb-btn hb-cmdmode" data-action="cmd:new">New</button>
+        <button class="hb-btn hb-cmdmode" data-action="cmd:rename">Rename</button>
+        <button class="hb-btn hb-cmdmode hb-cmd-destructive" data-action="cmd:close">Close</button>
+        <span class="hb-cmd-rowbreak" aria-hidden="true"></span>
+        <button class="hb-btn hb-cmdmode" data-action="cmd:swap-prev" aria-label="Move window left">◀</button>
+        <button class="hb-btn hb-cmdmode" data-action="cmd:swap-next" aria-label="Move window right">▶</button>
+        <button class="hb-btn hb-cmdmode" data-action="cmd:renumber" aria-label="Renumber windows">♻️</button>
     </div>
     <div class="paste-catcher" id="paste-catcher" hidden>
         <div class="paste-catcher-box">
@@ -66,6 +75,15 @@
         </div>
     </div>
     <div class="copy-toast" id="copy-toast" hidden>Copied — tap to copy to clipboard</div>
+    <div class="confirm-modal" id="close-confirm-modal" hidden>
+        <div class="confirm-modal-card">
+            <div class="confirm-modal-title" id="close-confirm-title">Close window?</div>
+            <div class="confirm-modal-actions">
+                <button class="hb-btn confirm-cancel" id="close-confirm-cancel">Cancel</button>
+                <button class="hb-btn confirm-destructive" id="close-confirm-yes">Close</button>
+            </div>
+        </div>
+    </div>
     <div class="prompt-modal" id="prompt-modal" hidden>
         <div class="prompt-modal-header">
             <button class="hb-btn prompt-modal-close" id="prompt-modal-close" aria-label="Close">×</button>

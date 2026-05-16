@@ -268,11 +268,16 @@
 
     function activateHbBtn(btn) {
         const action = btn.dataset.action;
-        if (action === 'compose') { openPromptModal(); return; }
-        if (action === 'copy')    { enterCopyMode(); return; }
-        if (action === 'paste')   { pasteAction(); return; }
+        if (action === 'compose')  { openPromptModal('compose'); return; }
+        if (action === 'copy')     { enterCopyMode(); return; }
+        if (action === 'paste')    { pasteAction(); return; }
+        if (action === 'cmdmenu')  { enterCmdMenu(); return; }
         if (action.startsWith('copyfn:')) {
             handleCopyFn(action.slice('copyfn:'.length));
+            return;
+        }
+        if (action.startsWith('cmd:')) {
+            handleCmdAction(action.slice('cmd:'.length));
             return;
         }
         const sep = action.indexOf(':');
@@ -588,18 +593,39 @@
         });
     }
 
-    // --- compose-prompt modal ---
+    // --- compose-prompt modal (dual-purpose: free-text compose, or rename) ---
 
     const promptModal = document.getElementById('prompt-modal');
     const promptTextarea = document.getElementById('prompt-modal-textarea');
     const promptClose = document.getElementById('prompt-modal-close');
     const promptSubmit = document.getElementById('prompt-modal-submit');
+    // Tracks how submit should behave: 'compose' sends text into the pane;
+    // 'rename' calls tmux_cmd rename. Set when opening and read on submit.
+    let promptMode = 'compose';
 
-    function openPromptModal() {
+    function openPromptModal(mode) {
+        promptMode = mode || 'compose';
+        if (promptMode === 'rename') {
+            // Prefill with the current window's name and select it all so a
+            // tap-and-type immediately overwrites, while preserving the
+            // edit-in-place option.
+            const w = windowOf(view.machine, view.window);
+            const prefill = (w && w.name) || '';
+            promptTextarea.value = prefill;
+            promptTextarea.placeholder = 'Window name';
+            promptSubmit.disabled = prefill.length === 0;
+        } else {
+            promptTextarea.value = '';
+            promptTextarea.placeholder = 'Compose…';
+            promptSubmit.disabled = true;
+        }
         promptModal.hidden = false;
         // Defer focus to next frame so the keyboard pops up reliably on iOS.
         requestAnimationFrame(() => {
             promptTextarea.focus();
+            if (promptMode === 'rename' && promptTextarea.value.length > 0) {
+                promptTextarea.select();
+            }
             dockBar();
         });
     }
@@ -607,11 +633,14 @@
         promptModal.hidden = true;
         promptTextarea.value = '';
         promptSubmit.disabled = true;
+        promptMode = 'compose';
         term.focus();
         dockBar();
     }
     function tryCloseWithConfirm() {
-        if (promptTextarea.value.length > 0 && !confirm('Discard this prompt?')) return;
+        // Don't pester for confirmation on a rename: the field starts non-empty
+        // by design (prefilled), so the "you'll lose your text" prompt is noise.
+        if (promptMode !== 'rename' && promptTextarea.value.length > 0 && !confirm('Discard this prompt?')) return;
         closePromptModal();
     }
 
@@ -622,9 +651,111 @@
     promptSubmit.addEventListener('click', () => {
         const text = promptTextarea.value;
         if (text.length === 0) return;
+        if (promptMode === 'rename') {
+            runTmuxCmd({ action: 'rename', name: text }).catch(() => {});
+            closePromptModal();
+            return;
+        }
         sendBytes(text);
         closePromptModal();
     });
+
+    // --- command menu (inline helperbar swap) ---
+
+    const closeConfirmModal = document.getElementById('close-confirm-modal');
+    const closeConfirmTitle = document.getElementById('close-confirm-title');
+    const closeConfirmYes = document.getElementById('close-confirm-yes');
+    const closeConfirmCancel = document.getElementById('close-confirm-cancel');
+
+    function enterCmdMenu() {
+        helperbar.setAttribute('data-mode', 'cmd');
+        // Helper-bar height changes when the menu swaps to two rows; refit so
+        // the terminal margin tracks it and rows aren't clipped.
+        refitAndNotify();
+    }
+    function dismissCmdMenu() {
+        if (helperbar.getAttribute('data-mode') === 'cmd') {
+            helperbar.removeAttribute('data-mode');
+            refitAndNotify();
+        }
+    }
+
+    // Single point of contact for the WS tmux_cmd reply: apply the
+    // server-reported active window if it changed, and refresh the cached
+    // machines list so the picker/window-name/title catch up to the new
+    // tmux state (rename, new, close, renumber, swap all mutate windows).
+    function applyCmdResult(res) {
+        if (res && typeof res.activeWindow === 'number' && res.activeWindow !== view.window) {
+            navigateTo(view.machine, res.activeWindow);
+        }
+        refreshMachines();
+    }
+    function runTmuxCmd(payload) {
+        return wsRequest('tmux_cmd', payload).then((res) => {
+            applyCmdResult(res);
+            return res;
+        }).catch((e) => {
+            console.warn('atx: tmux_cmd', payload, e);
+            throw e;
+        });
+    }
+
+    function handleCmdAction(name) {
+        if (name === 'dismiss') { dismissCmdMenu(); return; }
+        if (name === 'new') {
+            runTmuxCmd({ action: 'new' }).catch(() => {}).finally(dismissCmdMenu);
+            return;
+        }
+        if (name === 'rename') {
+            // Compose modal takes over from here; it handles its own dismiss
+            // and the helperbar reverts when we leave cmd mode.
+            dismissCmdMenu();
+            openPromptModal('rename');
+            return;
+        }
+        if (name === 'close') {
+            const w = windowOf(view.machine, view.window);
+            const label = w && w.name ? `${view.window} "${w.name}"` : `${view.window}`;
+            closeConfirmTitle.textContent = `Close window ${label}?`;
+            closeConfirmModal.hidden = false;
+            return;
+        }
+        if (name === 'swap-prev' || name === 'swap-next') {
+            // ◀ / ▶ keep the menu open for repeat taps; user dismisses with ✕.
+            runTmuxCmd({ action: name }).catch(() => {});
+            return;
+        }
+        if (name === 'renumber') {
+            runTmuxCmd({ action: 'renumber' }).catch(() => {}).finally(dismissCmdMenu);
+            return;
+        }
+    }
+
+    function bindCloseConfirm() {
+        const fire = (yes) => {
+            closeConfirmModal.hidden = true;
+            if (!yes) { dismissCmdMenu(); return; }
+            runTmuxCmd({ action: 'close' }).catch(() => {}).finally(dismissCmdMenu);
+        };
+        // Same triple-event dedupe pattern as the helperbar — iOS Safari
+        // suppresses one of pointerup/touchend/click depending on the gesture.
+        let lastT = 0;
+        const guard = (cb) => () => {
+            const now = Date.now();
+            if (now - lastT < 250) return;
+            lastT = now;
+            cb();
+        };
+        for (const ev of ['pointerup', 'touchend', 'click']) {
+            closeConfirmYes.addEventListener(ev, guard(() => fire(true)));
+            closeConfirmCancel.addEventListener(ev, guard(() => fire(false)));
+        }
+        // Tapping the dimmed backdrop cancels.
+        closeConfirmModal.addEventListener('click', (e) => {
+            if (e.target === closeConfirmModal) fire(false);
+        });
+    }
+    bindCloseConfirm();
 
     // --- visualViewport docking: keep the helper bar (or the compose
     // modal's send button, when that modal is open) above the soft keyboard ---

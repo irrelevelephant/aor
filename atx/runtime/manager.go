@@ -162,6 +162,17 @@ func (m *Manager) ReleaseMirror(machine string, windowIdx int, ch chan []byte) {
 	mch.ReleaseMirror(windowIdx, ch)
 }
 
+// RefreshWindows forces an immediate list-windows refresh for `machine`,
+// bypassing the event debounce so a freshly-mutated window state is
+// visible to /atx/api/machines on the next request.
+func (m *Manager) RefreshWindows(machine string) error {
+	mch, ok := m.machines[machine]
+	if !ok {
+		return fmt.Errorf("unknown machine: %s", machine)
+	}
+	return mch.RefreshWindows()
+}
+
 // ResizeMirror updates the PTY size of an active mirror.
 func (m *Manager) ResizeMirror(machine string, windowIdx int, cols, rows uint32) error {
 	mch, ok := m.machines[machine]

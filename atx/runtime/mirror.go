@@ -580,3 +580,109 @@ func (m *Mirror) PasteClipboard(text string) error {
 	)
 	return m.runShortStdin(cmd, []byte(text))
 }
+
+// WindowAction selects which window-level tmux command WindowCommand runs.
+// The allowlist gates user-supplied action strings.
+type WindowAction string
+
+const (
+	WindowActionNew      WindowAction = "new"
+	WindowActionRename   WindowAction = "rename"
+	WindowActionClose    WindowAction = "close"
+	WindowActionSwapPrev WindowAction = "swap-prev"
+	WindowActionSwapNext WindowAction = "swap-next"
+	WindowActionRenumber WindowAction = "renumber"
+)
+
+// WindowCommandResult reports the user's main-session active window index
+// after the command ran, so the browser can navigate to it.
+type WindowCommandResult struct {
+	ActiveWindow int `json:"activeWindow"`
+}
+
+// WindowCommand runs one allowlisted window-level tmux command against the
+// user's main session and returns the post-action active window index so
+// the browser can update its view if the focused window changed (move,
+// renumber) or moved to a freshly-created/neighbouring window
+// (new, close). `windows` is the most recent known window list — used to
+// compute prev/next neighbours for swap-window (wrap at edges).
+func (m *Mirror) WindowCommand(action WindowAction, newName string, windows []Window) (WindowCommandResult, error) {
+	sess := shellQuote(m.tmuxSession)
+	target := fmt.Sprintf("%s:%d", sess, m.windowIndex)
+
+	var cmd string
+	switch action {
+	case WindowActionNew:
+		cmd = fmt.Sprintf("tmux new-window -t %s -c '#{pane_current_path}'", sess)
+	case WindowActionRename:
+		name := strings.TrimSpace(newName)
+		if name == "" {
+			return WindowCommandResult{}, fmt.Errorf("rename: empty name")
+		}
+		cmd = fmt.Sprintf("tmux rename-window -t %s %s", target, shellQuote(name))
+	case WindowActionClose:
+		cmd = fmt.Sprintf("tmux kill-window -t %s", target)
+	case WindowActionSwapPrev, WindowActionSwapNext:
+		if len(windows) < 2 {
+			return WindowCommandResult{}, fmt.Errorf("only one window")
+		}
+		pos := -1
+		var ourID string
+		for i, w := range windows {
+			if w.Index == m.windowIndex {
+				pos = i
+				ourID = w.ID
+				break
+			}
+		}
+		if pos < 0 {
+			return WindowCommandResult{}, fmt.Errorf("current window not in list")
+		}
+		if ourID == "" {
+			return WindowCommandResult{}, fmt.Errorf("current window @id missing")
+		}
+		var neighbor int
+		if action == WindowActionSwapPrev {
+			neighbor = windows[(pos-1+len(windows))%len(windows)].Index
+		} else {
+			neighbor = windows[(pos+1)%len(windows)].Index
+		}
+		if neighbor == m.windowIndex {
+			return WindowCommandResult{ActiveWindow: m.windowIndex}, nil
+		}
+		// -d keeps tmux's current-window pointer where it is during the
+		// swap; then we explicitly select-window by @id so the user's
+		// window stays current at its new index, instead of leaving the
+		// neighbouring window (which now sits at our old index) focused.
+		// Targeting select-window by @id is the only way to follow the
+		// window across the index reshuffle — using the new index would
+		// race with tmux's internal winlink update.
+		id := shellQuote(ourID)
+		cmd = fmt.Sprintf(
+			"tmux swap-window -d -s %s -t %s:%d \\; select-window -t %s",
+			target, sess, neighbor, id,
+		)
+	case WindowActionRenumber:
+		cmd = fmt.Sprintf("tmux move-window -r -t %s", sess)
+	default:
+		return WindowCommandResult{}, fmt.Errorf("unknown action: %s", action)
+	}
+
+	if err := m.runShortCommand(cmd); err != nil {
+		return WindowCommandResult{}, err
+	}
+
+	// Query the main session's current window index. After new/close/swap
+	// the focused window pointer has moved; after renumber it stays on
+	// the same window but with a new index; after rename it's unchanged.
+	// One query covers every case.
+	out, err := m.runShortOutput(fmt.Sprintf("tmux display-message -p -t %s '#{window_index}'", sess))
+	if err != nil {
+		return WindowCommandResult{}, err
+	}
+	idx, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return WindowCommandResult{}, fmt.Errorf("parse window_index: %w", err)
+	}
+	return WindowCommandResult{ActiveWindow: idx}, nil
+}

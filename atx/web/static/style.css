@@ -554,15 +554,29 @@ body:has(.terminal-page) > main {
     font-weight: 600;
 }
 
-/* Default mode shows .hb-default buttons; copy mode swaps to .hb-copymode.
- * Buttons are hidden via display:none so they leave the grid entirely; both
- * modes fill the same 14-slot (7x2) grid. */
+/* Default mode shows .hb-default buttons; copy mode swaps to .hb-copymode;
+ * cmd mode swaps to .hb-cmdmode (laid out as two rows via flexbox — see the
+ * @media block below). Buttons are hidden via display:none so they leave
+ * the grid entirely; default + copy modes both fill the same 14-slot (7x2)
+ * grid. */
 .helperbar:not([data-mode="copy"]) .hb-copymode { display: none; }
+.helperbar:not([data-mode="cmd"]) .hb-cmdmode,
+.helperbar:not([data-mode="cmd"]) .hb-cmd-rowbreak { display: none; }
 .helperbar[data-mode="copy"] .hb-default { display: none; }
+.helperbar[data-mode="cmd"] .hb-default,
+.helperbar[data-mode="cmd"] .hb-copymode { display: none; }
 
 .hb-copy-done {
     border-color: var(--accent);
     color: var(--accent);
+}
+.hb-cmd-back {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.hb-cmd-destructive {
+    border-color: #d04848;
+    color: #d04848;
 }
 
 @media (pointer: coarse), (max-width: 600px) {
@@ -582,6 +596,26 @@ body:has(.terminal-page) > main {
         z-index: 100;
         transform: translateY(0);
         transition: transform 0.15s ease-out;
+    }
+    /* cmd mode breaks out of the 7-col grid: two flex rows separated by the
+     * hb-cmd-rowbreak span (100% flex-basis = forced wrap). Row 1 has 4
+     * buttons, row 2 has 3 — each row's `flex: 1 1 0` makes its buttons
+     * fill the row evenly, so the two rows look visually balanced even
+     * though the button counts differ. */
+    .helperbar[data-mode="cmd"] {
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+    }
+    .helperbar[data-mode="cmd"] .hb-cmdmode {
+        flex: 1 1 0;
+        min-width: 0;
+        height: 40px;
+    }
+    .helperbar[data-mode="cmd"] .hb-cmd-rowbreak {
+        flex-basis: 100%;
+        width: 100%;
+        height: 0;
     }
     /* margin-bottom (not padding) so xterm's FitAddon — which reads
      * getComputedStyle(parent).height and only subtracts the xterm
@@ -741,6 +775,53 @@ body:has(.terminal-page) > main {
     align-self: flex-end;
     width: auto;
     padding: 0 16px;
+}
+
+/* --- close-window confirm modal --- */
+
+.confirm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 250;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+.confirm-modal[hidden] { display: none; }
+.confirm-modal-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+.confirm-modal-title {
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1.4;
+    word-break: break-word;
+}
+.confirm-modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.confirm-modal-actions .hb-btn {
+    height: 40px;
+    padding: 0 16px;
+}
+.confirm-destructive {
+    background: #d04848;
+    border-color: #d04848;
+    color: #0d1117;
+    font-weight: 600;
 }
 
 /* --- copy toast (fallback for Promise-valued ClipboardItem rejection) --- */

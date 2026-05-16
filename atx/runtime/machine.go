@@ -298,6 +298,21 @@ func (m *Machine) consume(ctx context.Context, client *ssh.Client, events <-chan
 	}
 }
 
+// RefreshWindows triggers a synchronous list-windows refresh against the
+// active SSH connection. Used by callers that just mutated tmux state and
+// can't wait for the 200ms event debounce to catch up — without it, the
+// browser's post-action /atx/api/machines fetch races the server's own
+// refresh and returns stale window names/indexes.
+func (m *Machine) RefreshWindows() error {
+	m.connMu.Lock()
+	conn := m.conn
+	m.connMu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("machine %s offline", m.cfg.Name)
+	}
+	return m.refreshWindows(conn.client)
+}
+
 // refreshWindows runs `tmux list-windows` on a fresh SSH session and
 // updates the in-memory window list.
 func (m *Machine) refreshWindows(client *ssh.Client) error {
