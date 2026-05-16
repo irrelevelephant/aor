@@ -738,6 +738,13 @@
     function bindCloseConfirm() {
         const fire = (yes) => {
             closeConfirmModal.hidden = true;
+            // Mirror of the open-side guard at closeConfirmOpenedAt: once the
+            // modal is hidden, the synthetic click that follows pointerup
+            // retargets to whatever's now under the finger — typically the
+            // helperbar's cmd:close button that opened this modal in the
+            // first place — which would immediately re-open it. Bumping
+            // lastFireT lets the helperbar's own dedupe swallow that click.
+            lastFireT = Date.now();
             if (!yes) { dismissCmdMenu(); return; }
             runTmuxCmd({ action: 'close' }).catch(() => {}).finally(dismissCmdMenu);
         };
