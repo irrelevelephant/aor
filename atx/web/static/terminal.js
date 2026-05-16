@@ -1250,7 +1250,7 @@
         // back). Multiplier turns the literal cell-per-pixel pacing into
         // something that feels like a real scrollview — a swipe of a few cm
         // moves through pages, not lines.
-        const SCROLL_SPEED = 3;
+        const SCROLL_SPEED = 10;
         const rawRows = Math.trunc((t.clientY - scrollLastY) * SCROLL_SPEED / scrollCellH);
         if (rawRows === 0) return;
         // Finger moves DOWN (rawRows > 0) → reveal older content → scroll-up
