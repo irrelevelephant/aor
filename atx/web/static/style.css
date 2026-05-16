@@ -55,7 +55,7 @@ a:hover { text-decoration: underline; }
 .topnav-link:hover { color: var(--text); background: var(--surface2); text-decoration: none; }
 .topnav-link.active { color: var(--text); background: var(--surface2); }
 
-.topnav > .terminal-chip { margin-left: auto; }
+.topnav > .terminal-chip { margin-left: auto; flex: 1 1 0; min-width: 0; }
 
 /* Forced wrap so the prompt always sits below the nav; collapses when
  * hidden so the topnav stays single-line. */
@@ -329,9 +329,8 @@ body:has(.terminal-page) > main {
 
 .terminal-chip {
     min-width: 0;
-    display: inline-flex;
+    display: flex;
     align-items: stretch;
-    max-width: max-content;
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -343,9 +342,11 @@ body:has(.terminal-page) > main {
     align-items: stretch;
     min-width: 0;
 }
-/* Machine truncates first; window keeps its width. */
-.terminal-chip-machine { flex: 0 1 auto; min-width: 3rem; }
-.terminal-chip-window  { flex: 1 1 auto; min-width: 4rem; }
+/* Machine is sized to fit the widest known machine name (see
+ * .terminal-machine-sizer ghosts) so switching machines doesn't shift
+ * the chip; the window segment takes the remaining width and truncates. */
+.terminal-chip-machine { flex: 0 0 auto; }
+.terminal-chip-window  { flex: 1 1 0; min-width: 0; }
 
 .terminal-chip-btn {
     width: 100%;
@@ -380,13 +381,26 @@ body:has(.terminal-page) > main {
     border-radius: 2px;
     flex-shrink: 0;
 }
-.terminal-machine {
+/* Grid-stacks the active machine name on top of hidden ghost copies of
+ * every known machine name so the segment width equals the widest. */
+.terminal-machine-sizer {
+    display: inline-grid;
+    grid-template-columns: max-content;
+    align-items: center;
+}
+.terminal-machine-sizer > .terminal-machine,
+.terminal-machine-sizer > .terminal-machine-ghost {
+    grid-row: 1;
+    grid-column: 1;
     font-weight: 600;
-    color: var(--text);
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
-    min-width: 0;
+}
+.terminal-machine-ghost {
+    visibility: hidden;
+    pointer-events: none;
+}
+.terminal-machine {
+    color: var(--text);
 }
 .terminal-window-name {
     color: var(--text);

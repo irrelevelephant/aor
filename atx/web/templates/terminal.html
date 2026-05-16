@@ -3,7 +3,10 @@
     <div class="terminal-chip-segment terminal-chip-machine">
         <button class="terminal-chip-btn" id="terminal-picker-machine" type="button" aria-haspopup="true" aria-expanded="false">
             <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
-            <span class="terminal-machine">{{.Machine.Display}}</span>
+            <span class="terminal-machine-sizer">
+                <span class="terminal-machine">{{.Machine.Display}}</span>
+                {{range .Machines}}<span class="terminal-machine-ghost" aria-hidden="true">{{.Display}}</span>{{end}}
+            </span>
             <span class="terminal-chip-caret" aria-hidden="true">▾</span>
         </button>
         <div class="terminal-popover terminal-popover-machine" id="terminal-picker-machine-popover" hidden role="menu" aria-labelledby="terminal-picker-machine"></div>

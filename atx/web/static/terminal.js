@@ -840,14 +840,15 @@
         }
         refreshMachines();
     }
-    function runTmuxCmd(payload) {
-        return wsRequest('tmux_cmd', payload).then((res) => {
+    async function runTmuxCmd(payload) {
+        try {
+            const res = await wsRequest('tmux_cmd', payload);
             applyCmdResult(res);
             return res;
-        }).catch((e) => {
+        } catch (e) {
             console.warn('atx: tmux_cmd', payload, e);
             throw e;
-        });
+        }
     }
 
     function handleCmdAction(name) {
@@ -1003,8 +1004,22 @@
     }
 
     const stripeEl = document.querySelector('.terminal-stripe');
+    const machineSizerEl = document.querySelector('.terminal-machine-sizer');
     const machineLabelEl = document.querySelector('.terminal-machine');
     const windowLabelEl = document.querySelector('.terminal-window-name');
+
+    function syncMachineGhosts() {
+        // Rebuild the hidden ghost spans so the segment width tracks the
+        // widest currently-known machine name even as the list refreshes.
+        for (const g of machineSizerEl.querySelectorAll('.terminal-machine-ghost')) g.remove();
+        for (const m of view.machines || []) {
+            const g = document.createElement('span');
+            g.className = 'terminal-machine-ghost';
+            g.setAttribute('aria-hidden', 'true');
+            g.textContent = m.display || m.name;
+            machineSizerEl.appendChild(g);
+        }
+    }
 
     function updateHeader() {
         const m = machineByName(view.machine);
@@ -1167,6 +1182,7 @@
                 const data = await r.json();
                 if (!data || !Array.isArray(data.machines)) return;
                 view.machines = data.machines;
+                syncMachineGhosts();
                 updateHeader();
                 for (const p of pickers) p.rerenderIfOpen();
             } catch (_) { /* keep stale data */ }
