@@ -97,25 +97,33 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 	_ = m.runShortCommand("tmux kill-session -t " + shellQuote(m.groupedName))
 
 	// The hook propagates any in-mirror window switch (prefix+n / 0..9 /
-	// l typed in the browser terminal, or the initial select-window below)
-	// back to the main session. Set BEFORE the initial select-window so
-	// that mirror creation also moves the main session's current-window
-	// pointer to match: otherwise the post-creation list-windows refresh
-	// reports main on the previous window and the active_window push
-	// snaps the browser back. Mirrors are only created via explicit user
-	// navigation, so propagating on creation is correct.
+	// l typed in the browser terminal) back to the main session, so
+	// mosh clients and atx's main-session list-windows refresh stay in
+	// sync. run-shell wraps a `tmux select-window` invocation because a
+	// bare `select-window -t main:#{window_index}` hook body parses fine
+	// into set-hook but never actually moves main's pointer when the
+	// hook fires (tmux 3.6a). The run-shell variant expands
+	// #{window_index} in the source-session context and re-enters tmux
+	// from a shell.
 	//
-	// run-shell wraps a `tmux select-window` invocation because a bare
-	// `select-window -t main:#{window_index}` hook body parses fine into
-	// set-hook but never actually moves main's pointer when the hook
-	// fires (tmux 3.6a). The run-shell variant expands #{window_index}
-	// in the source-session context and re-enters tmux from a shell.
+	// Mirror creation also has to move main's current-window pointer
+	// (otherwise the post-creation list-windows refresh reports main on
+	// the previous window and the active_window push snaps the browser
+	// back). The hook-via-run-shell route is async: the refresh's 200ms
+	// debounce can fire before the forked shell reconnects to tmux and
+	// runs select-window, especially on slow links or when wrapping —
+	// LAST→FIRST was the most reliably broken case. So we also drive
+	// main's selection synchronously in the same tmux compound below,
+	// after the mirror's own select-window. Mirrors are only created
+	// via explicit user navigation, so propagating on creation is
+	// correct; the hook then covers later in-mirror switches.
 	hookBody := shellQuote(fmt.Sprintf(`run-shell "tmux select-window -t %s:#{window_index}"`, m.tmuxSession))
 	setup := fmt.Sprintf(
-		"tmux new-session -d -t %s -s %s \\; set-hook -t %s session-window-changed %s \\; select-window -t %s:%d",
+		"tmux new-session -d -t %s -s %s \\; set-hook -t %s session-window-changed %s \\; select-window -t %s:%d \\; select-window -t %s:%d",
 		shellQuote(m.tmuxSession), shellQuote(m.groupedName),
 		shellQuote(m.groupedName), hookBody,
 		shellQuote(m.groupedName), m.windowIndex,
+		shellQuote(m.tmuxSession), m.windowIndex,
 	)
 	if err := m.runShortCommand(setup); err != nil {
 		return fmt.Errorf("create grouped session: %w", err)
