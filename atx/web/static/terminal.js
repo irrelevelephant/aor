@@ -336,6 +336,20 @@
     let dragGeom = null;         // { xtRect, hostRect, cellW, cellH }
     const DRAG_SLOP_PX = 8;
 
+    // Swipe-scroll: drag-to-scroll the tmux buffer. Internally drives
+    // copy-mode (the only way tmux exposes scrollback) while suppressing
+    // the helperbar morph + cursor overlay so it feels like a plain
+    // scrollview. We track net upward rows so a swipe-down past the live
+    // tail can auto-`cancel` and return to the normal pane.
+    let scrollMode = false;
+    let scrollCellH = 0;
+    let scrollLastY = 0;
+    let pendingScrollRows = 0;   // signed; +n queues scroll-down×n, -n queues scroll-up×n
+    let scrollPumpInFlight = false;
+    let scrollEntering = false;
+    let scrollNetRows = 0;       // rows of upward scroll since we entered scrollMode
+    let scrollExitAfterDrain = false;
+
     function emptyCopyState() {
         return { inMode: false, row: 0, col: 0, width: 0, height: 0 };
     }
@@ -374,8 +388,10 @@
         const wasInMode = copyState && copyState.inMode;
         copyState = next;
         if (copyState.inMode) {
-            if (!wasInMode) helperbar.setAttribute('data-mode', 'copy');
-            if (copyButton) copyButton.classList.add('is-active');
+            // scrollMode keeps copy-mode invisible: no helperbar morph, no
+            // copy-button active state, no cursor overlay (handled below).
+            if (!wasInMode && !scrollMode) helperbar.setAttribute('data-mode', 'copy');
+            if (copyButton && !scrollMode) copyButton.classList.add('is-active');
         } else {
             helperbar.removeAttribute('data-mode');
             if (copyButton) copyButton.classList.remove('is-active');
@@ -387,7 +403,7 @@
     }
 
     function positionCopyCursor() {
-        if (!copyState || !copyState.inMode) {
+        if (!copyState || !copyState.inMode || scrollMode) {
             copyCursorEl.hidden = true;
             return;
         }
@@ -407,6 +423,10 @@
     }
 
     function enterCopyMode() {
+        // Explicit user action — override any silent swipe-scroll session so
+        // the helperbar morphs and the copy cursor becomes visible.
+        scrollMode = false;
+        scrollExitAfterDrain = false;
         wsRequest('copy_enter', {}).then((st) => {
             marking = false;
             if (markButton) markButton.classList.remove('is-active');
@@ -437,6 +457,83 @@
             moveInFlight = false;
             pumpMove();
         });
+    }
+
+    // Swipe-scroll: lazily put the pane in copy-mode so subsequent
+    // scroll-up / scroll-down send-keys actually have something to drive.
+    // Called once per swipe gesture, when the touch first clears the
+    // vertical slop. Pending rows queued before this resolves drain via
+    // pumpScroll's finally.
+    function scrollEnter() {
+        if (scrollEntering || scrollMode) return;
+        if (copyState && copyState.inMode) {
+            // Already in copy-mode (user pressed 📋 first). Don't take over.
+            return;
+        }
+        scrollEntering = true;
+        scrollMode = true;
+        scrollNetRows = 0;
+        wsRequest('copy_enter', {}).then(applyCopyState).catch((e) => {
+            console.warn('atx: scroll enter:', e);
+            scrollMode = false;
+            pendingScrollRows = 0;
+        }).finally(() => {
+            scrollEntering = false;
+            pumpScroll();
+        });
+    }
+
+    // Coalescing pump for scroll-up / scroll-down. Accumulated rows from
+    // touchmove get drained as one `send-keys -X -N count` per round-trip,
+    // so a fast drag is bounded by the SSH RTT, not the touchmove rate.
+    function pumpScroll() {
+        if (scrollPumpInFlight || scrollEntering) return;
+        if (!copyState || !copyState.inMode) return;
+        if (pendingScrollRows === 0) {
+            if (scrollExitAfterDrain) {
+                scrollExitAfterDrain = false;
+                // Decide AFTER drain: the last queued scroll-down may have
+                // brought us back to (or past) the live tail; only then is
+                // it right to drop the user out of copy-mode.
+                if (scrollNetRows <= 0) doScrollExit();
+            }
+            return;
+        }
+        const n = pendingScrollRows;
+        pendingScrollRows = 0;
+        scrollPumpInFlight = true;
+        const name = n < 0 ? 'scroll-up' : 'scroll-down';
+        const count = Math.abs(n);
+        // Net upward rows: scroll-up adds, scroll-down subtracts (and tmux
+        // clamps at the live tail, so netRows going ≤ 0 means we're back).
+        scrollNetRows += (n < 0 ? count : -count);
+        wsRequest('copy_action', { name, count }).then(applyCopyState).catch((e) => {
+            console.warn('atx: scroll:', e);
+        }).finally(() => {
+            scrollPumpInFlight = false;
+            pumpScroll();
+        });
+    }
+
+    // touchend handler entry point: drain any queued scroll actions, then
+    // if we've netted back to the live tail (or past it), cancel out of
+    // copy-mode. Otherwise stay in scrollMode silently so the next swipe
+    // can resume from the same offset.
+    function scrollEndDrag() {
+        if (!scrollMode) return;
+        // Defer the netRows check to pumpScroll's drain-complete branch:
+        // pending scroll-downs may still flip us back to the live tail.
+        scrollExitAfterDrain = true;
+        pumpScroll();
+    }
+
+    function doScrollExit() {
+        scrollMode = false;
+        scrollNetRows = 0;
+        if (!copyState || !copyState.inMode) return;
+        wsRequest('copy_action', { name: 'cancel', count: 1 })
+            .then(applyCopyState)
+            .catch((e) => console.warn('atx: scroll exit:', e));
     }
 
     async function initDrag(start) {
@@ -1032,37 +1129,41 @@
         }
     });
 
-    // --- touch on the terminal area: vertical drag scrolls scrollback,
-    //     horizontal flick navigates prev/next window ---
+    // --- touch on the terminal area ---
+    // Out of copy mode: vertical drag scrolls tmux's real scrollback by
+    // driving copy-mode under the hood (the only way tmux exposes it).
+    // scrollMode keeps the helperbar in its normal layout — see
+    // applyCopyState. On lift, if we've netted back to the live tail, we
+    // `cancel` so the user never has to think about copy-mode.
+    // In user-initiated copy mode (📋 button): tap-to-position, drag-to-
+    // extend selection, as before.
 
-    let touchStartX = 0, touchStartY = 0, touchStartT = 0;
-    let scrollLastY = 0, scrollCellH = 0, didScroll = false;
-    const SWIPE_MIN_X = 80, SWIPE_MAX_Y = 60, SWIPE_MAX_MS = 500;
+    let touchStartX = 0, touchStartY = 0;
 
     const swipeTarget = document.querySelector('.terminal-host');
     swipeTarget.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
-        touchStartT = Date.now();
-        didScroll = false;
-        if (copyState && copyState.inMode) {
+        if (copyState && copyState.inMode && !scrollMode) {
+            // User-initiated copy-mode: drag-to-extend selection.
             dragGeom = cellGeom();
             touchStartCell = touchToCell(e.touches[0]);
             dragPhase = 'none';
             pendingMoveTarget = null;
             return;
         }
-        scrollLastY = touchStartY;
+        // Scroll-drag path. Defer copy_enter until we know it's vertical.
         scrollCellH = term.element.getBoundingClientRect().height / Math.max(1, term.rows);
+        scrollLastY = touchStartY;
     }, { passive: true });
     swipeTarget.addEventListener('touchmove', (e) => {
         if (e.touches.length !== 1) return;
         const t = e.touches[0];
-        if (copyState && copyState.inMode) {
+        if (copyState && copyState.inMode && !scrollMode) {
+            // Select-drag (unchanged behavior from user-initiated copy mode).
             const dist = Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY);
             if (dist < DRAG_SLOP_PX) return;
-            didScroll = true;
             const cell = touchToCell(t);
             if (dragPhase === 'none') {
                 // First crossing of slop → auto-Mark: move cursor to start
@@ -1080,43 +1181,56 @@
             }
             return;
         }
+        // Scroll-drag.
         if (scrollCellH <= 0) return;
-        const y = t.clientY;
-        const rows = Math.trunc((y - scrollLastY) / scrollCellH);
-        if (rows === 0) return;
-        term.scrollLines(-rows);
-        scrollLastY += rows * scrollCellH;
-        didScroll = true;
+        if (!scrollMode) {
+            const dy = t.clientY - touchStartY;
+            const dx = t.clientX - touchStartX;
+            if (Math.abs(dy) < DRAG_SLOP_PX) return;
+            // Mostly-horizontal motion: ignore (no swipe-nav on terminal).
+            if (Math.abs(dy) <= Math.abs(dx)) return;
+            scrollEnter();
+            scrollLastY = touchStartY;  // anchor scroll origin at gesture start
+        }
+        // Natural-scroll: pulling content DOWN reveals older lines (scroll
+        // back). Multiplier turns the literal cell-per-pixel pacing into
+        // something that feels like a real scrollview — a swipe of a few cm
+        // moves through pages, not lines.
+        const SCROLL_SPEED = 3;
+        const rawRows = Math.trunc((t.clientY - scrollLastY) * SCROLL_SPEED / scrollCellH);
+        if (rawRows === 0) return;
+        // Finger moves DOWN (rawRows > 0) → reveal older content → scroll-up
+        //                                    (negative pendingScrollRows).
+        // Finger moves UP   (rawRows < 0) → reveal newer content → scroll-down.
+        pendingScrollRows -= rawRows;
+        scrollLastY += rawRows * scrollCellH / SCROLL_SPEED;
+        pumpScroll();
     }, { passive: true });
     swipeTarget.addEventListener('touchend', (e) => {
         if (e.changedTouches.length !== 1) return;
-        if (copyState && copyState.inMode) {
-            if (didScroll) {
-                // Drag finished — schedule one final move (initDrag will
-                // pick it up if still initializing; otherwise scheduleMove
-                // delivers it directly).
-                const t = e.changedTouches[0];
-                const cell = touchToCell(t);
-                if (dragPhase === 'extending') {
-                    scheduleMove(cell);
+        if (copyState && copyState.inMode && !scrollMode) {
+            if (touchStartCell) {
+                if (dragPhase === 'none' && !pendingMoveTarget) {
+                    // Single tap — move cursor only (no selection).
+                    scheduleMove(touchStartCell);
                 } else {
-                    pendingMoveTarget = cell;
+                    // Drag finished — schedule one final move (initDrag will
+                    // pick it up if still initializing; otherwise scheduleMove
+                    // delivers it directly).
+                    const t = e.changedTouches[0];
+                    const cell = touchToCell(t);
+                    if (dragPhase === 'extending') {
+                        scheduleMove(cell);
+                    } else {
+                        pendingMoveTarget = cell;
+                    }
                 }
-            } else if (touchStartCell) {
-                // Single tap — move cursor only (no selection).
-                scheduleMove(touchStartCell);
             }
             touchStartCell = null;
             dragGeom = null;
             return;
         }
-        if (didScroll) return;
-        const t = e.changedTouches[0];
-        const dx = t.clientX - touchStartX;
-        const dy = Math.abs(t.clientY - touchStartY);
-        const dt = Date.now() - touchStartT;
-        if (Math.abs(dx) < SWIPE_MIN_X || dy > SWIPE_MAX_Y || dt > SWIPE_MAX_MS) return;
-        navigateDelta(dx > 0 ? -1 : 1);
+        scrollEndDrag();
     }, { passive: true });
 
     // --- detach on hidden, reattach on visible ---
