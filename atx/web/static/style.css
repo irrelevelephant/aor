@@ -586,10 +586,8 @@ body:has(.terminal-page) > main {
         grid-template-columns: 0.45fr 1fr 1fr 1fr 0.65fr 0.65fr 0.65fr 1fr 0.45fr;
         grid-auto-rows: 40px;
         gap: 3px;
-        padding: 4px;
-        padding-bottom: max(4px, env(safe-area-inset-bottom));
-        background: var(--surface);
-        border-top: 1px solid var(--border);
+        padding-bottom: env(safe-area-inset-bottom);
+        background: #000;
         z-index: 100;
         transform: translateY(0);
         transition: transform 0.15s ease-out;
