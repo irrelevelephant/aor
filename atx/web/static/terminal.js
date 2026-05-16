@@ -265,10 +265,12 @@
 
     function activateHbBtn(btn) {
         const action = btn.dataset.action;
-        if (action === 'compose')  { openPromptModal('compose'); return; }
-        if (action === 'copy')     { enterCopyMode(); return; }
-        if (action === 'paste')    { pasteAction(); return; }
-        if (action === 'cmdmenu')  { enterCmdMenu(); return; }
+        if (action === 'compose')      { openPromptModal('compose'); return; }
+        if (action === 'copy')         { enterCopyMode(); return; }
+        if (action === 'paste')        { pasteAction(); return; }
+        if (action === 'cmdmenu')      { enterCmdMenu(); return; }
+        if (action === 'winnav:prev')  { navigateDelta(-1); return; }
+        if (action === 'winnav:next')  { navigateDelta(1); return; }
         if (action.startsWith('copyfn:')) {
             handleCopyFn(action.slice('copyfn:'.length));
             return;
@@ -901,9 +903,6 @@
         if (!next || next.index === view.window) return;
         navigateTo(view.machine, next.index);
     }
-    document.getElementById('terminal-nav-prev').addEventListener('click', () => navigateDelta(-1));
-    document.getElementById('terminal-nav-next').addEventListener('click', () => navigateDelta(1));
-
     // --- pickers ---
 
     const pickers = [];

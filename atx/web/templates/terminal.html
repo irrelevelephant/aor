@@ -1,31 +1,31 @@
+{{define "topnav-extras"}}
+<div class="terminal-chip">
+    <div class="terminal-chip-segment terminal-chip-machine">
+        <button class="terminal-chip-btn" id="terminal-picker-machine" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
+            <span class="terminal-machine">{{.Machine.Display}}</span>
+            <span class="terminal-chip-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="terminal-popover terminal-popover-machine" id="terminal-picker-machine-popover" hidden role="menu" aria-labelledby="terminal-picker-machine"></div>
+    </div>
+    <span class="terminal-chip-divider" aria-hidden="true"></span>
+    <div class="terminal-chip-segment terminal-chip-window">
+        <button class="terminal-chip-btn" id="terminal-picker-window" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="terminal-window-name">{{.Window.Name}}</span>
+            <span class="terminal-chip-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="terminal-popover terminal-popover-window" id="terminal-picker-window-popover" hidden role="menu" aria-labelledby="terminal-picker-window"></div>
+    </div>
+</div>
+{{end}}
 {{define "content"}}
 <div class="terminal-page">
-    <div class="terminal-header">
-        <button class="terminal-nav" id="terminal-nav-prev" type="button" aria-label="Previous window">◀</button>
-        <div class="terminal-chip">
-            <div class="terminal-chip-segment terminal-chip-machine">
-                <button class="terminal-chip-btn" id="terminal-picker-machine" type="button" aria-haspopup="true" aria-expanded="false">
-                    <span class="terminal-stripe" style="background: {{.Machine.Color}}"></span>
-                    <span class="terminal-machine">{{.Machine.Display}}</span>
-                    <span class="terminal-chip-caret" aria-hidden="true">▾</span>
-                </button>
-                <div class="terminal-popover terminal-popover-machine" id="terminal-picker-machine-popover" hidden role="menu" aria-labelledby="terminal-picker-machine"></div>
-            </div>
-            <span class="terminal-chip-divider" aria-hidden="true"></span>
-            <div class="terminal-chip-segment terminal-chip-window">
-                <button class="terminal-chip-btn" id="terminal-picker-window" type="button" aria-haspopup="true" aria-expanded="false">
-                    <span class="terminal-window-name">{{.Window.Name}}</span>
-                    <span class="terminal-chip-caret" aria-hidden="true">▾</span>
-                </button>
-                <div class="terminal-popover terminal-popover-window" id="terminal-picker-window-popover" hidden role="menu" aria-labelledby="terminal-picker-window"></div>
-            </div>
-        </div>
-        <button class="terminal-nav" id="terminal-nav-next" type="button" aria-label="Next window">▶</button>
-    </div>
     <div id="terminal" class="terminal-host">
         <div class="copy-cursor" id="copy-cursor" hidden></div>
     </div>
     <div class="helperbar" id="helperbar">
+        <button class="hb-btn hb-winnav" id="hb-winnav-prev" data-action="winnav:prev" aria-label="Previous window">◀</button>
+        <button class="hb-btn hb-winnav" id="hb-winnav-next" data-action="winnav:next" aria-label="Next window">▶</button>
         <!-- Default-mode buttons (hidden when [data-mode="copy"]) -->
         <button class="hb-btn hb-default hb-copy" data-action="copy" aria-label="Copy mode">📋</button>
         <button class="hb-btn hb-default" data-action="key:esc">Esc</button>

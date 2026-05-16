@@ -129,8 +129,8 @@ func TestTemplatesRender(t *testing.T) {
 	}
 	terminalOut := buf.String()
 	for _, want := range []string{
-		`id="terminal-nav-prev"`,
-		`id="terminal-nav-next"`,
+		`id="hb-winnav-prev"`,
+		`id="hb-winnav-next"`,
 		`id="terminal-picker-machine"`,
 		`id="terminal-picker-machine-popover"`,
 		`id="terminal-picker-window"`,

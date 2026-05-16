@@ -105,18 +105,35 @@
         return perm;
     }
 
+    // Absolute expiry timestamp (ms) so a stale dismissal doesn't suppress
+    // the prompt forever after the user clears localStorage partially or
+    // changes machines.
+    const PUSH_DISMISSED_KEY = 'atx.pushDismissedUntil';
+    const PUSH_DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
+
+    function pushDismissedActive() {
+        try {
+            const until = Number(localStorage.getItem(PUSH_DISMISSED_KEY) || 0);
+            return Date.now() < until;
+        } catch (_) { return false; }
+    }
+
     function syncPushToggleButton() {
-        const btn = document.getElementById('atx-push-toggle');
-        if (!btn) return;
+        const group = document.getElementById('atx-push-group');
+        if (!group) return;
         if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-            btn.hidden = true;
+            group.hidden = true;
             return;
         }
-        // Only show when permission is in the can-still-prompt state.
-        btn.hidden = Notification.permission !== 'default';
+        group.hidden = Notification.permission !== 'default' || pushDismissedActive();
     }
 
     document.addEventListener('click', async (e) => {
+        if (e.target.closest('#atx-push-dismiss')) {
+            try { localStorage.setItem(PUSH_DISMISSED_KEY, String(Date.now() + PUSH_DISMISS_MS)); } catch (_) {}
+            syncPushToggleButton();
+            return;
+        }
         const btn = e.target.closest('#atx-push-toggle');
         if (!btn) return;
         btn.disabled = true;
@@ -126,7 +143,7 @@
             btn.textContent = '🔕 Notifications blocked';
             btn.title = 'Re-enable in your browser/system notification settings';
         } else if (result === 'granted') {
-            btn.hidden = true;
+            syncPushToggleButton();
         }
     });
 
