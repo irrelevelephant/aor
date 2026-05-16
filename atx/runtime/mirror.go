@@ -62,7 +62,7 @@ func newMirror(machineName string, windowIdx int, tmuxSession string, client *ss
 		machineName: machineName,
 		windowIndex: windowIdx,
 		tmuxSession: tmuxSession,
-		groupedName: fmt.Sprintf("atx-mirror-%s-w%d", machineName, windowIdx),
+		groupedName: fmt.Sprintf("atx%d", windowIdx),
 		client:      client,
 		subscribers: make(map[chan []byte]struct{}),
 	}
