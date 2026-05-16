@@ -182,7 +182,7 @@
 
     // --- modifier state machine + onData interception ---
 
-    const modState = { ctrl: 'idle', alt: 'idle' }; // 'idle' | 'armed' | 'locked'
+    const modState = { ctrl: 'idle', alt: 'idle', prefix: 'idle' }; // 'idle' | 'armed' | 'locked'
 
     function setMod(name, next) {
         modState[name] = next;
@@ -192,26 +192,39 @@
         }
     }
 
-    // Apply Ctrl/Alt to the first char of data; subsequent chars pass through
-    // unless the modifier is locked (in which case it applies to every char).
+    // Apply armed/locked modifiers to one outbound chunk. Prefix prepends
+    // `\x0f` (the user's tmux prefix). Ctrl+arrow / Alt+arrow / Ctrl+PgUp
+    // etc. need the modifyOtherKeys CSI encoding (`\x1b[1;5C` for C-Right)
+    // — bit-masking the leading 0x1b would just send a bare arrow and the
+    // user's `bind -n C-Left/C-Right/M-arrows` would never fire.
     function applyModifiers(data) {
-        if (modState.ctrl === 'idle' && modState.alt === 'idle') return data;
-        let out = '';
-        for (let i = 0; i < data.length; i++) {
-            const ch = data[i];
-            const code = ch.charCodeAt(0);
-            const applyAlt = modState.alt !== 'idle' && (i === 0 || modState.alt === 'locked');
-            const applyCtrl = modState.ctrl !== 'idle' && (i === 0 || modState.ctrl === 'locked');
-            let outCh = ch;
-            if (applyCtrl && code >= 0x40 && code < 0x7f) {
-                outCh = String.fromCharCode(code & 0x1f);
+        if (modState.ctrl === 'idle' && modState.alt === 'idle' && modState.prefix === 'idle') return data;
+        const ctrlOn = modState.ctrl !== 'idle';
+        const altOn = modState.alt !== 'idle';
+        const prefix = modState.prefix !== 'idle' ? '\x0f' : '';
+        // xterm modifyOtherKeys param: 1 + (shift?1:0) + (alt?2:0) + (ctrl?4:0).
+        const mod = 1 + (altOn ? 2 : 0) + (ctrlOn ? 4 : 0);
+        let body, m;
+        if ((m = /^\x1b[[O]([ABCDHF])$/.exec(data))) {
+            body = (ctrlOn || altOn) ? `\x1b[1;${mod}${m[1]}` : data;
+        } else if ((m = /^\x1b\[(\d+)~$/.exec(data))) {
+            body = (ctrlOn || altOn) ? `\x1b[${m[1]};${mod}~` : data;
+        } else {
+            body = '';
+            for (let i = 0; i < data.length; i++) {
+                const code = data.charCodeAt(i);
+                const ctrlHere = ctrlOn && (i === 0 || modState.ctrl === 'locked');
+                const altHere = altOn && (i === 0 || modState.alt === 'locked');
+                let ch = data[i];
+                if (ctrlHere && code >= 0x40 && code < 0x7f) ch = String.fromCharCode(code & 0x1f);
+                if (altHere) ch = '\x1b' + ch;
+                body += ch;
             }
-            if (applyAlt) outCh = '\x1b' + outCh;
-            out += outCh;
         }
         if (modState.ctrl === 'armed') setMod('ctrl', 'idle');
         if (modState.alt === 'armed') setMod('alt', 'idle');
-        return out;
+        if (modState.prefix === 'armed') setMod('prefix', 'idle');
+        return prefix + body;
     }
 
     term.onData((data) => {
@@ -268,8 +281,7 @@
         if (kind === 'mod') {
             const cur = modState[name];
             // Tap cycle: idle → armed → locked → idle.
-            const next = cur === 'idle' ? 'armed' : cur === 'armed' ? 'locked' : 'idle';
-            setMod(name, next);
+            setMod(name, cur === 'idle' ? 'armed' : cur === 'armed' ? 'locked' : 'idle');
         } else {
             sendBytes(applyModifiers(KEY_MAP[name]));
         }
