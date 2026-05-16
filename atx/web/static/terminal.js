@@ -182,7 +182,7 @@
 
     // --- modifier state machine + onData interception ---
 
-    const modState = { ctrl: 'idle', alt: 'idle', prefix: 'idle' }; // 'idle' | 'armed' | 'locked'
+    const modState = { ctrl: 'idle', alt: 'idle' }; // 'idle' | 'armed' | 'locked'
 
     function setMod(name, next) {
         modState[name] = next;
@@ -192,23 +192,22 @@
         }
     }
 
-    // Apply armed/locked modifiers to one outbound chunk. Prefix prepends
-    // `\x0f` (the user's tmux prefix). Ctrl+arrow / Alt+arrow / Ctrl+PgUp
-    // etc. need the modifyOtherKeys CSI encoding (`\x1b[1;5C` for C-Right)
-    // — bit-masking the leading 0x1b would just send a bare arrow and the
-    // user's `bind -n C-Left/C-Right/M-arrows` would never fire.
+    // Apply armed/locked modifiers to one outbound chunk. Ctrl+arrow /
+    // Alt+arrow / Ctrl+PgUp etc. need the modifyOtherKeys CSI encoding
+    // (`\x1b[1;5C` for C-Right) — bit-masking the leading 0x1b would just
+    // send a bare arrow and the user's `bind -n C-Left/C-Right/M-arrows`
+    // would never fire.
     function applyModifiers(data) {
-        if (modState.ctrl === 'idle' && modState.alt === 'idle' && modState.prefix === 'idle') return data;
+        if (modState.ctrl === 'idle' && modState.alt === 'idle') return data;
         const ctrlOn = modState.ctrl !== 'idle';
         const altOn = modState.alt !== 'idle';
-        const prefix = modState.prefix !== 'idle' ? '\x0f' : '';
         // xterm modifyOtherKeys param: 1 + (shift?1:0) + (alt?2:0) + (ctrl?4:0).
         const mod = 1 + (altOn ? 2 : 0) + (ctrlOn ? 4 : 0);
         let body, m;
         if ((m = /^\x1b[[O]([ABCDHF])$/.exec(data))) {
-            body = (ctrlOn || altOn) ? `\x1b[1;${mod}${m[1]}` : data;
+            body = `\x1b[1;${mod}${m[1]}`;
         } else if ((m = /^\x1b\[(\d+)~$/.exec(data))) {
-            body = (ctrlOn || altOn) ? `\x1b[${m[1]};${mod}~` : data;
+            body = `\x1b[${m[1]};${mod}~`;
         } else {
             body = '';
             for (let i = 0; i < data.length; i++) {
@@ -223,8 +222,7 @@
         }
         if (modState.ctrl === 'armed') setMod('ctrl', 'idle');
         if (modState.alt === 'armed') setMod('alt', 'idle');
-        if (modState.prefix === 'armed') setMod('prefix', 'idle');
-        return prefix + body;
+        return body;
     }
 
     term.onData((data) => {
@@ -255,7 +253,6 @@
     const KEY_MAP = {
         esc:   '\x1b',
         tab:   '\t',
-        'c-o': '\x0f',
         up:    '\x1b[A',
         down:  '\x1b[B',
         left:  '\x1b[D',
@@ -717,6 +714,7 @@
             const w = windowOf(view.machine, view.window);
             const label = w && w.name ? `${view.window} "${w.name}"` : `${view.window}`;
             closeConfirmTitle.textContent = `Close window ${label}?`;
+            closeConfirmOpenedAt = Date.now();
             closeConfirmModal.hidden = false;
             return;
         }
@@ -731,29 +729,42 @@
         }
     }
 
+    // Timestamp of the most recent reveal so the backdrop handler can
+    // ignore the synthetic click from the helperbar tap that opened it —
+    // browsers that retarget click events after DOM mutation (Chrome on
+    // Android most reliably) would otherwise dispatch on the backdrop now
+    // under the user's finger and dismiss before the modal is even seen.
+    let closeConfirmOpenedAt = 0;
     function bindCloseConfirm() {
         const fire = (yes) => {
             closeConfirmModal.hidden = true;
             if (!yes) { dismissCmdMenu(); return; }
             runTmuxCmd({ action: 'close' }).catch(() => {}).finally(dismissCmdMenu);
         };
-        // Same triple-event dedupe pattern as the helperbar — iOS Safari
-        // suppresses one of pointerup/touchend/click depending on the gesture.
+        // Mirror the helperbar's gesture handling: pointerdown.preventDefault
+        // suppresses focus shift + synthetic mousedown, then pointerup,
+        // touchend, and click are all bound on the modal parent with a 250ms
+        // dedupe — whichever event fires first wins, the others no-op. iOS
+        // Safari suppresses one or another depending on gesture path, and
+        // per-button listeners haven't been reliable here.
         let lastT = 0;
-        const guard = (cb) => () => {
+        const handler = (e) => {
             const now = Date.now();
             if (now - lastT < 250) return;
-            lastT = now;
-            cb();
+            const btn = e.target.closest('button');
+            if (btn === closeConfirmYes)         { lastT = now; fire(true); return; }
+            if (btn === closeConfirmCancel)      { lastT = now; fire(false); return; }
+            if (e.target === closeConfirmModal && now - closeConfirmOpenedAt >= 400) {
+                lastT = now;
+                fire(false);
+            }
         };
-        for (const ev of ['pointerup', 'touchend', 'click']) {
-            closeConfirmYes.addEventListener(ev, guard(() => fire(true)));
-            closeConfirmCancel.addEventListener(ev, guard(() => fire(false)));
-        }
-        // Tapping the dimmed backdrop cancels.
-        closeConfirmModal.addEventListener('click', (e) => {
-            if (e.target === closeConfirmModal) fire(false);
+        closeConfirmModal.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('button')) e.preventDefault();
         });
+        closeConfirmModal.addEventListener('pointerup', handler);
+        closeConfirmModal.addEventListener('touchend', handler);
+        closeConfirmModal.addEventListener('click', handler);
     }
     bindCloseConfirm();
 

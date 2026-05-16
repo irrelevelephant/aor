@@ -97,11 +97,13 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 	_ = m.runShortCommand("tmux kill-session -t " + shellQuote(m.groupedName))
 
 	// The hook propagates any in-mirror window switch (prefix+n / 0..9 /
-	// l typed in the browser terminal) back to the main session. Without
-	// it, those switches only move the grouped session's pointer and atx
-	// never sees a `%session-window-changed`. Set AFTER the initial
-	// select-window so mirror creation itself doesn't yank the main
-	// session's current-window pointer.
+	// l typed in the browser terminal, or the initial select-window below)
+	// back to the main session. Set BEFORE the initial select-window so
+	// that mirror creation also moves the main session's current-window
+	// pointer to match: otherwise the post-creation list-windows refresh
+	// reports main on the previous window and the active_window push
+	// snaps the browser back. Mirrors are only created via explicit user
+	// navigation, so propagating on creation is correct.
 	//
 	// run-shell wraps a `tmux select-window` invocation because a bare
 	// `select-window -t main:#{window_index}` hook body parses fine into
@@ -110,10 +112,10 @@ func (m *Mirror) Start(parent context.Context, cols, rows uint32) error {
 	// in the source-session context and re-enters tmux from a shell.
 	hookBody := shellQuote(fmt.Sprintf(`run-shell "tmux select-window -t %s:#{window_index}"`, m.tmuxSession))
 	setup := fmt.Sprintf(
-		"tmux new-session -d -t %s -s %s \\; select-window -t %s:%d \\; set-hook -t %s session-window-changed %s",
+		"tmux new-session -d -t %s -s %s \\; set-hook -t %s session-window-changed %s \\; select-window -t %s:%d",
 		shellQuote(m.tmuxSession), shellQuote(m.groupedName),
-		shellQuote(m.groupedName), m.windowIndex,
 		shellQuote(m.groupedName), hookBody,
+		shellQuote(m.groupedName), m.windowIndex,
 	)
 	if err := m.runShortCommand(setup); err != nil {
 		return fmt.Errorf("create grouped session: %w", err)
@@ -613,7 +615,11 @@ func (m *Mirror) WindowCommand(action WindowAction, newName string, windows []Wi
 	var cmd string
 	switch action {
 	case WindowActionNew:
-		cmd = fmt.Sprintf("tmux new-window -t %s -c '#{pane_current_path}'", sess)
+		// Trailing colon forces tmux to parse `sess` as a session name; a
+		// bare `-t SESS` is ambiguous when the session name is a numeric
+		// string (e.g. tmux_session = "0") and tmux falls back to treating
+		// it as a window index, which fails with "index 0 in use".
+		cmd = fmt.Sprintf("tmux new-window -t %s: -c '#{pane_current_path}'", sess)
 	case WindowActionRename:
 		name := strings.TrimSpace(newName)
 		if name == "" {
@@ -663,7 +669,7 @@ func (m *Mirror) WindowCommand(action WindowAction, newName string, windows []Wi
 			target, sess, neighbor, id,
 		)
 	case WindowActionRenumber:
-		cmd = fmt.Sprintf("tmux move-window -r -t %s", sess)
+		cmd = fmt.Sprintf("tmux move-window -r -t %s:", sess)
 	default:
 		return WindowCommandResult{}, fmt.Errorf("unknown action: %s", action)
 	}
@@ -675,8 +681,11 @@ func (m *Mirror) WindowCommand(action WindowAction, newName string, windows []Wi
 	// Query the main session's current window index. After new/close/swap
 	// the focused window pointer has moved; after renumber it stays on
 	// the same window but with a new index; after rename it's unchanged.
-	// One query covers every case.
-	out, err := m.runShortOutput(fmt.Sprintf("tmux display-message -p -t %s '#{window_index}'", sess))
+	// Trailing colon forces session-target interpretation (numeric session
+	// names like "0" otherwise resolve ambiguously when a window also has
+	// that index, and tmux can return the window's index instead of the
+	// session's active window's index).
+	out, err := m.runShortOutput(fmt.Sprintf("tmux display-message -p -t %s: '#{window_index}'", sess))
 	if err != nil {
 		return WindowCommandResult{}, err
 	}
