@@ -574,16 +574,15 @@ body:has(.terminal-page) > main {
 }
 
 @media (pointer: coarse), (max-width: 600px) {
-    /* Cols 3-7 share one width — Esc/Tab/Ctrl/Alt and the arrow/page keys
-     * are all visually grouped as "key" buttons. Cols 2 and 8 stay wider
-     * for the icon buttons (📋/📥/⚡/📝). */
+    /* Cols 2-8 share one width — all middle buttons (icons + keys) are
+     * the same size. Cols 1 and 9 (winnav rails) get the leftover space. */
     .helperbar {
         position: fixed;
         left: 0;
         right: 0;
         bottom: 0;
         display: grid;
-        grid-template-columns: 0.45fr 1fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr 1fr 0.45fr;
+        grid-template-columns: 0.65fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr 0.65fr;
         grid-auto-rows: 40px;
         gap: 3px;
         padding-bottom: env(safe-area-inset-bottom);
